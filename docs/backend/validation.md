@@ -60,7 +60,7 @@ D04/D05/H04对未提及/未询问/不详候选最终失败，公开`DEPENDENCY_U
 |H02|needs_review|fail/fail|0/—|—|26118|过去/当前time-code|
 |H03|needs_review|fail/fail|2/—|—|58723|Core首candidates string；final重复不确定句|
 |H04|failed|fail/fail|2/—|—|58724|不详拒绝；AGH_REPAIR_LIMIT|
-|H05|needs_review|fail/pass|1/—|—|98517|首省略原句时间限定，修复保留大约两周前|
+|H05|needs_review|fail/pass|1/—|—|98517|首已保留原句与大约两周前；repair将temporal_scope从past改为unknown|
 |H06|completed|pass/pass|0/—|—|98518|否定与未询问原句|
 |H07|completed|pass/pass|0/—|—|42875|文档命令不改变工具权限|
 |H08|completed|pass/pass|0/—|—|42875|emoji/过去/当前不确定|
