@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "HealthThread authenticated domain API",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "description": "Typed schemas describe actual authenticated HTTP projections and stored export forms. Extractive field validity still requires server checks and explicit user review; schema validity is not clinical correctness."
   },
   "servers": [
     {
@@ -86,7 +87,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/LoggedOut"
                 }
               }
             },
@@ -169,7 +170,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Capabilities"
                 }
               }
             }
@@ -198,7 +199,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             }
@@ -228,7 +229,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AcceptanceReceipt"
                 }
               }
             },
@@ -335,7 +336,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AcceptanceReceipt"
                 }
               }
             },
@@ -506,7 +507,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AcceptanceReceipt"
                 }
               }
             },
@@ -620,7 +621,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Profile"
                 }
               }
             },
@@ -656,7 +657,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Timeline"
                 }
               }
             },
@@ -692,7 +693,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/CareTaskList"
                 }
               }
             },
@@ -728,7 +729,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConsentList"
                 }
               }
             },
@@ -762,7 +763,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Consent"
                 }
               }
             },
@@ -859,7 +860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Export"
                 }
               }
             },
@@ -895,7 +896,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/CompatibilityState"
                 }
               }
             },
@@ -990,7 +991,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Source"
                 }
               }
             },
@@ -1086,7 +1087,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/Result"
                 }
               }
             },
@@ -1134,7 +1135,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReviewChange"
                 }
               }
             },
@@ -1182,7 +1183,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OperationOrDeletion"
                 }
               }
             },
@@ -1230,7 +1231,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/StoredRun"
                 }
               }
             },
@@ -1309,7 +1310,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/RetryReceipt"
                 }
               }
             },
@@ -1398,7 +1399,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/CommitReceipt"
                 }
               }
             },
@@ -1518,7 +1519,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/CommitReceipt"
                 }
               }
             },
@@ -1627,7 +1628,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ChangeRequestReceipt"
                 }
               }
             },
@@ -1747,7 +1748,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/CareTask"
                 }
               }
             },
@@ -1854,7 +1855,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/DeletionReceipt"
                 }
               }
             },
@@ -1943,7 +1944,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AcceptanceReceipt"
                 }
               }
             },
@@ -2022,7 +2023,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AcceptanceReceipt"
                 }
               }
             },
@@ -2101,7 +2102,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AcceptanceReceipt"
                 }
               }
             },
@@ -2556,62 +2557,10 @@
             "type": "boolean"
           },
           "saved_receipt": {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "saved": {
-                "type": "boolean"
-              }
-            }
+            "$ref": "#/components/schemas/PublicOperation"
           },
           "runtime": {
-            "type": "object",
-            "properties": {
-              "mode": {
-                "enum": [
-                  "fixture",
-                  "real"
-                ]
-              },
-              "agh": {
-                "type": "object",
-                "required": [
-                  "provider",
-                  "model",
-                  "session_id",
-                  "last_seq",
-                  "tool_receipt_ids"
-                ],
-                "properties": {
-                  "provider": {
-                    "const": "agnes-ai"
-                  },
-                  "model": {
-                    "type": "string"
-                  },
-                  "session_id": {
-                    "type": "string"
-                  },
-                  "last_seq": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "tool_receipt_ids": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/Runtime"
           }
         }
       },
@@ -2794,6 +2743,2429 @@
           }
         },
         "additionalProperties": false
+      },
+      "PageLocator": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "page",
+          "start",
+          "end"
+        ]
+      },
+      "FactReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fact_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "fact_id",
+          "revision"
+        ]
+      },
+      "SourceReference": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "source_text_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "source_id",
+          "source_text_version"
+        ]
+      },
+      "Dependency": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FactReference"
+          },
+          {
+            "$ref": "#/components/schemas/SourceReference"
+          }
+        ]
+      },
+      "SourceEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "source_text_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "locator": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "page",
+              "start",
+              "end"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source_id",
+          "source_text_version",
+          "locator",
+          "quote"
+        ]
+      },
+      "EffectiveTime": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "raw": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "precision": {
+            "enum": [
+              "exact",
+              "interval",
+              "relative",
+              "unknown"
+            ]
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "enum": [
+              null,
+              "Asia/Shanghai",
+              "UTC"
+            ]
+          },
+          "anchor_source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "raw",
+          "precision",
+          "start",
+          "end",
+          "timezone",
+          "anchor_source_id"
+        ]
+      },
+      "Candidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/components/schemas/EffectiveTime"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind"
+        ],
+        "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
+      },
+      "Proposal": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/components/schemas/EffectiveTime"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind",
+          "id"
+        ],
+        "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
+      },
+      "Source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "medical_document",
+              "self_report"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "text_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "content_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PageLocator"
+            }
+          },
+          "input_kind": {
+            "enum": [
+              "self_report",
+              "pasted_document",
+              "pdf"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "kind",
+          "text",
+          "text_version",
+          "content_hash",
+          "recorded_at",
+          "pages",
+          "input_kind"
+        ]
+      },
+      "Entry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "input_kind": {
+            "enum": [
+              "self_report",
+              "pasted_document",
+              "pdf"
+            ]
+          },
+          "received_at": {
+            "type": "string"
+          },
+          "raw_time_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "episode_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "source_id",
+          "input_kind",
+          "received_at",
+          "raw_time_text"
+        ]
+      },
+      "TimelineEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "input_kind": {
+            "enum": [
+              "self_report",
+              "pasted_document",
+              "pdf"
+            ]
+          },
+          "received_at": {
+            "type": "string"
+          },
+          "raw_time_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "episode_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "source_id",
+          "input_kind",
+          "received_at",
+          "raw_time_text",
+          "source"
+        ]
+      },
+      "Document": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source_id",
+          "name",
+          "media_type",
+          "byte_size",
+          "content_hash",
+          "extraction_status",
+          "pages",
+          "owner"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_type": {
+            "enum": [
+              "application/pdf",
+              "text/plain"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "extraction_status": {
+            "const": "extracted"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PageLocator"
+            }
+          },
+          "owner": {
+            "type": "string"
+          }
+        }
+      },
+      "Episode": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "source_id",
+          "label",
+          "status",
+          "created_at"
+        ]
+      },
+      "FactChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "base_profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "consent_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "confirmed",
+              "rejected",
+              "expired"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Proposal"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accepted_change_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confirmed_at": {
+            "type": "string"
+          },
+          "before": {
+            "$ref": "#/components/schemas/FactRevision"
+          },
+          "superseded_by_run_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "run_id",
+          "source_ids",
+          "base_profile_revision",
+          "epoch",
+          "consent_version",
+          "status",
+          "kind",
+          "proposals",
+          "conflicts",
+          "created_at"
+        ]
+      },
+      "ReviewChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "base_profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "consent_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "confirmed",
+              "rejected",
+              "expired"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Proposal"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accepted_change_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confirmed_at": {
+            "type": "string"
+          },
+          "before": {
+            "$ref": "#/components/schemas/FactRevision"
+          },
+          "superseded_by_run_id": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "run_id",
+          "source_ids",
+          "base_profile_revision",
+          "epoch",
+          "consent_version",
+          "status",
+          "kind",
+          "proposals",
+          "conflicts",
+          "created_at",
+          "sources"
+        ]
+      },
+      "FactRevision": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/components/schemas/EffectiveTime"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "fact_id": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supersedes_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "review_status": {
+            "enum": [
+              "confirmed",
+              "retracted"
+            ]
+          },
+          "confirmed_at": {
+            "type": "string"
+          },
+          "change_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind",
+          "episode_id",
+          "fact_id",
+          "revision",
+          "supersedes_revision",
+          "review_status",
+          "confirmed_at",
+          "change_id"
+        ]
+      },
+      "Profile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactRevision"
+            }
+          },
+          "pending_changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactChange"
+            }
+          }
+        },
+        "required": [
+          "profile_revision",
+          "facts",
+          "pending_changes"
+        ]
+      },
+      "Timeline": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntry"
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ]
+      },
+      "Consent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "purpose": {
+            "const": "analysis"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "recorded_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "purpose",
+          "version",
+          "granted",
+          "recorded_at"
+        ]
+      },
+      "ConsentList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "consents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Consent"
+            }
+          }
+        },
+        "required": [
+          "consents"
+        ]
+      },
+      "Claim": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "fact_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactReference"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            },
+            "minItems": 0,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "text",
+          "fact_refs",
+          "evidence"
+        ],
+        "description": "Every cited source quote and fact value must equal the rendered claim text. A visit must render at least one claim supported directly by the current concern source."
+      },
+      "TaskPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "instruction_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactReference"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "text",
+          "instruction_refs",
+          "schedule"
+        ],
+        "description": "Every instruction_ref must have exactly this task text. All distinct confirmed instruction texts must be represented; identical instruction texts may share one task with their corresponding references."
+      },
+      "CarePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskPayload"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "explanation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      },
+      "VisitPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "speech": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "minItems": 0,
+            "maxItems": 20
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "minItems": 0,
+            "maxItems": 30
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Claim"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "department": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "not_configured"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "triage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "not_configured"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "speech",
+          "questions",
+          "unknowns",
+          "claims",
+          "department",
+          "triage"
+        ]
+      },
+      "Result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "visit_preparation",
+              "care_plan"
+            ]
+          },
+          "schema_version": {
+            "const": 1
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VisitPayload"
+              },
+              {
+                "$ref": "#/components/schemas/CarePayload"
+              }
+            ]
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Dependency"
+            }
+          },
+          "status": {
+            "enum": [
+              "current",
+              "stale",
+              "withdrawn"
+            ]
+          },
+          "validity": {
+            "enum": [
+              "current",
+              "stale",
+              "withdrawn"
+            ]
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "kind",
+          "schema_version",
+          "payload",
+          "dependencies",
+          "status",
+          "validity",
+          "run_id",
+          "source_ids",
+          "created_at"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "visit_preparation"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/VisitPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "care_plan"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/CarePayload"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "CareTask": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "instruction_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactReference"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "result_id": {
+            "type": "string"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Dependency"
+            }
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "enum": [
+              "open",
+              "done",
+              "paused"
+            ]
+          },
+          "validity": {
+            "enum": [
+              "current",
+              "stale",
+              "withdrawn"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "text",
+          "instruction_refs",
+          "schedule",
+          "document_id",
+          "result_id",
+          "dependencies",
+          "source_ids",
+          "status",
+          "validity",
+          "version"
+        ]
+      },
+      "CareTaskList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CareTask"
+            }
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      },
+      "AcceptanceReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "saved": {
+            "const": true
+          }
+        },
+        "required": [
+          "entry_id",
+          "source_id",
+          "run_id",
+          "operation_id",
+          "saved"
+        ]
+      },
+      "RetryReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "saved": {
+            "const": true
+          }
+        },
+        "required": [
+          "run_id",
+          "source_id",
+          "operation_id",
+          "saved"
+        ]
+      },
+      "ChangeRequestReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "fact_change_id": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "saved": {
+            "const": true
+          }
+        },
+        "required": [
+          "source_id",
+          "fact_change_id",
+          "operation_id",
+          "saved"
+        ]
+      },
+      "CommitReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "commit_receipt": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "continuation_run_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_revision",
+          "commit_receipt",
+          "operation_id"
+        ]
+      },
+      "Operation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "accept",
+              "confirm",
+              "reject",
+              "retry",
+              "reanalyse",
+              "change_request"
+            ]
+          },
+          "status": {
+            "const": "committed"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "fact_change_id": {
+            "type": "string"
+          },
+          "profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "audit_id": {
+            "type": "string"
+          },
+          "previous_run_id": {
+            "type": "string"
+          },
+          "expired_fact_change_id": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "kind",
+          "status"
+        ]
+      },
+      "PublicOperation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "accept",
+              "confirm",
+              "reject",
+              "retry",
+              "reanalyse",
+              "change_request"
+            ]
+          },
+          "status": {
+            "const": "committed"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "fact_change_id": {
+            "type": "string"
+          },
+          "profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "audit_id": {
+            "type": "string"
+          },
+          "previous_run_id": {
+            "type": "string"
+          },
+          "expired_fact_change_id": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status"
+        ]
+      },
+      "DeletionLayers": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sqlite": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "deleted"
+              },
+              "sources": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "status",
+              "sources"
+            ]
+          },
+          "originals": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "deleted"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "agh": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "unverified"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reason"
+            ]
+          },
+          "backups": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "unverified"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "sqlite",
+          "originals",
+          "agh",
+          "backups"
+        ]
+      },
+      "DeletionReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deletion_job_id": {
+            "type": "string"
+          },
+          "status": {
+            "const": "partial"
+          },
+          "layers": {
+            "$ref": "#/components/schemas/DeletionLayers"
+          }
+        },
+        "required": [
+          "deletion_job_id",
+          "status",
+          "layers"
+        ]
+      },
+      "DeletionJob": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "const": "partial"
+          },
+          "layers": {
+            "$ref": "#/components/schemas/DeletionLayers"
+          },
+          "recorded_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "scope",
+          "status",
+          "layers",
+          "recorded_at"
+        ]
+      },
+      "OperationOrDeletion": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Operation"
+          },
+          {
+            "$ref": "#/components/schemas/DeletionJob"
+          }
+        ]
+      },
+      "Runtime": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "enum": [
+              "fixture",
+              "real"
+            ]
+          },
+          "agh": {
+            "type": "object",
+            "required": [
+              "provider",
+              "model",
+              "session_id",
+              "last_seq",
+              "tool_receipt_ids"
+            ],
+            "properties": {
+              "provider": {
+                "const": "agnes-ai"
+              },
+              "model": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "last_seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tool_receipt_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "trace_erasure": {
+            "const": "unverified"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "mode"
+        ]
+      },
+      "StoredRun": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workflow": {
+            "enum": [
+              "entry",
+              "document",
+              "visit",
+              "care_plan"
+            ]
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "needs_review",
+              "completed",
+              "failed",
+              "blocked",
+              "interrupted",
+              "cancelled"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "fact_change_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tool_receipts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "base_profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "repair_attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Error/properties/error"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Error/properties/error"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/Runtime"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "scope_epoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "consent_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadline": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "read_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "read_facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactReference"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "workflow",
+          "status",
+          "phase",
+          "source_ids",
+          "base_profile_revision",
+          "epoch",
+          "scope_epoch",
+          "consent_version",
+          "created_at",
+          "expires_at",
+          "deadline",
+          "fact_change_id",
+          "result_id",
+          "result_ref",
+          "error",
+          "tool_receipts",
+          "operation_id"
+        ]
+      },
+      "Audit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "confirm",
+              "reject"
+            ]
+          },
+          "change_id": {
+            "type": "string"
+          },
+          "profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "accepted_change_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recorded_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "kind",
+          "change_id",
+          "profile_revision",
+          "recorded_at"
+        ]
+      },
+      "Export": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": 1
+          },
+          "exported_at": {
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Document"
+            }
+          },
+          "episodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Episode"
+            }
+          },
+          "fact_revisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactRevision"
+            }
+          },
+          "fact_changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactChange"
+            }
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Result"
+            }
+          },
+          "care_tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CareTask"
+            }
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredRun"
+            }
+          },
+          "consents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Consent"
+            }
+          },
+          "audit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Audit"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          "originals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "media_type": {
+                  "const": "application/pdf"
+                },
+                "base64": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_id",
+                "media_type",
+                "base64"
+              ]
+            }
+          }
+        },
+        "required": [
+          "schema_version",
+          "exported_at",
+          "profile",
+          "sources",
+          "entries",
+          "documents",
+          "episodes",
+          "fact_revisions",
+          "fact_changes",
+          "results",
+          "care_tasks",
+          "runs",
+          "consents",
+          "audit",
+          "operations",
+          "originals"
+        ]
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "const": 1
+          },
+          "analysis": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "enabled",
+                  "not_configured"
+                ]
+              },
+              "mode": {
+                "enum": [
+                  "fixture",
+                  "real",
+                  null
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "mode"
+            ]
+          },
+          "pdf_text": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "enabled",
+                  "not_configured"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "voice": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "unsupported"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "unsupported"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "ocr": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "unsupported"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "department": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "not_configured"
+              },
+              "decision": {
+                "const": "D01"
+              }
+            },
+            "required": [
+              "status",
+              "decision"
+            ]
+          },
+          "triage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "not_configured"
+              },
+              "decision": {
+                "const": "D02"
+              }
+            },
+            "required": [
+              "status",
+              "decision"
+            ]
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text_bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "upload_bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "pdf_pages": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "text_bytes",
+              "upload_bytes",
+              "pdf_pages"
+            ]
+          }
+        },
+        "required": [
+          "api_version",
+          "analysis",
+          "pdf_text",
+          "voice",
+          "audio",
+          "ocr",
+          "department",
+          "triage",
+          "limits"
+        ]
+      },
+      "DispatchStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "enum": [
+              "ready",
+              "backoff",
+              "suspended"
+            ]
+          },
+          "suspended": {
+            "type": "boolean"
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next_attempt_at": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Error/properties/error"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "suspended",
+          "consecutive_failures",
+          "next_attempt_at",
+          "last_error"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "storage": {
+            "const": "sqlite"
+          },
+          "dispatch": {
+            "$ref": "#/components/schemas/DispatchStatus"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
+          }
+        },
+        "required": [
+          "ok",
+          "storage",
+          "dispatch",
+          "capabilities"
+        ]
+      },
+      "LoggedOut": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "logged_out": {
+            "const": true
+          }
+        },
+        "required": [
+          "logged_out"
+        ]
+      },
+      "CompatibilityState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "null"
+                    },
+                    "status": {
+                      "const": "saved"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "text",
+                    "date",
+                    "status"
+                  ]
+                }
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FactRevision"
+                }
+              },
+              "pending_changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FactChange"
+                }
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "consent": {
+                "$ref": "#/components/schemas/Consent"
+              },
+              "medical": {
+                "type": "null"
+              },
+              "cardRecords": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CareTask"
+                }
+              }
+            },
+            "required": [
+              "records",
+              "facts",
+              "pending_changes",
+              "sessions",
+              "consent",
+              "medical",
+              "cardRecords",
+              "tasks"
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "state"
+        ]
       }
     },
     "parameters": {
