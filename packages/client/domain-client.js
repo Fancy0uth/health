@@ -47,8 +47,13 @@ export class DomainClient {
   }
   key(kind) { return `healththread-domain:${kind}:${this.state.user?.id}:${this.sessionEpoch}`; }
   deletionRecoveryKey() {return `healththread-delete-recovery:${this.state.user?.id}:${this.sessionEpoch}`;}
-  deletionHandles() {
-    return this.operations.filter(op=>op.method==='DELETE'&&['unknown','sending'].includes(op.state)).map(op=>({id:op.id,key:op.key,slot:op.slot,path:op.path,method:op.method,owner:op.owner,epoch:op.epoch,scopeEpoch:op.scopeEpoch,allClearEpoch:op.allClearEpoch,state:op.state,created_at:op.created_at,body:{}}));
+  deletionHandles(operations=this.operations) {
+    return operations.filter(op=>op.method==='DELETE'&&['unknown','sending'].includes(op.state)).map(op=>({id:op.id,key:op.key,slot:op.slot,path:op.path,method:op.method,owner:op.owner,epoch:op.epoch,scopeEpoch:op.scopeEpoch,allClearEpoch:op.allClearEpoch,state:op.state,created_at:op.created_at,body:{}}));
+  }
+  restoreDeletionHandles() {
+    // Load only the authenticated owner/session's opaque handles before all-clear cleanup.
+    // Health drafts and body journals remain unread until the scope watermark is checked.
+    try {const stored=JSON.parse(this.storage.getItem(this.deletionRecoveryKey())||'[]');this.operations=Array.isArray(stored)?this.deletionHandles(stored).filter(op=>op.owner===this.state.user.id&&op.epoch===this.sessionEpoch):[];}catch{this.operations=[];}
   }
   persistDeletionHandles() {
     const handles=this.deletionHandles();
@@ -139,7 +144,7 @@ export class DomainClient {
     const epoch=await fingerprint(me.csrf_token);
     if(generation!==this.generation) throw identityChanged();
     if(this.state.user&&(this.state.user.id!==me.user.id||this.csrf!==me.csrf_token)) {this.invalidate();throw identityChanged();}
-    this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.observeServerScope(me);this.restore();this.emit();return me;
+    this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.restoreDeletionHandles();this.observeServerScope(me);this.restore();this.emit();return me;
   }
   async initialize() { await this.bootstrapIdentity();const capabilities=await this.raw('/api/capabilities');this.state.capabilities=capabilities;if(this.state.user) await this.refresh();else this.emit();return this.state; }
   async login(username,password) {
@@ -147,7 +152,7 @@ export class DomainClient {
     const me=await this.raw('/api/auth/login',{method:'POST',body:{username,password}});
     if(generation!==this.generation) throw identityChanged();
     const epoch=await fingerprint(me.csrf_token);if(generation!==this.generation) throw identityChanged();
-    this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.observeServerScope(me);this.restore();this.broadcast('identity');this.emit();return this.refresh();
+    this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.restoreDeletionHandles();this.observeServerScope(me);this.restore();this.broadcast('identity');this.emit();return this.refresh();
   }
   async verifySession(ticket,{scope=true}={}) {
     this.check(ticket);const me=await this.raw('/api/me');this.check(ticket);
