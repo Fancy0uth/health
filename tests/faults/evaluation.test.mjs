@@ -65,3 +65,38 @@ test('offline summary command handles missing acceptance, missing primary and un
 test('offline setup/not-run evidence remains summarizable when no synthetic database was created',async t=>{
  const dir=await mkdtemp(join(tmpdir(),'ht-summary-no-db-'));t.after(()=>rm(dir,{recursive:true,force:true}));const input=join(dir,'evidence.json'),output=join(dir,'summary.json');await writeFile(input,JSON.stringify({label:'REAL_AGNES_SYNTHETIC_INDEPENDENT_GOLD',format_fixture_only:true,setup_error:'CONFIGURATION_UNAVAILABLE',not_run:[{id:'D01',split:'development',reason:'configuration'}]}));await promisify(execFile)(process.execPath,[fileURLToPath(new URL('../../scripts/evaluate-model.mjs',import.meta.url)),'--summarize',input,output]);const out=JSON.parse(await readFile(output));assert.equal(out.aggregates.all.cases,24);assert.equal(out.aggregates.all.attempted_cases,0);assert.equal(out.aggregates.all.not_run,24);assert.equal(out.aggregates.all.genuine_runs_closed,0);assert.equal(out.not_run.find(c=>c.id==='D01').reason,'configuration');assert.ok(out.database_observation_error);
 });
+
+// V2 tests use fresh independent literals; no historical benchmark rows are labeling inputs.
+import * as evaluationV2 from '../../scripts/evaluate-model.mjs';
+const v2Quote='医嘱：大约三天后带记录咨询。';
+const v2Label={quote:v2Quote,fields:['instruction'],assertion:'affirmed',temporal_scope:'current',time:{raw:'大约三天后',precision:'relative',start:null,end:null},literal_time_required:true,locator:{page:null,start:0,end:v2Quote.length}};
+const v2Candidate={field:'instruction',value:v2Quote,assertion:'affirmed',temporal_scope:'current',effective_time:{...v2Label.time,anchor_source_id:'v2-source'},evidence:[{source_id:'v2-source',source_text_version:1,quote:v2Quote,locator:v2Label.locator}]};
+test('V2 scores missing strong raw time independently from exact literal source support',()=>{
+ assert.equal(typeof evaluationV2.scoreCandidatesV2,'function');
+ const good=evaluationV2.scoreCandidatesV2({candidates:[v2Label]},[v2Candidate],'v2-source');assert.equal(good.semantics_pass,true);assert.equal(good.raw_time_required,1);assert.equal(good.raw_time_preserved,1);
+ const dropped={...v2Candidate,effective_time:{raw:null,precision:'unknown',start:null,end:null,anchor_source_id:'v2-source'}};const score=evaluationV2.scoreCandidatesV2({candidates:[v2Label]},[dropped],'v2-source');assert.equal(score.supported,1);assert.equal(score.raw_time_preserved,0);assert.equal(score.semantics_pass,false);
+ const trimmed={...v2Candidate,effective_time:{...v2Candidate.effective_time,raw:'三天后'}};assert.equal(evaluationV2.scoreCandidatesV2({candidates:[v2Label]},[trimmed],'v2-source').raw_time_preserved,0);
+ for(const value of [null,'not-array',[null],[[v2Candidate]]]){const bad=evaluationV2.scoreCandidatesV2({candidates:[v2Label]},value,'v2-source');assert.equal(bad.semantics_pass,false);assert.equal(bad.expected_count,1);}
+});
+test('V2 honors only predeclared weak-time/ISO alternatives and forbids inferred malformed date endpoints',()=>{
+ assert.equal(typeof evaluationV2.scoreCandidatesV2,'function');
+ const weak={...v2Label,literal_time_required:false,time:{raw:null,precision:'unknown',start:null,end:null},time_alternatives:[{raw:'大约三天后',precision:'relative',start:null,end:null}]};assert.equal(evaluationV2.scoreCandidatesV2({candidates:[weak]},[v2Candidate],'v2-source').semantics_pass,true);
+ const inferred={...v2Candidate,effective_time:{...v2Candidate.effective_time,start:'2026-10-15'}};assert.equal(evaluationV2.scoreCandidatesV2({candidates:[v2Label]},[inferred],'v2-source').semantics_pass,false);
+});
+test('V2 hard schedule completeness rejects null and lost qualifier despite complete task text',()=>{
+ assert.equal(typeof evaluationV2.scoreTasksV2,'function');
+ const gold={tasks:[v2Quote],task_requirements:[{text:v2Quote,instruction_quote:v2Quote,schedule:{required:true,raw:'大约三天后'}}]},confirmed=[{fact_id:'v2-instruction',revision:2,field:'instruction',value:v2Quote,evidence:v2Candidate.evidence}];const t={text:v2Quote,instruction_refs:[{fact_id:'v2-instruction',revision:2}],schedule:'大约三天后'};
+ const good=evaluationV2.scoreTasksV2(gold,{tasks:[t]},confirmed,'v2-source');assert.equal(good.semantics_pass,true);assert.equal(good.schedule_required,1);assert.equal(good.schedule_preserved,1);
+ for(const schedule of [null,'三天后','2026-10-15']){const bad=evaluationV2.scoreTasksV2(gold,{tasks:[{...t,schedule}]},confirmed,'v2-source');assert.equal(bad.supported,1);assert.equal(bad.schedule_preserved,0);assert.equal(bad.semantics_pass,false);}
+ assert.equal(evaluationV2.scoreTasksV2(gold,{tasks:[{...t,instruction_refs:[{fact_id:'unconfirmed',revision:1}]}]},confirmed,'v2-source').semantics_pass,false);
+ assert.equal(evaluationV2.scoreTasksV2({tasks:[],task_requirements:[]},{tasks:[],explanation:'No confirmed instruction.'},[],'v2-source').semantics_pass,true);
+ for(const tasks of [[null],[{...t,instruction_refs:[null]}]])assert.equal(evaluationV2.scoreTasksV2(gold,{tasks},confirmed,'v2-source').semantics_pass,false);
+});
+test('V2 summary counts original Core-malformed output and missing capture before repaired final output',()=>{
+ assert.equal(typeof evaluationV2.summarizeEvidenceV2,'function');
+ const dataset={version:2,cases:[{id:'new-a',split:'development',workflow:'entry',gold:{candidates:[v2Label]}},{id:'new-b',split:'heldout',workflow:'entry',gold:{candidates:[v2Label]}}]};const evidence={cases:[{id:'new-a',acceptance:{source_id:'v2-source'},primary:{run_id:'v2-run',agh:{session_id:'real-fixture-ledger'},status:'needs_review',raw_first_stage:{is_error:true,args:{candidates:null}},final_candidates:[v2Candidate]}},{id:'new-b',error:'CAPTURE_FAILED'}]};const out=evaluationV2.summarizeEvidenceV2(evidence,dataset,{});assert.equal(out.aggregates.all.cases,2);assert.equal(out.aggregates.all.attempted_cases,2);assert.equal(out.aggregates.all.strict_raw_case_pass,0);assert.equal(out.aggregates.all.strict_final_case_pass,1);assert.deepEqual(out.aggregates.all.raw_structural_first_stage,['new-a']);assert.equal(out.cases.find(c=>c.id==='new-b').primary.capture_missing,true);assert.equal(out.aggregates.all.raw.raw_time_required,2);assert.equal(out.aggregates.all.final.raw_time_preserved,1);
+});
+test('V2 offline CLI accepts version/dataset/output explicitly without entering model runtime',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'ht-v2-cli-'));t.after(()=>rm(dir,{recursive:true,force:true}));const input=join(dir,'evidence.json'),output=join(dir,'summary.json');await writeFile(input,JSON.stringify({label:'REAL_AGNES_SYNTHETIC_INDEPENDENT_GOLD',dataset_version:2,setup_error:'FIXTURE_NOT_STARTED',cases:[]}));
+ await promisify(execFile)(process.execPath,[fileURLToPath(new URL('../../scripts/evaluate-model.mjs',import.meta.url)),'--summarize',input,output,'--version','v2','--dataset',fileURLToPath(new URL('../fixtures/model-evaluation.v2.json',import.meta.url)),'--output',output]);const out=JSON.parse(await readFile(output));assert.equal(out.dataset_version,2);assert.equal(out.aggregates.all.cases,24);assert.equal(out.aggregates.all.not_run,24);assert.equal(out.aggregates.all.actual_runs,0);assert.equal(out.aggregates.all.final.schedule_required,9);assert.equal(out.aggregates.all.final.raw_time_required,21);
+});
