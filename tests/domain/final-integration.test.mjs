@@ -333,6 +333,184 @@ test("qualified or malformed dates cannot gain normalized certainty or relative 
       );
   }
 });
-test('time metadata cannot absorb non-time action text beyond its declared literal span',t=>{
- const f=fixture(t),p=prepare(f,'每日记录症状。');assert.throws(()=>stage(f,p,candidate(p,'每日记录症状')),{code:'INVALID_AGENT_OUTPUT'});
+test("time metadata cannot absorb non-time action text beyond its declared literal span", (t) => {
+  const f = fixture(t),
+    p = prepare(f, "每日记录症状。");
+  assert.throws(() => stage(f, p, candidate(p, "每日记录症状")), { code: "INVALID_AGENT_OUTPUT" });
+});
+
+for (const [text, raw, precision] of [
+  ["2026-03-041复诊。", "2026-03-041", "unknown"],
+  ["12026-03-04复诊。", "12026-03-04", "unknown"],
+  ["约 2026-03-04复诊。", "约 2026-03-04", "unknown"],
+  ["大约\t2026/3/4复诊。", "大约\t2026/3/4", "unknown"],
+  ["2026-03-04.5复诊。", "2026-03-04.5", "unknown"],
+  ["1.5天后复诊。", "1.5天后", "relative"],
+  ["约 1.5天后复诊。", "约 1.5天后", "relative"],
+  ["Return after approximately 1.5 days.", "after approximately 1.5 days", "relative"],
+])
+  test(`complete time token is preserved: ${raw}`, (t) => {
+    const f = fixture(t),
+      p = prepare(f, text, "document");
+    const annotated = p.read.sentence_annotations[0].effective_time;
+    assert.deepEqual(
+      [annotated.raw, annotated.precision, annotated.start, annotated.end],
+      [raw, precision, null, null],
+    );
+    const c = candidate(p, null, {
+      field: "instruction",
+      effective_time: { ...candidate(p).effective_time, raw, precision },
+    });
+    assert.ok(stage(f, p, c));
+  });
+test("malformed or qualified date fragments never gain exact certainty at stage or old confirmation", (t) => {
+  const f = fixture(t);
+  for (const text of ["2026-03-041复诊。", "12026-03-04复诊。", "约 2026-03-04复诊。"]) {
+    const p = prepare(f, text, "document"),
+      time = { ...candidate(p).effective_time, raw: "2026-03-04", precision: "exact", start: "2026-03-04" };
+    assert.throws(() => stage(f, p, candidate(p, null, { effective_time: time })), {
+      code: "INVALID_AGENT_OUTPUT",
+    });
+    const validTime = p.read.sentence_annotations[0].effective_time,
+      c = stage(f, p, candidate(p, null, { effective_time: validTime }));
+    c.proposals[0].effective_time = time;
+    f.s.save("fact_change", c);
+    assert.throws(() => confirm(f, c), { code: "INVALID_AGENT_OUTPUT" });
+    assert.equal(f.s.user(f.a).revision, 1);
+    assert.equal(f.s.profile(f.a).facts.length, 0);
+  }
+});
+test("ordinary action text cannot be stage or old-confirm time metadata; legitimate null schedule survives", (t) => {
+  const f = fixture(t),
+    p = prepare(f, "Record symptoms.", "document");
+  for (const precision of ["relative", "unknown"])
+    assert.throws(
+      () =>
+        stage(
+          f,
+          p,
+          candidate(p, "Record", {
+            field: "instruction",
+            effective_time: { ...candidate(p, "Record").effective_time, precision },
+          }),
+        ),
+      { code: "INVALID_AGENT_OUTPUT" },
+    );
+  const c = stage(f, p, candidate(p, null, { field: "instruction" }));
+  c.proposals[0].effective_time.raw = "Record";
+  c.proposals[0].effective_time.precision = "relative";
+  f.s.save("fact_change", c);
+  assert.throws(() => confirm(f, c), { code: "INVALID_AGENT_OUTPUT" });
+  assert.equal(f.s.all("fact_revision").length, 0);
+  c.proposals[0].effective_time.raw = null;
+  c.proposals[0].effective_time.precision = "unknown";
+  f.s.save("fact_change", c);
+  const committed = confirm(f, c);
+  f.s.claimRun(committed.continuation_run_id);
+  const tools = f.s.toolsFor(committed.continuation_run_id),
+    i = tools.healththread_get_confirmed_instructions({ document_id: p.document_id }).instructions[0],
+    ref = { fact_id: i.fact_id, revision: i.revision };
+  assert.ok(
+    tools.healththread_stage_result({
+      kind: "care_plan",
+      payload: { tasks: [{ text: i.value, instruction_refs: [ref], schedule: null }] },
+      dependencies: [ref],
+      operation_key: key(),
+    }).result_id,
+  );
+});
+test("legacy confirmed action-time metadata cannot produce a care schedule and remains unmodified", (t) => {
+  const f = fixture(t),
+    p = prepare(f, "Record symptoms.", "document"),
+    bad = candidate(p, "Record", { field: "instruction" });
+  // Import an immutable historical revision directly to model pre-fix confirmed data.
+  const fact = f.s.insert(f.a, "fact_revision", {
+    ...bad,
+    fact_id: "legacy-instruction",
+    revision: 1,
+    review_status: "confirmed",
+  });
+  const run = f.s.newRun(f.a, "care_plan", [p.source_id], { document_id: p.document_id });
+  f.s.queueRun(run, "legacy-operation");
+  f.s.claimRun(run.id);
+  const tools = f.s.toolsFor(run.id);
+  tools.healththread_get_confirmed_instructions({ document_id: p.document_id });
+  const ref = { fact_id: fact.fact_id, revision: 1 };
+  for (const schedule of ["Record", null])
+    assert.throws(
+      () =>
+        tools.healththread_stage_result({
+          kind: "care_plan",
+          payload: { tasks: [{ text: fact.value, instruction_refs: [ref], schedule }] },
+          dependencies: [ref],
+          operation_key: key(),
+        }),
+      { code: "INVALID_AGENT_OUTPUT" },
+    );
+  assert.equal(f.s.all("care_task").length, 0);
+  assert.equal(f.s.all("result").length, 0);
+  assert.deepEqual(f.s.get(f.a, "fact_revision", fact.id), fact);
+});
+test("manual time construction retains whole malformed dates and decimal offsets, with finite weak alternatives", (t) => {
+  const f = fixture(t),
+    p = prepare(f, "头痛。");
+  confirm(f, stage(f, p));
+  const fact = f.s.profile(f.a).facts[0];
+  for (const [text, raw, precision] of [
+    ["12026-03-04记录。", "12026-03-04", "unknown"],
+    ["1.5天后记录。", "1.5天后", "relative"],
+    ["Record symptoms.", null, "unknown"],
+  ]) {
+    const receipt = f.s.changeRequest(
+      f.a,
+      fact.fact_id,
+      { kind: "correction", text, expected_version: 1 },
+      key(),
+    );
+    const time = f.s.get(f.a, "fact_change", receipt.fact_change_id).proposals[0].effective_time;
+    assert.deepEqual([time.raw, time.precision, time.start, time.end], [raw, precision, null, null]);
+  }
+  for (const [text, raw, scope] of [
+    ["目前不适。", "目前", "current"],
+    ["去年曾不适。", "去年曾", "past"],
+    ["Currently unwell.", "Currently", "current"],
+  ]) {
+    const p = prepare(f, text);
+    assert.ok(stage(f, p, candidate(p, raw, { temporal_scope: scope })));
+  }
+});
+test("numeric separators and embedded identifiers never expose partial time cues", (t) => {
+  const f = fixture(t);
+  for (const [text, raw, precision] of [
+    ["1,5天后复诊。", "1,5天后", "relative"],
+    ["12026/03/041复诊。", "12026/03/041", "unknown"],
+    ["x2026-03-04复诊。", null, "unknown"],
+    ["x1.5天后复诊。", null, "unknown"],
+    ["Return on 2026-03-04.", "2026-03-04", "unknown"],
+  ]) {
+    const p = prepare(f, text, "document");
+    assert.deepEqual(
+      [
+        p.read.sentence_annotations[0].effective_time.raw,
+        p.read.sentence_annotations[0].effective_time.precision,
+      ],
+      [raw, precision],
+    );
+  }
+});
+test("supported English qualifiers remain complete through confirmed care schedules", (t) => {
+  for (const raw of ["after approximately three days", "after at least three days"]) {
+    const f = fixture(t),
+      c = care(f, "Return " + raw + ".", raw);
+    const result = c.tools.healththread_stage_result(c.args);
+    assert.equal(f.s.get(f.a, "result", result.result_id).payload.tasks[0].schedule, raw);
+  }
+});
+test("comma-separated literal dates stay complete instead of merging into a numeric component", (t) => {
+  const f = fixture(t),
+    p = prepare(f, "2026-03-04,2026-03-05记录。");
+  const time = p.read.sentence_annotations[0].effective_time;
+  assert.equal(time.raw, "2026-03-04,2026-03-05");
+  assert.equal(time.precision, "unknown");
+  assert.ok(stage(f, p, candidate(p, null, { effective_time: time })));
 });

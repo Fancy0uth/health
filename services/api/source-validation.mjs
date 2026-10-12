@@ -121,10 +121,20 @@ export function validateCandidate(c, readSource) {
   if (c.field === "medication") valid(/(服用|用药|药物|口服|静滴|\bmedication\b|\btake\b)/i.test(quote));
   if (c.field === "allergy") valid(/(过敏|allerg)/i.test(quote));
   if (c.field === "test") valid(/(检查|检验|报告|化验|test|scan)/i.test(quote));
-  const time = c.effective_time;
+  validateSourceTime(
+    c.effective_time,
+    quote,
+    refs.map(({ source }) => source.id),
+  );
+  return structuredClone(c);
+}
+
+// Also validate legacy confirmed instruction metadata at continuation: equality
+// with a stored raw value alone does not establish that it expresses time.
+export function validateSourceTime(time, quote, sourceIds) {
   keys(time, ["raw", "precision", "start", "end", "timezone", "anchor_source_id"]);
   valid(["exact", "interval", "relative", "unknown"].includes(time.precision));
-  valid(refs.some((x) => x.source.id === time.anchor_source_id));
+  valid(sourceIds.includes(time.anchor_source_id));
   const literal = literalSourceTime(quote, time.anchor_source_id);
   if (literal.raw !== null) {
     valid(time.raw === literal.raw, {
@@ -143,6 +153,18 @@ export function validateCandidate(c, readSource) {
         expected: "unknown",
         rule: "Qualified, malformed, non-normalized or multiple date cues stay literal with null endpoints.",
       });
+  }
+  if (literal.raw === null) {
+    const weak = typeof time.raw === "string" && weakSourceTimes(quote).includes(time.raw);
+    valid(
+      (time.raw === null && time.precision === "unknown") ||
+        (weak && ["relative", "unknown"].includes(time.precision)),
+      {
+        path: "candidate.effective_time",
+        expected: literal,
+        rule: "Without a recognized time cue, use unknown/raw=null or a supported literal past/current marker; action text is not time.",
+      },
+    );
   }
   valid(time.timezone === null || time.timezone === "Asia/Shanghai" || time.timezone === "UTC");
   if (time.precision === "unknown")
@@ -164,7 +186,17 @@ export function validateCandidate(c, readSource) {
       valid(time.precision !== "interval" || time.end !== null);
     }
   }
-  return structuredClone(c);
+}
+
+function weakSourceTimes(quote) {
+  const marker = String.raw`(?:目前|现在|今日|今天|当前|既往|曾经|曾|以前|过去|去年|\bhistory of\b|\bpreviously\b|\bcurrently\b|\btoday\b)`;
+  // Individual markers and whole adjacent marker groups, bounded linear scans.
+  // Do not enumerate arbitrary substrings or borrow intervening action words.
+  const single = [...quote.matchAll(new RegExp(marker, "gi"))].map((match) => match[0]);
+  const groups = [...quote.matchAll(new RegExp(`${marker}(?:\\s*${marker})*`, "gi"))].map(
+    (match) => match[0],
+  );
+  return [...new Set([...single, ...groups])];
 }
 
 // Mechanical source locators, never medical extraction or model output repair.
@@ -211,24 +243,20 @@ export function classifySourceMarkers(quote) {
 // Recognize only declared literal forms. Enclosing spans retain qualifiers and all
 // simultaneous cues; never turn an offset into a calendar date or clinical rule.
 export function literalSourceTime(quote, sourceId) {
-  const number =
-    "(?:[0-9]+|one|two|three|four|five|six|seven|eight|nine|ten|十一|十二|[一二三四五六七八九十两]+)";
-  const date =
-    "(?:[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}|[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}|[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日)";
-  const relative =
-    "(?:每[日天周月]|" +
-    number +
-    "(?:小时|天|日|周|个月|月)(?:后|前)|\\b(?:daily|weekly|monthly|every (?:day|week|month)|(?:after|before|in) (?:about |approximately |at least |at most )?" +
-    number +
-    " (?:days?|weeks?|months?|hours?)|(?:last|next) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year))\\b)";
-  const pattern = new RegExp(
-    "(?:大约|约|至少|最多|about |approximately |at least |at most )?(?:" +
-      date +
-      "|" +
-      relative +
-      ")(?:左右|以内|之前|之后)?",
-    "gi",
-  );
+  // Capture whole numeric/date-like tokens, including invalid widths and decimal
+  // components. Boundaries prohibit extracting a valid-looking suffix/prefix.
+  const numeric = String.raw`[+-]?[0-9]+(?:[.,][0-9]+)*`;
+  const number = String.raw`(?:${numeric}|one|two|three|four|five|six|seven|eight|nine|ten|十一|十二|[一二三四五六七八九十两]+)`;
+  const dateNumber = String.raw`[+-]?[0-9]+(?:\.[0-9]+)*`;
+  const date = String.raw`(?:${dateNumber}-${dateNumber}-${dateNumber}|${dateNumber}/${dateNumber}/${dateNumber}|${dateNumber}年${dateNumber}月${dateNumber}日)`;
+  const relative = String.raw`(?:每[日天周月]|${number}(?:小时|天|日|周|个月|月)(?:后|前)|\b(?:daily|weekly|monthly|every (?:day|week|month)|(?:after|before|in)\s+(?:(?:about|approximately|at least|at most)\s+)?${number}\s+(?:days?|weeks?|months?|hours?)|(?:last|next) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year))\b)`;
+  const qualifier = String.raw`(?:(?:大约|约|至少|最多|\babout|\bapproximately|\bat least|\bat most)\s*)?`;
+  const suffix = String.raw`(?:\s*(?:左右|以内|之前|之后))?`;
+  // A comma can separate two dates; within a numeric offset it must not expose
+  // a suffix such as 5天后 from the literal 1,5天后.
+  const dateCue = String.raw`(?<![A-Za-z0-9_.+/-])${qualifier}${date}${suffix}(?![A-Za-z0-9_/+-]|\.[0-9])`;
+  const relativeCue = String.raw`(?<![A-Za-z0-9_.,+/-])${qualifier}${relative}${suffix}(?![A-Za-z0-9_/+-]|[.,][0-9])`;
+  const pattern = new RegExp(`${dateCue}|${relativeCue}`, "gi");
   const matches = [...quote.matchAll(pattern)];
   const raw = matches.length
     ? quote.slice(matches[0].index, matches.at(-1).index + matches.at(-1)[0].length)

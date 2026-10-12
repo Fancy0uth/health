@@ -11,6 +11,7 @@ import {
   sentenceAnnotations,
   classifySourceMarkers,
   literalSourceTime,
+  validateSourceTime,
 } from "./source-validation.mjs";
 const id = (kind) => `${kind}_${randomUUID()}`;
 const hash = (v) => createHash("sha256").update(v).digest("hex");
@@ -1240,6 +1241,13 @@ export class DomainStore {
             422,
           );
           seen.add(task.text);
+          for (const instruction of instructions) {
+            validateSourceTime(
+              instruction.effective_time,
+              instruction.value,
+              instruction.evidence.map((evidence) => evidence.source_id),
+            );
+          }
           check(
             instructions.every((instruction) => task.schedule === instruction.effective_time.raw),
             "INVALID_AGENT_OUTPUT",
