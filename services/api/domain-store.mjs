@@ -43,7 +43,7 @@ export class DomainStore {
  consent(uid){this.user(uid);return this.all('consent',uid).find(x=>x.purpose==='analysis');}
  requireConsent(uid){const c=this.consent(uid);check(c.granted,'CONSENT_REQUIRED',403);return c;}
  setConsent(uid,body){check(body.purpose==='analysis'&&typeof body.granted==='boolean');return this.transaction(()=>{const c=this.consent(uid);check(c.version===body.expected_version,'REVISION_CONFLICT',409);c.version++;c.granted=body.granted;c.recorded_at=this.now();this.save('consent',c);this.db.prepare('UPDATE users SET epoch=epoch+1 WHERE id=?').run(uid);for(const r of this.all('run',uid))if(active.includes(r.status)){r.status='cancelled';r.phase='consent_changed';r.scope_epoch++;this.save('run',r);this.finishDispatch(r);}return c;});}
- receipt(uid,operation,key,body,fn){check(typeof key==='string'&&key.length>=16&&key.length<=128,'IDEMPOTENCY_KEY_REQUIRED');const requestHash=hash(canonical(body)),prev=this.db.prepare('SELECT * FROM receipts WHERE owner=? AND operation=? AND key=?').get(uid,operation,key);if(prev){check(prev.request_hash===requestHash,'IDEMPOTENCY_CONFLICT',409);const outcome=JSON.parse(prev.outcome);if(/^(accept|retry|change):/.test(operation)&&outcome.source_id)check(this.db.prepare("SELECT id FROM objects WHERE id=? AND owner=? AND type='source'").get(outcome.source_id,uid),'SOURCE_DELETED',410);return outcome;}const result=fn();this.db.prepare('INSERT INTO receipts VALUES(?,?,?,?,?)').run(uid,operation,key,requestHash,JSON.stringify(result));return result;}
+ receipt(uid,operation,key,body,fn){check(typeof key==='string'&&key.length>=16&&key.length<=128,'IDEMPOTENCY_KEY_REQUIRED');const requestHash=hash(canonical(body)),prev=this.db.prepare('SELECT * FROM receipts WHERE owner=? AND operation=? AND key=?').get(uid,operation,key);if(prev){check(prev.request_hash===requestHash,'IDEMPOTENCY_CONFLICT',409);const outcome=JSON.parse(prev.outcome);if(/^(accept|retry|reanalyse|change):/.test(operation)&&outcome.source_id)check(this.db.prepare("SELECT id FROM objects WHERE id=? AND owner=? AND type='source'").get(outcome.source_id,uid),'SOURCE_DELETED',410);return outcome;}const result=fn();this.db.prepare('INSERT INTO receipts VALUES(?,?,?,?,?)').run(uid,operation,key,requestHash,JSON.stringify(result));return result;}
  text(text){check(typeof text==='string'&&text.trim().length>0);check(Buffer.byteLength(text)<=this.limits.textBytes,'PAYLOAD_TOO_LARGE',413);return text;}
  newRun(uid,workflow,sourceIds,extra={}){const u=this.user(uid),c=this.requireConsent(uid);return this.insert(uid,'run',{workflow,status:'queued',phase:'queued',source_ids:sourceIds,base_profile_revision:u.revision,consent_version:c.version,epoch:u.epoch,scope_epoch:1,created_at:this.now(),expires_at:this.clock()+this.limits.scopeTtlMs,deadline:this.clock()+this.limits.deadlineMs,fact_change_id:null,result_id:null,result_ref:null,error:null,tool_receipts:[],...extra});}
  queueRun(run,operationId){run.operation_id=operationId;this.save('run',run);this.insert(run.owner,'dispatch',{run_id:run.id,operation_id:operationId,state:'queued',attempt:0,deadline:run.deadline,version:1});}
@@ -101,7 +101,40 @@ export class DomainStore {
   if(change.document_id&&selected.length){const doc=this.get(uid,'document',change.document_id);const r=this.newRun(uid,'care_plan',[doc.source_id],{document_id:doc.id,parent_run_id:change.run_id});this.queueRun(r,operation.id);continuation=r.id;}
   return {profile_revision:revision,commit_receipt:operation.id,operation_id:operation.id,...(continuation?{continuation_run_id:continuation}:{})};
  }));}
- reject(uid,changeId,body,key){return this.confirm(uid,changeId,{...body,accepted_change_ids:[]},key);}
+ reject(uid,changeId,body,key){
+  return this.transaction(()=>this.receipt(uid,`reject:${changeId}`,key,body,()=>{
+   const change=this.get(uid,'fact_change',changeId),user=this.user(uid),consent=this.requireConsent(uid);
+   check(change.status==='pending','REVISION_CONFLICT',409);
+   check(change.epoch===user.epoch&&change.consent_version===consent.version,'SCOPE_REVOKED',403);
+   // Rejection creates no fact: compare the user's current snapshot, not the proposal's old base.
+   check(body.expected_profile_revision===user.revision,'REVISION_CONFLICT',409);
+   if(change.run_id)check(this.get(uid,'run',change.run_id).status==='needs_review','SCOPE_REVOKED',409);
+   change.status='rejected';change.accepted_change_ids=[];change.confirmed_at=this.now();this.save('fact_change',change);
+   if(change.run_id){const run=this.get(uid,'run',change.run_id);run.status='completed';run.phase='rejected';run.scope_epoch++;this.save('run',run);this.finishDispatch(run);}
+   const audit=this.insert(uid,'audit',{kind:'reject',change_id:change.id,profile_revision:user.revision,recorded_at:this.now()});
+   const operation=this.insert(uid,'operation',{kind:'reject',status:'committed',fact_change_id:change.id,profile_revision:user.revision,audit_id:audit.id,recorded_at:this.now()});
+   return {profile_revision:user.revision,commit_receipt:operation.id,operation_id:operation.id};
+  }));
+ }
+ reanalyse(uid,runId,body,key){
+  return this.transaction(()=>this.receipt(uid,`reanalyse:${runId}`,key,body,()=>{
+   const old=this.get(uid,'run',runId),user=this.user(uid),consent=this.requireConsent(uid);
+   check(body.expected_profile_revision===user.revision,'REVISION_CONFLICT',409);
+   check(old.status==='needs_review'&&!old.deleted&&old.fact_change_id,'RUN_NOT_REANALYSABLE',409);
+   check(old.epoch===user.epoch&&old.consent_version===consent.version,'SCOPE_REVOKED',403);
+   const change=this.get(uid,'fact_change',old.fact_change_id);check(change.status==='pending','REVISION_CONFLICT',409);
+   for(const sid of old.source_ids)this.get(uid,'source',sid);
+   const queued=this.all('dispatch').filter(d=>['queued','running'].includes(d.state));
+   check(queued.length<this.limits.queueDepth&&queued.filter(d=>d.owner===uid).length<this.limits.userQueueDepth,'QUEUE_BUSY',429);
+   // Expire the old proposal and scope atomically; never rebase its values into current facts.
+   old.status='cancelled';old.phase='reanalysed';old.scope_epoch++;this.save('run',old);this.finishDispatch(old);
+   const run=this.newRun(uid,old.workflow,old.source_ids,{document_id:old.document_id,parent_run_id:old.id});
+   change.status='expired';change.superseded_by_run_id=run.id;this.save('fact_change',change);
+   const operation=this.insert(uid,'operation',{kind:'reanalyse',status:'committed',run_id:run.id,previous_run_id:old.id,source_id:old.source_ids[0],expired_fact_change_id:change.id,saved:true,recorded_at:this.now()});
+   this.queueRun(run,operation.id);
+   return {run_id:run.id,source_id:old.source_ids[0],operation_id:operation.id,expired_fact_change_id:change.id,saved:true};
+  }));
+ }
  invalidate(uid,predicate,status){for(const type of ['result','care_task'])for(const item of this.all(type,uid))if(predicate(item)){item.status=type==='result'?status:item.status;item.validity=status;this.save(type,item);}}
  stageResult(run,args,read){keys(args,['kind','payload','dependencies','operation_key']);return this.receipt(run.owner,`result:${run.id}`,args.operation_key,args,()=>{
   check(Buffer.byteLength(JSON.stringify(args))<=this.limits.outputBytes,'INVALID_AGENT_OUTPUT',422);check((run.workflow==='visit'&&args.kind==='visit_preparation')||(run.workflow==='care_plan'&&args.kind==='care_plan'),'INVALID_AGENT_OUTPUT',422);
@@ -114,16 +147,16 @@ export class DomainStore {
   if(args.kind==='visit_preparation'){
    keys(payload,['speech','questions','unknowns','claims'],['speech','questions','unknowns','claims']);check(typeof payload.speech==='string'&&payload.speech.length<=20000&&Array.isArray(payload.questions)&&payload.questions.every(x=>typeof x==='string'&&x.length<=1000)&&payload.questions.length<=20&&Array.isArray(payload.unknowns)&&payload.unknowns.every(x=>typeof x==='string'&&x.length<=1000)&&payload.unknowns.length<=30&&Array.isArray(payload.claims)&&payload.claims.length<=100,'INVALID_AGENT_OUTPUT',422);
    check(payload.questions.every(q=>/[？?]$/.test(q)&&!/(请服|请用|停药|加量|减量|[0-9一二三四五六七八九十]+\s*(?:mg|ml|毫克|毫升|片|粒|次|天|周))/i.test(q)),'INVALID_AGENT_OUTPUT',422);
-   check(payload.claims.some(c=>Array.isArray(c.evidence)&&c.evidence.some(e=>e.source_id===run.source_ids[0])),'INVALID_AGENT_OUTPUT',422);
+   check(payload.claims.some(c=>Array.isArray(c.evidence)&&c.evidence.some(e=>e.source_id===run.source_ids[0]&&e.quote===c.text)),'INVALID_AGENT_OUTPUT',422);
    const supported=[];for(const claim of payload.claims){keys(claim,['text','fact_refs','evidence']);check(typeof claim.text==='string'&&Array.isArray(claim.fact_refs)&&Array.isArray(claim.evidence),'INVALID_AGENT_OUTPUT',422);const quotes=claim.fact_refs.map(ref=>{check(hasFact(ref),'INVALID_AGENT_OUTPUT',422);return factRef(ref).value;});if(claim.evidence.length){for(const {evidence:e}of validateEvidence(claim.evidence,sid=>read(run,sid))){check(args.dependencies.some(d=>d.source_id===e.source_id&&d.source_text_version===e.source_text_version),'INVALID_AGENT_OUTPUT',422);quotes.push(e.quote);}}
-    check(quotes.includes(claim.text),'INVALID_AGENT_OUTPUT',422);supported.push(claim.text);
+    check(quotes.length>0&&quotes.every(quote=>quote===claim.text),'INVALID_AGENT_OUTPUT',422);supported.push(claim.text);
    }
    // Only source-supported sentences may be asserted in the speech. Questions/unknowns remain explicitly questions.
    check(payload.speech===supported.join('\n'),'INVALID_AGENT_OUTPUT',422);payload.department={status:'not_configured'};payload.triage={status:'not_configured'};
   } else {
    keys(payload,['tasks','explanation'],['tasks']);check(Array.isArray(payload.tasks)&&payload.tasks.length<=100,'INVALID_AGENT_OUTPUT',422);const seen=new Set();
-   for(const task of payload.tasks){keys(task,['text','instruction_refs','schedule']);check(typeof task.text==='string'&&Array.isArray(task.instruction_refs)&&task.instruction_refs.length>0,'INVALID_AGENT_OUTPUT',422);const instructions=task.instruction_refs.map(ref=>{check(hasFact(ref),'INVALID_AGENT_OUTPUT',422);const f=factRef(ref);check(f.field==='instruction'&&f.evidence.some(e=>run.source_ids.includes(e.source_id)),'INVALID_AGENT_OUTPUT',422);return f;});check(instructions.some(i=>i.value===task.text)&&!seen.has(task.text),'INVALID_AGENT_OUTPUT',422);seen.add(task.text);check(task.schedule===null||(typeof task.schedule==='string'&&task.schedule.length>0&&task.text.includes(task.schedule)&&/(每日|每天|每周|每月|早|晚|小时|[0-9一二三四五六七八九十]+[日天周月时点]|\d{4}-\d{2}-\d{2})/.test(task.schedule)),'INVALID_AGENT_OUTPUT',422);}
-   const confirmed=facts.filter(f=>f.field==='instruction'&&f.evidence.some(e=>run.source_ids.includes(e.source_id)));check(confirmed.every(f=>payload.tasks.some(t=>t.instruction_refs.some(r=>r.fact_id===f.fact_id&&r.revision===f.revision))),'INVALID_AGENT_OUTPUT',422);if(!payload.tasks.length)check(typeof payload.explanation==='string'&&payload.explanation.trim().length>0,'INVALID_AGENT_OUTPUT',422);
+   for(const task of payload.tasks){keys(task,['text','instruction_refs','schedule']);check(typeof task.text==='string'&&Array.isArray(task.instruction_refs)&&task.instruction_refs.length>0,'INVALID_AGENT_OUTPUT',422);const instructions=task.instruction_refs.map(ref=>{check(hasFact(ref),'INVALID_AGENT_OUTPUT',422);const f=factRef(ref);check(f.field==='instruction'&&f.evidence.some(e=>run.source_ids.includes(e.source_id)),'INVALID_AGENT_OUTPUT',422);return f;});check(instructions.every(i=>i.value===task.text)&&!seen.has(task.text),'INVALID_AGENT_OUTPUT',422);seen.add(task.text);check(task.schedule===null||(typeof task.schedule==='string'&&task.schedule.length>0&&task.text.includes(task.schedule)&&/(每日|每天|每周|每月|早|晚|小时|[0-9一二三四五六七八九十]+[日天周月时点]|\d{4}-\d{2}-\d{2})/.test(task.schedule)),'INVALID_AGENT_OUTPUT',422);}
+   const confirmed=facts.filter(f=>f.field==='instruction'&&f.evidence.some(e=>run.source_ids.includes(e.source_id)));check(confirmed.every(f=>payload.tasks.some(t=>t.text===f.value&&t.instruction_refs.some(r=>r.fact_id===f.fact_id&&r.revision===f.revision))),'INVALID_AGENT_OUTPUT',422);if(!payload.tasks.length)check(typeof payload.explanation==='string'&&payload.explanation.trim().length>0,'INVALID_AGENT_OUTPUT',422);
   }
   const result=this.insert(run.owner,'result',{kind:args.kind,schema_version:1,payload,dependencies:args.dependencies,status:'current',validity:'current',run_id:run.id,source_ids:run.source_ids,created_at:this.now()});
   if(args.kind==='care_plan')for(const task of payload.tasks)this.insert(run.owner,'care_task',{...task,document_id:run.document_id,result_id:result.id,dependencies:args.dependencies,source_ids:run.source_ids,status:'open',validity:'current',version:1});

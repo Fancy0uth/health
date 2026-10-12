@@ -206,7 +206,8 @@
         "effective_time",
         "evidence",
         "proposal_kind"
-      ]
+      ],
+      "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
     }
   }
 }

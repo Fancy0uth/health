@@ -193,7 +193,8 @@
         "text",
         "fact_refs",
         "evidence"
-      ]
+      ],
+      "description": "Every cited source quote and fact value must equal the rendered claim text. A visit must render at least one claim supported directly by the current concern source."
     },
     "visit_payload": {
       "type": "object",
@@ -263,7 +264,8 @@
         "text",
         "instruction_refs",
         "schedule"
-      ]
+      ],
+      "description": "Every instruction_ref must have exactly this task text. All distinct confirmed instruction texts must be represented; identical instruction texts may share one task with their corresponding references."
     },
     "care_payload": {
       "type": "object",

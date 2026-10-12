@@ -21,7 +21,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
   const path=decodeURIComponent(new URL(req.url,'http://localhost').pathname);const method=req.method;
   if(path.startsWith('/api/')){
    if(!['GET','HEAD'].includes(method))origin(req);
-   if(path==='/api/health'&&method==='GET')return json(res,200,{ok:true,storage:'sqlite',capabilities:capabilities()});
+   if(path==='/api/health'&&method==='GET')return json(res,200,{ok:true,storage:'sqlite',dispatch:jobs.status(),capabilities:capabilities()});
    if(path==='/api/capabilities'&&method==='GET')return json(res,200,capabilities());
    if(path==='/api/auth/login'&&method==='POST'){
     const now=Date.now();for(const [k,v]of attempts)if(now-v.start>configured.loginWindowMs)attempts.delete(k);const address=req.socket.remoteAddress||'unknown';const record=attempts.get(address)||{start:now,count:0};check(record.count<configured.loginAttempts,'RATE_LIMITED',429);record.count++;attempts.set(address,record);const b=await jsonBody(req,configured);const result=store.login(b.username,b.password);const {token,...publicResult}=result;return json(res,200,publicResult,{'Set-Cookie':`ht_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(configured.sessionTtlMs/1000)}${req.socket.encrypted?'; Secure':''}`});
@@ -55,6 +55,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    match=path.match(/^\/api\/fact-changes\/([^/]+)\/(confirm|reject)$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);const result=match[2]==='confirm'?store.confirm(uid,match[1],body,key):store.reject(uid,match[1],body,key);jobs.kick();return json(res,200,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/cancel$/);if(match&&method==='POST'){const result=store.cancel(uid,match[1]);jobs.cancel(match[1]);return json(res,200,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/retry$/);if(match&&method==='POST'){const result=store.retry(uid,match[1],key);jobs.kick();return json(res,202,result);}
+   match=path.match(/^\/api\/runs\/([^/]+)\/reanalyse$/);if(match&&method==='POST'){const result=store.reanalyse(uid,match[1],await jsonBody(req,configured),key);jobs.cancel(match[1]);jobs.kick();return json(res,202,result);}
    match=path.match(/^\/api\/facts\/([^/]+)\/change-requests$/);if(match&&method==='POST')return json(res,202,store.changeRequest(uid,match[1],await jsonBody(req,configured),key));
    match=path.match(/^\/api\/care-tasks\/([^/]+)$/);if(match&&method==='PATCH')return json(res,200,store.updateTask(uid,match[1],await jsonBody(req,configured)));
    match=path.match(/^\/api\/data\/(all|[^/]+)$/);if(match&&method==='DELETE'){const result=store.deleteData(uid,match[1],key);for(const [rid]of jobs.running)if(store.internalRun(rid).owner===uid)jobs.cancel(rid);return json(res,202,result);}

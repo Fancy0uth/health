@@ -149,3 +149,40 @@ test('context honors keyword, selected source and assigned episode filters',t=>{
 test('visit speech must include its current concern instead of only selected history',t=>{
  const f=fixture(t),x=stage(f,'旧记录。');const a=f.s.accept(f.a,'visit',{current_concern:'新困扰。',selected_source_ids:[x.source.id]},key(2));f.s.claimRun(a.run_id);const tools=f.s.toolsFor(a.run_id);tools.healththread_read_source({source_id:a.source_id});tools.healththread_retrieve_context({source_ids:[x.source.id]});assert.throws(()=>tools.healththread_stage_result({kind:'visit_preparation',payload:{speech:'旧记录。',questions:[],unknowns:[],claims:[{text:'旧记录。',fact_refs:[],evidence:candidate(x.source).evidence}]},dependencies:[{source_id:x.source.id,source_text_version:1}],operation_key:key(3)}),{code:'INVALID_AGENT_OUTPUT'});
 });
+test('candidate field, assertion, temporal scope and time cannot borrow unrelated evidence',t=>{
+ const f=fixture(t);
+ for(const [n,text,value,overrides]of [
+  [1,'头痛。诊断肺炎。','头痛。',{field:'diagnosis'}],
+  [2,'头痛。否认发热。','头痛。',{assertion:'negated'}],
+  [3,'头痛。既往咳嗽。','头痛。',{temporal_scope:'past'}],
+  [4,'头痛。2026-10-12咳嗽。','头痛。',{effective_time:{raw:'2026-10-12',precision:'exact',start:'2026-10-12',end:null,timezone:null}}],
+ ]){
+  const a=f.s.accept(f.a,'entry',{text},key(n));f.s.claimRun(a.run_id);const tools=f.s.toolsFor(a.run_id),source=tools.healththread_read_source({source_id:a.source_id}).source;tools.healththread_retrieve_context({});const evidence=[{source_id:source.id,source_text_version:1,locator:{page:null,start:0,end:value.length},quote:value},{source_id:source.id,source_text_version:1,locator:{page:null,start:value.length,end:text.length},quote:text.slice(value.length)}];const c=candidate(source,{value,evidence,...overrides});if(overrides.effective_time)c.effective_time.anchor_source_id=source.id;
+  assert.throws(()=>tools.healththread_stage_candidates({candidates:[c],base_profile_revision:1,operation_key:key(100+n)}),{code:'INVALID_AGENT_OUTPUT'},text);
+  assert.equal(f.s.get(f.a,'run',a.run_id).status,'running');assert.equal(f.s.profile(f.a).pending_changes.length,0);
+ }
+});
+test('unused concern evidence cannot launder a history-only visit speech',t=>{
+ const f=fixture(t),x=stage(f,'旧记录。');const a=f.s.accept(f.a,'visit',{current_concern:'新困扰。',selected_source_ids:[x.source.id]},key(2));f.s.claimRun(a.run_id);const tools=f.s.toolsFor(a.run_id),concern=tools.healththread_read_source({source_id:a.source_id}).source;tools.healththread_retrieve_context({source_ids:[x.source.id]});const old=candidate(x.source).evidence[0],current=candidate(concern).evidence[0];const dependencies=[{source_id:x.source.id,source_text_version:1},{source_id:concern.id,source_text_version:1}];
+ assert.throws(()=>tools.healththread_stage_result({kind:'visit_preparation',payload:{speech:'旧记录。',questions:[],unknowns:[],claims:[{text:'旧记录。',fact_refs:[],evidence:[old,current]}]},dependencies,operation_key:key(3)}),{code:'INVALID_AGENT_OUTPUT'});
+ assert.equal(f.s.get(f.a,'run',a.run_id).result_id,null);
+ const result=tools.healththread_stage_result({kind:'visit_preparation',payload:{speech:'旧记录。\n新困扰。',questions:[],unknowns:[],claims:[{text:'旧记录。',fact_refs:[],evidence:[old]},{text:'新困扰。',fact_refs:[],evidence:[current]}]},dependencies,operation_key:key(4)});assert.equal(f.s.get(f.a,'result',result.result_id).payload.speech,'旧记录。\n新困扰。');
+});
+test('care task renders each referenced distinct instruction while identical instructions may share one task',t=>{
+ for(const texts of [['请记录体温。','请带检查报告。'],['请记录体温。','请记录体温。']]){
+  const f=fixture(t),a=f.s.accept(f.a,'document',{text:texts.join('')},key(1));f.s.claimRun(a.run_id);const tools=f.s.toolsFor(a.run_id),source=tools.healththread_read_source({source_id:a.source_id}).source;tools.healththread_retrieve_context({});let start=0;const candidates=texts.map(value=>{const end=start+value.length;const c=candidate(source,{field:'instruction',value,evidence:[{source_id:source.id,source_text_version:1,locator:{page:null,start,end},quote:value}]});start=end;return c;});const staged=tools.healththread_stage_candidates({candidates,base_profile_revision:1,operation_key:key(2)});const fc=f.s.get(f.a,'fact_change',staged.fact_change_id);const confirmed=f.s.confirm(f.a,fc.id,{accepted_change_ids:fc.proposals.map(p=>p.id),expected_profile_revision:1},key(3));f.s.claimRun(confirmed.continuation_run_id);const next=f.s.toolsFor(confirmed.continuation_run_id);const ins=next.healththread_get_confirmed_instructions({document_id:a.document_id}).instructions;const refs=ins.map(i=>({fact_id:i.fact_id,revision:i.revision}));const merged={kind:'care_plan',payload:{tasks:[{text:texts[0],instruction_refs:refs,schedule:null}]},dependencies:refs,operation_key:key(4)};
+  if(texts[0]!==texts[1]){
+   assert.throws(()=>next.healththread_stage_result(merged),{code:'INVALID_AGENT_OUTPUT'});assert.equal(f.s.careTasks(f.a).tasks.length,0);
+   const result=next.healththread_stage_result({...merged,payload:{tasks:ins.map(i=>({text:i.value,instruction_refs:[{fact_id:i.fact_id,revision:i.revision}],schedule:null}))},operation_key:key(5)});assert.deepEqual(f.s.get(f.a,'result',result.result_id).payload.tasks.map(t=>t.text),texts);
+  }else{next.healththread_stage_result(merged);assert.equal(f.s.careTasks(f.a).tasks.length,1);assert.equal(f.s.careTasks(f.a).tasks[0].instruction_refs.length,2);}
+ }
+});
+test('stale review supports current-revision rejection and CAS reanalysis from saved source without confirming stale facts',t=>{
+ const f=fixture(t),x=stage(f,'第一条。','entry',1),y=stage(f,'待拒绝。','entry',2),z=stage(f,'待重分析。','entry',3);const change=item=>f.s.get(f.a,'fact_change',item.staged.fact_change_id);const cx=change(x),cy=change(y),cz=change(z);f.s.confirm(f.a,cx.id,{accepted_change_ids:[cx.proposals[0].id],expected_profile_revision:1},key(10));
+ for(const revision of [1,2])assert.throws(()=>f.s.confirm(f.a,cy.id,{accepted_change_ids:[cy.proposals[0].id],expected_profile_revision:revision},key(10+revision)),{code:'REVISION_CONFLICT'});
+ const rejected=f.s.reject(f.a,cy.id,{expected_profile_revision:2},key(20));assert.equal(rejected.profile_revision,2);assert.equal(change(y).status,'rejected');assert.equal(f.s.profile(f.a).facts.length,1);
+ assert.equal(typeof f.s.reanalyse,'function','needs_review recovery must reuse the saved source');assert.throws(()=>f.s.reanalyse(f.a,z.accepted.run_id,{expected_profile_revision:1},key(21)),{code:'REVISION_CONFLICT'});assert.equal(change(z).status,'pending');assert.throws(()=>f.s.reanalyse(f.b,z.accepted.run_id,{expected_profile_revision:2},key(22)),{code:'NOT_FOUND'});
+ const recovery=f.s.reanalyse(f.a,z.accepted.run_id,{expected_profile_revision:2},key(23));assert.equal(recovery.source_id,z.source.id);assert.notEqual(recovery.run_id,z.accepted.run_id);assert.deepEqual(f.s.reanalyse(f.a,z.accepted.run_id,{expected_profile_revision:2},key(23)),recovery);assert.throws(()=>f.s.reanalyse(f.a,z.accepted.run_id,{expected_profile_revision:3},key(23)),{code:'IDEMPOTENCY_CONFLICT'});assert.equal(change(z).status,'expired');assert.equal(f.s.get(f.a,'run',z.accepted.run_id).status,'cancelled');assert.equal(f.s.timeline(f.a).entries.length,3);assert.equal(f.s.profile(f.a).facts.length,1);
+ assert.throws(()=>z.tools.healththread_read_source({source_id:z.source.id}),e=>['SCOPE_REVOKED','RUN_CANCELLED'].includes(e.code));assert.throws(()=>f.s.confirm(f.a,cz.id,{accepted_change_ids:[cz.proposals[0].id],expected_profile_revision:2},key(24)),{code:'REVISION_CONFLICT'});
+ f.s.claimRun(recovery.run_id);const tools=f.s.toolsFor(recovery.run_id);tools.healththread_read_source({source_id:z.source.id});tools.healththread_retrieve_context({});const fresh=tools.healththread_stage_candidates({candidates:[candidate(z.source)],base_profile_revision:2,operation_key:key(25)});const proposed=f.s.get(f.a,'fact_change',fresh.fact_change_id);assert.equal(f.s.confirm(f.a,proposed.id,{accepted_change_ids:[proposed.proposals[0].id],expected_profile_revision:2},key(26)).profile_revision,3);
+});

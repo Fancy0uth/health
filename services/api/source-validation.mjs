@@ -17,9 +17,10 @@ export function validateCandidate(c,readSource) {
  valid(['new','correction','retraction'].includes(c.proposal_kind));
  const refs=validateEvidence(c.evidence,readSource);
  // Intentionally conservative: preserve a complete source sentence verbatim, not an inferred diagnosis or dose.
- valid(typeof c.value==='string'&&refs.some(({evidence:e})=>e.quote===c.value));
+ valid(typeof c.value==='string'&&refs.every(({evidence:e})=>e.quote===c.value));
  for(const {source:s,evidence:e} of refs){const {start,end}=e.locator;valid(start===0||/[。！？!?\n；;]/.test(s.text[start-1]));valid(end===s.text.length||/[。！？!?\n；;]/.test(s.text[end-1]));}
- const quote=refs.map(x=>x.evidence.quote).join('\n');
+ // Each reference must support the rendered value itself. Unrelated sentences cannot lend semantics.
+ const quote=c.value;
  const neg=/(否认|未见|没有|无|未发现|\bno\b|\bdenies\b|\bwithout\b)/i.test(quote);
  const uncertain=/(考虑|待排|可能|疑似|不确定|不详|\bpossible\b|\bsuspected\b|\bmay\b)/i.test(quote);
  valid(!/(未提及|未询问|不详|not mentioned|not assessed)/i.test(quote));
