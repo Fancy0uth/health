@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {sentenceSpans} from '../../services/api/source-validation.mjs';
+import {sentenceSpans,literalSourceTime} from '../../services/api/source-validation.mjs';
 import {fixturePdf} from './pdf-fixture.mjs';
 import {createApp} from '../../services/api/domain-server.mjs';
 let DomainClient, MemoryStorage;
@@ -17,9 +17,9 @@ const fixtureAgent = {mode:'fixture', async run({run, tools}) {
   if (run.workflow === 'visit') return tools.healththread_stage_result({kind:'visit_preparation',operation_key:'client-fixture-result-key',dependencies:[{source_id:source.id,source_text_version:1}],payload:{speech:source.text,questions:['还需要哪些就诊资料？'],unknowns:['未记录其他资料'],claims:[{text:source.text,evidence:[evidence],fact_refs:[]}]}});
   if (run.workflow === 'care_plan') {
     const {instructions} = await tools.healththread_get_confirmed_instructions({document_id:run.document_id});
-    return tools.healththread_stage_result({kind:'care_plan',operation_key:'client-fixture-care-key',dependencies:instructions.map(f=>({fact_id:f.fact_id,revision:f.revision})),payload:{tasks:instructions.map(f=>({text:f.value,schedule:null,instruction_refs:[{fact_id:f.fact_id,revision:f.revision}]})),explanation:'合成测试'}});
+    return tools.healththread_stage_result({kind:'care_plan',operation_key:'client-fixture-care-key',dependencies:instructions.map(f=>({fact_id:f.fact_id,revision:f.revision})),payload:{tasks:instructions.map(f=>({text:f.value,schedule:f.effective_time.raw,instruction_refs:[{fact_id:f.fact_id,revision:f.revision}]})),explanation:'合成测试'}});
   }
-  return tools.healththread_stage_candidates({base_profile_revision:context.snapshot_revision,operation_key:'client-fixture-candidates-key',candidates:sentenceSpans(source).map(span=>({field:run.workflow==='document'?'instruction':'reported_text',value:span.quote,assertion:'affirmed',temporal_scope:'unknown',effective_time:{raw:null,precision:'unknown',start:null,end:null,timezone:null,anchor_source_id:source.id},evidence:[span],proposal_kind:'new'}))});
+  return tools.healththread_stage_candidates({base_profile_revision:context.snapshot_revision,operation_key:'client-fixture-candidates-key',candidates:sentenceSpans(source).map(span=>({field:run.workflow==='document'?'instruction':'reported_text',value:span.quote,assertion:'affirmed',temporal_scope:'unknown',effective_time:literalSourceTime(span.quote,source.id),evidence:[span],proposal_kind:'new'}))});
 }};
 async function setup(t,{agent=fixtureAgent}={}) {
   assert.ok(DomainClient, 'shared authenticated domain client is required');
@@ -165,4 +165,14 @@ test('fresh client reload after committed lost DELETE preserves only owner/sessi
   const {app,transport}=await setup(t);const storage=new MemoryStorage();let committedReceipt,lose=true;
   const first=new DomainClient({storage,channel:null,fetchImpl:async(path,options)=>{const response=await transport(path,options);if(path==='/api/data/all'&&lose){lose=false;committedReceipt=await response.clone().json();throw new TypeError('lost committed delete response');}return response;}});t.after(()=>first.dispose());await first.initialize();await first.createEntry('刷新后必须擦除的服务器原文。');await app.jobs.drain();first.setDraft('record','刷新后必须擦除的本机正文');const owner=first.state.user.id,session=first.sessionEpoch;storage.setItem('healththread-domain:operations:'+owner+':other-session','其他会话健康正文');await assert.rejects(first.deleteData('all'),e=>e.code==='OUTCOME_UNKNOWN');const original=first.pendingOperations()[0],recoveryKey=first.deletionRecoveryKey();assert.ok(storage.getItem(recoveryKey));first.dispose();
   let replayHeader,leakedDraft=false;const reloaded=new DomainClient({storage,channel:null,fetchImpl:async(path,options)=>{if(path==='/api/data/all')replayHeader=options.headers['X-HealthThread-Epoch'];return transport(path,options);}});t.after(()=>reloaded.dispose());reloaded.subscribe(()=>{if(reloaded.getDraft('record'))leakedDraft=true;});await reloaded.initialize();assert.equal(leakedDraft,false);assert.equal(reloaded.state.user.id,owner);assert.equal(reloaded.sessionEpoch,session);assert.equal(reloaded.getDraft('record'),'');assert.equal(storage.getItem('healththread-domain:operations:'+owner+':other-session'),null);const handle=reloaded.pendingOperations().find(op=>op.id===original.id);assert.ok(handle,'reload must preserve the original opaque recovery handle before all-clear cleanup');assert.equal(handle.key,original.key);assert.equal(handle.scopeEpoch,original.scopeEpoch);assert.ok(reloaded.scopeEpoch>handle.scopeEpoch);assert.deepEqual(handle.body,{});assert.ok(![...storage.values.values()].some(value=>value.includes('必须擦除的本机正文')));const receipt=await reloaded.retryOperation(handle.id);assert.deepEqual(receipt,committedReceipt);assert.equal(replayHeader,String(original.scopeEpoch));assert.equal(reloaded.allClearEpoch,1);assert.equal(reloaded.pendingOperations().length,0);assert.equal(storage.getItem(recoveryKey),null);
+});
+test('peer polling and export tolerate indirect result withdrawal after fact-source deletion',async t=>{
+ const agent={...fixtureAgent,async run(input){
+  const {run,tools}=input;if(run.workflow!=='visit')return fixtureAgent.run(input);
+  const {source}=tools.healththread_read_source({source_id:run.source_ids[0]});const {facts}=tools.healththread_retrieve_context({});const fact=facts[0],ref={fact_id:fact.fact_id,revision:fact.revision};
+  return tools.healththread_stage_result({kind:'visit_preparation',payload:{speech:source.text+'\n'+fact.value,questions:[],unknowns:[],claims:[{text:source.text,evidence:sentenceSpans(source),fact_refs:[]},{text:fact.value,evidence:[],fact_refs:[ref]}]},dependencies:[{source_id:source.id,source_text_version:1},ref],operation_key:'client-indirect-result-key'});
+ }};
+ const {app,a,b}=await setup(t,{agent});const first=await a.createEntry('独立旧事实。');await app.jobs.drain();const staged=await a.pollRun(first.run_id),review=await a.factChange(staged.fact_change_id);await a.confirm(review.id,review.proposals.map(p=>p.id),review.base_profile_revision);await a.refresh();
+ const visit=await a.createVisit('保留这条困扰。',[]);await app.jobs.drain();const completed=await b.pollRun(visit.run_id);const removedResult=completed.result_id;assert.ok(removedResult);
+ await a.deleteData(first.source_id);await b.refresh();const withdrawn=await b.pollRun(visit.run_id,{force:true});assert.equal(withdrawn.result_id,null);assert.equal(withdrawn.phase,'result_withdrawn');assert.equal((await b.source(visit.source_id)).text,'保留这条困扰。');assert.ok(!b.state.results.some(r=>r.id===removedResult));const exported=await b.exportData();assert.ok(!JSON.stringify(exported.runs).includes(removedResult));assert.ok(Object.values(b.state.runs).some(r=>r.id===visit.run_id));
 });

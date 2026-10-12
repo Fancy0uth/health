@@ -125,3 +125,5 @@ scope 在业务服务中生成，绑定 AGH session key、run、user、consent�
 身份猜测、来源 IDOR、恶意文档指令、过期事实、模糊日期、否定/待排误改、两端旧版本确认、重复提交/未知结果、模型失败、服务重启中断、取消/授权撤回/删除后晚返回、过期卡和无文本 PDF。来源 quote 命中但不支持字段也是失败样例。
 
 合成测试与真实模型结果分开记；保留 PRD 12 开发/12 留出建议，样例覆盖这些输入类。工程检查不能替代专业规则审阅。
+
+Task 5 refinement: explicit literal time follows `docs/backend/decisions.md` (source annotations; no inferred calendar dates). Care tasks retain validity for unchanged exact instruction/source dependencies; W2 profile context invalidation remains conservative. Cancelled/revoked reviews expire transactionally; source deletion clears indirect artifact references. Every dispatch, including confirmation continuation, shares bounded admission with atomic 429 rollback.

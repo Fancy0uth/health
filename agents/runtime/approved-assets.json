@@ -7,8 +7,8 @@
     "plugin/index.mjs": "881da4732193186e6c4de535ebab702febee542a13ae4e1d0c529f5d792629eb",
     "plugin/package.json": "9158773845dd4027fa2a92080f00a4da03c77307c68f0869af90ef7359242ebe",
     "plugin/schemas.json": "fb02b53d813e8d19b46c0b0a44d8c3af754e63e8121b8462ecc89c77159d9793",
-    "skills/health-record/SKILL.md": "5e6dadf2c18d13de40eb3fffe63760869d13f03602da85030aee34e3532719c4",
-    "skills/post-visit/SKILL.md": "7a2a2a3889de099b2b078bb711de85eeba2217c465f22549c183961b3dbfae3d",
-    "skills/visit-preparation/SKILL.md": "692b4f821a2e01d96c1cf4b5157ec6bc5b1b69505b8034de68e6c5771da617a1"
+    "skills/health-record/SKILL.md": "62f903c13488818ed8f0e4672485acde6c85bee82629d5722bc277bc85cdae21",
+    "skills/post-visit/SKILL.md": "6089487bf2bbe2e7ebcf84d406a871f7067d6dfbdae34138e8c5252685bea150",
+    "skills/visit-preparation/SKILL.md": "ecaf61c31f435f262cc3d18e30f3a747c76b73068870722a9c937a0a7f294e5e"
   }
 }

@@ -37,3 +37,5 @@ GET /api/state 兼容领域投影（登录必需）；PUT →405。旧生成接�
 DomainStore 构造({dbPath,demoAccounts?,clock?})，SQLite；公开所有者受控 methods，DispatchQueue 接收 agent.run({run,scope,tools,signal})。tools 是绑定 scope 的对象，每个函数返回真实结构化回执；agent 不能构造 owner。真实AGH适配器通过可信插件/调用上下文接线，不把这些函数假装SDK固有工具。测试可注入 deterministic fixture agent，须 mode=fixture。
 
 createApp({root,dbPath,agent?,demoAccounts?,limits?}) → {server,store,jobs,close()}；服务器必须对默认未配置身份/模型 fail closed。保留静态入口 /web/、/mobile/ 和共享 client。临床与工作流规则放产品 agents/runtime，开发 prompt 不加载到产品 workspace。
+
+Task 5 refinement: explicit literal time follows `docs/backend/decisions.md` (source annotations; no inferred calendar dates). Care tasks retain validity for unchanged exact instruction/source dependencies; W2 profile context invalidation remains conservative. Cancelled/revoked reviews expire transactionally; source deletion clears indirect artifact references. Every dispatch, including confirmation continuation, shares bounded admission with atomic 429 rollback.

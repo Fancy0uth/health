@@ -1,6 +1,6 @@
 # 双端动作与业务接口
 
-`apps/web/src/main.js`、`apps/mobile/src/main.js` 挂载共享 `packages/client/domain-ui.js` / `domain-client.js`。两入口同源且同用户scope；手机版不是另外一个数据库或后端端口。最终真实浏览器验收由根协调者记录。
+`apps/web/src/app.js`、`apps/mobile/app.js` 挂载共享 `packages/client/domain-ui.js` / `domain-client.js`。两入口同源且同用户scope；手机版不是另外一个数据库或后端端口。最终真实浏览器验收由根协调者记录。
 
 |两端动作|当前业务接口|完成/失败的用户反馈与证据|
 |---|---|---|

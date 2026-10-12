@@ -3393,6 +3393,13 @@
           },
           "superseded_by_run_id": {
             "type": "string"
+          },
+          "terminal_reason": {
+            "type": "string",
+            "description": "Explicit reason a pending review expired: run_cancelled, consent_changed, source_scope_changed or reanalysed."
+          },
+          "expired_at": {
+            "type": "string"
           }
         },
         "required": [
@@ -3500,6 +3507,13 @@
             "items": {
               "$ref": "#/components/schemas/Source"
             }
+          },
+          "terminal_reason": {
+            "type": "string",
+            "description": "Explicit reason a pending review expired: run_cancelled, consent_changed, source_scope_changed or reanalysed."
+          },
+          "expired_at": {
+            "type": "string"
           }
         },
         "required": [
@@ -4227,7 +4241,10 @@
             "type": "boolean"
           },
           "fact_change_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "profile_revision": {
             "type": "integer",
@@ -4240,7 +4257,10 @@
             "type": "string"
           },
           "expired_fact_change_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "deleted": {
             "type": "boolean"
