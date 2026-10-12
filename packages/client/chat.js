@@ -12,7 +12,7 @@ export async function askAssistant(question, context = {}) {
   if (endpoint) {
     const payload = await requestAgent(endpoint, { question, messages: context.messages || [] });
     if (typeof payload.answer !== 'string') throw new Error('回复格式有误，请稍后重试。');
-    return { answer: payload.answer, action: ['home', 'timeline', 'visit'].includes(payload.action) ? payload.action : null, demo: false };
+    return { answer: payload.answer, action: ['home', 'timeline', 'visit'].includes(payload.action) ? payload.action : null, demo: false,run_id:payload.run_id,source_id:payload.source_id,runtime:payload.runtime,execution_error:payload.execution_error };
   }
   await new Promise(resolve => setTimeout(resolve, 420));
   const relatedCount = (context.records || []).filter(r => /胃|腹|反酸/.test(r.text)).length;
@@ -28,4 +28,21 @@ export async function askAssistant(question, context = {}) {
   return match
     ? { answer: match.answer, action: match.action, demo: true }
     : { answer: '我可以帮你整理记录、查看时间线，或准备就诊沟通信息。请告诉我你想核对哪件事；不确定的信息会保留为「未记录」。', action: null, demo: true };
+}
+
+export function appendAssistantReply(sessions,id,message) {
+  const current=sessions.find(session=>session.id===id);
+  if(!current)return false;
+  const existing=message.run_id&&current.messages.find(m=>m.role==='assistant'&&m.run_id===message.run_id);
+  if(existing)Object.assign(existing,message);else current.messages.push({role:'assistant',...message});
+  delete current.failedQuestion;
+  return true;
+}
+
+export function executionLabel(run) {
+  if(!run)return '';
+  if(run.runtime?.mode==='real'&&run.runtime.agh?.provider==='agnes-ai'&&run.runtime.agh.tool_receipt_ids?.length>=3)return 'Agnes 模型 · AGH 回执已核验';
+  if(run.execution_error)return '产物已暂存，AGH 完整回执未核验';
+  if(run.runtime?.mode==='fixture')return '测试模型输出';
+  return '正在核验 AGH 处理回执';
 }

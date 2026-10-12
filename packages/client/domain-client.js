@@ -218,7 +218,7 @@ export class DomainClient {
     this.check(ticket);await this.verifySession(ticket);this.epochHeaders(ticket.scopeEpoch);
     if(this.operations.some(op=>op.slot===slot&&['unknown','sending'].includes(op.state))) throw problem('UNRESOLVED_OPERATION','前次请求结果未知。请先用原请求查询 / 重试回执，当前输入已保留。');
     const op={id:crypto.randomUUID(),key:crypto.randomUUID(),slot,path,method,body:clone(body),owner:ticket.user,epoch:ticket.epoch,scopeEpoch:ticket.scopeEpoch,allClearEpoch:ticket.allClearEpoch,state:'sending',created_at:new Date().toISOString(),file};
-    this.operations.push(op);this.persist();this.emit({type:'operation'});return this.execute(op,ticket);
+    this.operations.push(op);this.persist();this.emit({type:'operation',operation:op});return this.execute(op,ticket);
   }
   async execute(op,ticket) {
     this.check(ticket);if(op.owner!==ticket.user||op.epoch!==ticket.epoch) throw identityChanged();
@@ -264,6 +264,7 @@ export class DomainClient {
   }
   async fileMetadata(file) {return {name:file.name,type:file.type,size:file.size,sha256:await fingerprint(await file.arrayBuffer())};}
   createEntry(text) {return this.submit('entry','/api/entries',{text,input_kind:'self_report'});}
+  async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
   async createDocument({text,name,file}={}) { const ticket=this.ticket();if(file) {const metadata=await this.fileMetadata(file);this.check(ticket);return this.submit('document','/api/documents',{file:metadata},'POST',file,ticket);}return this.submit('document','/api/documents',{text,name}); }
   async createVisit(currentConcern,sourceIds) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('visit','/api/visit-preparations',{current_concern:currentConcern,selected_source_ids:sourceIds.filter(id=>allowed.has(id))},'POST',null,ticket);}
   factChange(id) {return this.read('/api/fact-changes/'+encodeURIComponent(id));}
@@ -287,16 +288,17 @@ export class DomainClient {
   exportData() {return this.read('/api/export');}
   async cancelRun(id) {const value=await this.mutate('/api/runs/'+encodeURIComponent(id)+'/cancel','POST',{});this.state.runs[id]=value;this.emit();return value;}
   runSignature(run) {return JSON.stringify([run.status,run.phase,run.fact_change_id,run.result_id,run.result_ref,run.source_ids,run.error,run.execution_error,run.runtime,run.deleted]);}
-  async pollRun(id,{signal,deadlineMs=130000,refresh=true,force=false}={}) {
+  async pollRun(id,{signal,deadlineMs=130000,refresh=true,force=false,requireRuntime=false}={}) {
     const ticket=this.ticket(),deadline=Date.now()+deadlineMs;
     const cached=this.settledRuns.get(id),known=this.state.runs[id];
-    if(!force&&cached&&known&&cached.signature===this.runSignature(known)) {await this.verifySession(ticket);await this.verifyReadScope(ticket);return clone(cached.run);}
+    const finalized=run=>!requireRuntime||!['completed','needs_review'].includes(run.status)||!!(run.runtime||run.execution_error);
+    if(!force&&cached&&known&&cached.signature===this.runSignature(known)&&finalized(cached.run)) {await this.verifySession(ticket);await this.verifyReadScope(ticket);return clone(cached.run);}
     while(Date.now()<deadline) {
       signal?.throwIfAborted();await this.verifySession(ticket);const run=await this.read('/api/runs/'+encodeURIComponent(id),ticket);
       if(run.fact_change_id) run.change=await this.read('/api/fact-changes/'+encodeURIComponent(run.fact_change_id),ticket);
       if(run.result_id||run.result_ref) run.result=await this.read('/api/results/'+encodeURIComponent(run.result_id||run.result_ref),ticket);
       this.check(ticket);this.state.runs[id]=run;this.emit({type:'run',run});
-      if(!['queued','running'].includes(run.status)) {this.settledRuns.set(id,{signature:this.runSignature(run),run:clone(run)});if(refresh) await this.refresh();return run;}
+      if(!['queued','running'].includes(run.status)&&finalized(run)) {this.settledRuns.set(id,{signature:this.runSignature(run),run:clone(run)});if(refresh) await this.refresh();return run;}
       await new Promise((resolve,reject)=>{const timer=setTimeout(done,this.pollMs);function done(){signal?.removeEventListener('abort',abort);resolve();}function abort(){clearTimeout(timer);signal?.removeEventListener('abort',abort);reject(signal.reason);}signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted) abort();});
       this.check(ticket);
     }

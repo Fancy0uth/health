@@ -4,7 +4,7 @@ const native=nativeBridge();
 import { requestAgent } from '../../../packages/client/api.js';
 import { createEmptyState, flushData } from '../../../packages/client/data.js';
 import { NAV, INITIAL, loadData, saveData, resetData } from '../../../packages/client/data.js';
-import { askAssistant } from '../../../packages/client/chat.js';
+import { askAssistant, appendAssistantReply, executionLabel } from '../../../packages/client/chat.js';
 
 const app = document.getElementById('app');
 let data = loadData();
@@ -76,7 +76,7 @@ function shell(content) {
   const nav = NAV.map(item => `<button class="nav-item ${page === item.id ? 'active' : ''}" type="button" data-act="nav" data-page="${item.id}" ${page === item.id ? 'aria-current="page"' : ''}><img src="./assets/${item.icon}" alt=""/><span>${item.label}</span></button>`).join('');
   return `<div class="app-shell">
     <aside class="sidebar ${mobileMenu ? 'is-open' : ''}" aria-label="主导航"><div class="brand"><img src="./assets/healththread-logo.svg" alt="HealthThread" width="176" height="121"/></div><nav>${nav}</nav></aside>
-    <div class="main-shell"><header class="topbar"><button class="menu-toggle" data-act="toggle-menu" aria-label="打开菜单" type="button" aria-expanded="${mobileMenu}">☰</button><strong>${routeTitle()}</strong><div class="top-tools"><span class="search-mark" aria-hidden="true">⌕</span><span class="tool-divider"></span><span>林悦 ⌄</span></div></header><main id="main-content">${content}</main></div>
+    <div class="main-shell"><header class="topbar"><button class="menu-toggle" data-act="toggle-menu" aria-label="打开菜单" type="button" aria-expanded="${mobileMenu}">☰</button><strong>${routeTitle()}</strong><div class="top-tools"><span class="search-mark" aria-hidden="true">⌕</span><span class="tool-divider"></span><button class="btn btn-secondary" type="button" data-act="account">${esc(native.client.state.user?.username||'账号')} ⌄</button></div></header><main id="main-content">${content}</main></div>
     ${mobileMenu ? '<button class="mobile-scrim" type="button" data-act="toggle-menu" aria-label="关闭菜单"></button>' : ''}
     ${sessionDeletionDialog()}
     ${notice ? `<div class="toast" role="status">${esc(notice)}${native.client.pendingOperations().length?button('恢复原请求','recover-original'):''}</div>` : ''}
@@ -136,14 +136,14 @@ function persist() { saveData(data); render(); }
 function chatMessages() {
   const messages = activeSession()?.messages || [];
   if (!messages.length) return `<div class="chat-empty"><h2>今天想聊点什么？</h2><p>描述不适、整理记录，或准备就诊。</p><div class="suggestions">${[['描述不适并准备就诊', '饭后总腹胀，偶尔反酸，去医院前该准备什么？'], ['整理最近记录', '帮我整理最近的身体记录。'], ['还要补充什么？', '还需要补充哪些信息？']].map(([label, question]) => `<button type="button" data-act="suggest" data-question="${attr(question)}">${label}</button>`).join('')}</div></div>`;
-  return `<div class="chat-thread" id="chat-thread" aria-live="polite">${messages.map(item => `<div class="chat-bubble ${item.role === 'user' ? 'from-user' : 'from-assistant'}">${item.role === 'assistant' ? '<strong>HealthThread</strong>' : ''}<p>${esc(item.text).replaceAll('\n', '<br>')}</p>${item.error ? button('重试回复', 'retry-chat') : item.action ? button(item.action === 'visit' ? '查看就诊准备' : item.action === 'timeline' ? '查看时间线' : item.action === 'review' ? '核对这条记录' : '继续记录', item.action === 'review' ? 'review' : `go-${item.action}`, 'secondary', item.recordId ? `data-id="${attr(item.recordId)}"` : '') : ''}</div>`).join('')}${chatBusy ? '<div class="chat-bubble from-assistant"><span class="loading-dot"></span>正在整理回复…</div>' : ''}</div>`;
+  return `<div class="chat-thread" id="chat-thread" aria-live="polite">${messages.map(item => `<div class="chat-bubble ${item.role === 'user' ? 'from-user' : 'from-assistant'}">${item.role === 'assistant' ? '<strong>HealthThread</strong>' : ''}<p>${esc(item.text).replaceAll('\n', '<br>')}</p>${item.run_id?`<small class="muted" title="${attr(item.run_id)}">${esc(executionLabel(native.client.state.runs[item.run_id]))}</small>`:''}${item.error ? button('重试回复', 'retry-chat') : item.action ? button(item.action === 'visit' ? '查看就诊准备' : item.action === 'timeline' ? '查看时间线' : item.action === 'review' ? '核对这条记录' : '继续记录', item.action === 'review' ? 'review' : `go-${item.action}`, 'secondary', item.recordId ? `data-id="${attr(item.recordId)}"` : '') : ''}</div>`).join('')}${chatBusy ? '<div class="chat-bubble from-assistant"><span class="loading-dot"></span>正在通过 AGH 生成回复…</div>' : ''}</div>`;
 }
 function homePage() {
   const recent = sortedSessions().slice(0, 3).map((s, i) => `<button class="recent-conversation" type="button" data-act="conversation" data-id="${attr(s.id)}"><span>${sessionDate(s)} · ${esc(s.title)}</span><span class="${i === 0 ? 'warning-text' : 'green-text'}">${s.messages.length} 条消息 · ${i === 0 ? '继续查看' : '已保存'}</span></button>`).join('');
   const isRecord = inputMode === 'record';
   const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   const voiceLabel = voiceListening ? '停止语音输入' : voiceSupported ? '开始语音输入' : '当前浏览器不支持语音输入';
-  return `<div class="content home-content" data-node-id="4:63"><h1>你好，林悦</h1><div class="home-grid"><section class="chat-panel panel"><div class="chat-top"><h2>AI 健康助手</h2>${button('新对话', 'new-chat', 'quiet', activeSession() ? '' : 'disabled')}</div>${chatMessages()}<div class="composer-wrap"><form id="chat-form" class="chat-composer"><div class="composer-modes" role="group" aria-label="输入用途"><button type="button" class="composer-mode ${isRecord ? '' : 'active'}" data-act="mode-ask" aria-pressed="${!isRecord}">向助手提问</button><button type="button" class="composer-mode ${isRecord ? 'active' : ''}" data-act="mode-record" aria-pressed="${isRecord}">记录身体感受</button></div><label for="chat-input" class="sr-only">${isRecord ? '记录身体感受' : '向 AI 健康助手提问'}</label><textarea id="chat-input" rows="1" placeholder="${isRecord ? '例如：饭后有点腹胀…' : activeSession() ? '还需要补充哪些信息？' : '就诊前，我应该准备哪些资料？'}">${esc(isRecord ? recordDraft : chatDraft)}</textarea><div class="composer-bottom"><span class="composer-help">${voiceListening ? '正在听，请说话…' : isRecord ? '保存后可核对记录' : 'Enter 发送 · Shift + Enter 换行'}</span><div class="composer-actions"><button type="button" class="mic-button ${voiceListening ? 'is-listening' : ''}" data-act="voice" aria-label="${voiceLabel}" title="${voiceLabel}" aria-pressed="${voiceListening}" ${voiceSupported ? '' : 'disabled'}><img src="./assets/b8836.svg" alt="" width="22" height="22"/></button>${button(isRecord ? '保存记录' : chatBusy ? '回复中…' : '发送 ↑', isRecord ? 'save-record' : 'send-chat', 'primary', chatBusy ? 'disabled' : '')}</div></div></form><p class="chat-note">回答供参考；记录保存后需要你核对。</p></div></section><div class="home-rail">${panel('对话记录', (recent || hint('还没有对话。')) + button('查看全部对话', 'conversations', 'secondary', data.sessions.length ? 'class="full-width"' : 'class="full-width" disabled'), 'recent-panel')}<section class="panel pending-panel"><div class="between"><h2>待核对</h2><span class="small warning-text">${pendingCount()} 项</span></div><p class="small muted">${hasPending() ? '开始时间、症状描述' : '当前没有待核对事项'}</p>${button('去核对', 'review', 'primary', hasPending() ? '' : 'disabled')}</section></div></div></div>`;
+  return `<div class="content home-content" data-node-id="4:63"><h1>你好，${esc(native.client.state.user?.username||'')}</h1><div class="home-grid"><section class="chat-panel panel"><div class="chat-top"><h2>AI 健康助手</h2>${button('新对话', 'new-chat', 'quiet', activeSession() ? '' : 'disabled')}</div>${chatMessages()}<div class="composer-wrap"><form id="chat-form" class="chat-composer"><div class="composer-modes" role="group" aria-label="输入用途"><button type="button" class="composer-mode ${isRecord ? '' : 'active'}" data-act="mode-ask" aria-pressed="${!isRecord}">向助手提问</button><button type="button" class="composer-mode ${isRecord ? 'active' : ''}" data-act="mode-record" aria-pressed="${isRecord}">记录身体感受</button></div><label for="chat-input" class="sr-only">${isRecord ? '记录身体感受' : '向 AI 健康助手提问'}</label><textarea id="chat-input" rows="1" placeholder="${isRecord ? '例如：饭后有点腹胀…' : activeSession() ? '还需要补充哪些信息？' : '就诊前，我应该准备哪些资料？'}">${esc(isRecord ? recordDraft : chatDraft)}</textarea><div class="composer-bottom"><span class="composer-help">${voiceListening ? '正在听，请说话…' : isRecord ? '保存后可核对记录' : 'Enter 发送 · Shift + Enter 换行'}</span><div class="composer-actions"><button type="button" class="mic-button ${voiceListening ? 'is-listening' : ''}" data-act="voice" aria-label="${voiceLabel}" title="${voiceLabel}" aria-pressed="${voiceListening}" ${voiceSupported ? '' : 'disabled'}><img src="./assets/b8836.svg" alt="" width="22" height="22"/></button>${button(isRecord ? '保存记录' : chatBusy ? '回复中…' : '发送 ↑', isRecord ? 'save-record' : 'send-chat', 'primary', chatBusy ? 'disabled' : '')}</div></div></form><p class="chat-note">回答供参考；记录保存后需要你核对。</p></div></section><div class="home-rail">${panel('对话记录', (recent || hint('还没有对话。')) + button('查看全部对话', 'conversations', 'secondary', data.sessions.length ? 'class="full-width"' : 'class="full-width" disabled'), 'recent-panel')}<section class="panel pending-panel"><div class="between"><h2>待核对</h2><span class="small warning-text">${pendingCount()} 项</span></div><p class="small muted">${hasPending() ? '开始时间、症状描述' : '当前没有待核对事项'}</p>${button('去核对', 'review', 'primary', hasPending() ? '' : 'disabled')}</section></div></div></div>`;
 }
 
 function conversationPage() {
@@ -239,7 +239,7 @@ function recordsPage() {
 }
 
 function settingsPage() {
-  return `<div class="content settings-content" data-node-id="4:213">${actionHeader('设置与数据')}<div class="columns settings-columns"><div class="stack">${panel('授权管理', row('健康记录整理', data.consent.organize ? '已授权' : '已撤回', button('管理', 'consent')) + row('病历解析', data.consent.parse ? '已授权' : '已撤回', button('管理', 'consent')) + row('语音处理', data.consent.voice ? '已授权' : '未开启', button('管理', 'consent')))}${panel('数据处理', row('处理范围', '用户选择的记录', button('详情', 'consent')) + row('数据去向', window.HEALTHTHREAD_API_URL ? '项目配置的处理服务' : '当前演示档案演示数据', button('详情', 'consent')))}${panel('我的数据', row('导出资料', `最近导出：${data.exportAt ? fmt(data.exportAt).replace(/^\d+年/, '') : '未生成'}`, button('选择范围', 'export')) + row('删除数据', '选择后再次确认', button('删除', 'delete-confirm')))}</div><div class="stack">${panel('处理记录', `<p>导出资料 · ${data.exportAt ? '已完成' : '未发起'}</p>${button('查看导出', 'export')}<p class="${data.deleteResult ? 'green-text' : 'muted'}">删除数据 · ${data.deleteResult ? '已完成' : '未发起'}</p>${button('查看处理结果', 'delete-result')}`, 'processing-panel')}</div></div></div>`;
+  return `<div class="content settings-content" data-node-id="4:213">${actionHeader('设置与数据')}<div class="columns settings-columns"><div class="stack">${panel('当前账号',row('已登录',native.client.state.user?.username||'未登录')+hint('手机端和电脑端共享登录状态与健康资料。')+button('退出登录','logout'))}${panel('授权管理', row('健康记录整理', data.consent.organize ? '已授权' : '已撤回', button('管理', 'consent')) + row('病历解析', data.consent.parse ? '已授权' : '已撤回', button('管理', 'consent')) + row('语音处理', data.consent.voice ? '已授权' : '未开启', button('管理', 'consent')))}${panel('数据处理', row('处理范围', '用户选择的记录', button('详情', 'consent')) + row('数据去向', window.HEALTHTHREAD_API_URL ? '项目配置的处理服务' : '当前演示档案演示数据', button('详情', 'consent')))}${panel('我的数据', row('导出资料', `最近导出：${data.exportAt ? fmt(data.exportAt).replace(/^\d+年/, '') : '未生成'}`, button('选择范围', 'export')) + row('删除数据', '选择后再次确认', button('删除', 'delete-confirm')))}</div><div class="stack">${panel('处理记录', `<p>导出资料 · ${data.exportAt ? '已完成' : '未发起'}</p>${button('查看导出', 'export')}<p class="${data.deleteResult ? 'green-text' : 'muted'}">删除数据 · ${data.deleteResult ? '已完成' : '未发起'}</p>${button('查看处理结果', 'delete-result')}`, 'processing-panel')}</div></div></div>`;
 }
 
 const SUBTITLES = {
@@ -330,14 +330,16 @@ async function sendChat(retry = false) {
   chatBusy = true;
   persist();
   try {
-    const reply = await askAssistant(question, { messages: session.messages.map(m => ({ role: m.role, text: m.text })), records: data.records });
+    const reply = await askAssistant(question, { messages: session.messages.map(m => ({ role: m.role, text: m.text,source_id:m.source_id })), records: data.records });
     if (requestId !== chatRequestId || !data.sessions.some(s => s.id === session.id)) return;
-    session.messages.push({ role: 'assistant', text: reply.answer, action: reply.action, demo: reply.demo });
-    delete session.failedQuestion;
+    const current=data.sessions.find(s=>s.id===session.id);
+    const userMessage=[...current.messages].reverse().find(m=>m.role==='user');if(userMessage)userMessage.source_id=reply.source_id;
+    appendAssistantReply(data.sessions,session.id,{text:reply.answer,action:reply.action,demo:reply.demo,run_id:reply.run_id,runtime:reply.runtime,execution_error:reply.execution_error});
   } catch (error) {
     if (requestId !== chatRequestId || !data.sessions.some(s => s.id === session.id)) return;
-    session.failedQuestion = question;
-    session.messages.push({ role: 'assistant', text: error.name === 'TimeoutError' ? '回复超时，原话已保留。可以重试。' : error.message || '回复失败。原话已保留，请重试。', error: true });
+    const current=data.sessions.find(s=>s.id===session.id);
+    current.failedQuestion = question;
+    current.messages.push({ role: 'assistant', text: error.name === 'TimeoutError' ? '回复超时，原话已保留。可以重试。' : error.message || '回复失败。原话已保留，请重试。', error: true });
   } finally {
     if (requestId === chatRequestId) {
       chatBusy = false;
@@ -439,6 +441,8 @@ async function doAction(act, el) {
     case 'mode-ask': inputMode = 'ask'; render(); document.getElementById('chat-input')?.focus(); return;
     case 'mode-record': inputMode = 'record'; render(); document.getElementById('chat-input')?.focus(); return;
     case 'send-chat': return submitHomeInput();
+    case 'account': return open('settings');
+    case 'logout': return native.client.logout().catch(error=>flash(error.message));
     case 'new-chat': if (chatBusy) return; data.activeSessionId = null; chatDraft = ''; inputMode = 'ask'; return persist();
     case 'retry-chat': return sendChat(true);
     case 'save-record': return submitHomeInput();

@@ -18,7 +18,7 @@ function origin(req){let value;try{value=new URL(req.headers.origin);}catch{fail
 const tokenFrom=req=>req.headers.cookie?.split(';').map(x=>x.trim()).find(x=>x.startsWith('ht_session='))?.slice('ht_session='.length);
 const pick=(value,fields)=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value,key)).map(key=>[key,value[key]]));
 const publicOperation=value=>{const {owner,...out}=value;return out;};
-function publicRun(store,uid,run){return{...pick(run,['id','workflow','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
+function publicRun(store,uid,run){return{...pick(run,['id','workflow','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
 const publicDocument=value=>pick(value,['id','source_id','name','media_type','byte_size','content_hash','extraction_status','pages']);
 function listQuery(url,run){const allowed=run?['limit','before','source_id','status']:['limit','before'];check([...url.searchParams.keys()].every(k=>allowed.includes(k))&&new Set(url.searchParams.keys()).size===[...url.searchParams.keys()].length);return Object.fromEntries(url.searchParams);}
 export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/healththread-domain.sqlite'),agent=null,agentFactory=null,demoAccounts=[],limits={}}={}){
@@ -51,12 +51,12 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    if(path==='/api/export'&&method==='GET')return json(res,200,store.exportData(uid),{'Content-Disposition':'attachment; filename="healththread-export.json"'});
    const key=req.headers['idempotency-key'];
    if(['/api/entries','/api/documents','/api/visit-preparations','/api/health-record','/api/medical-document','/api/health-assistant'].includes(path)&&method==='POST'){
-    const workflow=['/api/documents','/api/medical-document'].includes(path)?'document':['/api/visit-preparations','/api/health-assistant'].includes(path)?'visit':'entry';let input,document=null;
+    const workflow=['/api/documents','/api/medical-document'].includes(path)?'document':path==='/api/health-assistant'?'chat':path==='/api/visit-preparations'?'visit':'entry';let input,document=null;
     store.requireConsent(uid);
     if(workflow==='document'&&req.headers['content-type']?.startsWith('multipart/form-data')){
      const bytes=await readBytes(req,configured.uploadBytes+65536);let form;try{form=await new Request('http://localhost/upload',{method:'POST',headers:{'Content-Type':req.headers['content-type']},body:bytes}).formData();}catch{fail(400,'INVALID_MULTIPART');}check([...form.keys()].length===1&&form.has('file'),'INVALID_MULTIPART');const file=form.get('file');check(file&&typeof file.arrayBuffer==='function'&&file.type==='application/pdf','UNSUPPORTED_DOCUMENT',415);document=await extractPdf(Buffer.from(await file.arrayBuffer()),configured);input={text:document.text,name:file.name};
     }else input=await jsonBody(req,configured);
-    if(path==='/api/health-assistant')input={current_concern:input.question,selected_source_ids:[]};
+    if(path==='/api/health-assistant')input={question:input.question,selected_source_ids:input.selected_source_ids||[]};
     if(input.input_kind!==undefined)check(input.input_kind==='self_report'||(workflow==='document'&&input.input_kind==='pasted_document'));
     const accepted=store.accept(uid,workflow,input,key,document,expectedEpoch);jobs.kick();return json(res,202,accepted);
    }

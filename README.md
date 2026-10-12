@@ -30,13 +30,15 @@ npm start
 
 固定 AGH 提交为 `7819b23c249fe47ce14bd89e3982e17986e3e197`，见 [harness.lock](agents/harness.lock.json)。`AGH_ROOT` 指向已安装依赖的干净源码；构建只读该 checkout，将产品构建产物写入 `.runtime/`。账户凭据留在独立的 `AGH_ACCOUNT_HOME`，`AGH_ACCOUNT_PROFILE` 默认 `local-dev`。旧 `AGH_HOME` 仅作为账户路径别名。`HEALTHTHREAD_AGH_HOME` 是可选的产品运行目录，必须与账户/源码目录分离。
 
-产品运行 workspace 只安装已审阅的三个 Skills 和五个受范围限制的业务工具；没有任意 shell、文件、网络或子 Agent 权限。审批、工具 schema、真实来源/授权/epoch/版本检查共同限定写入。开发提示词不进入产品 workspace。实际 SDK session、seq 和业务回执才作为真实模型证据。
+产品运行 workspace 只安装已审阅的四个 Skills 和五个受范围限制的业务工具；没有任意 shell、文件、网络或子 Agent 权限。审批、工具 schema、真实来源/授权/epoch/版本检查共同限定写入。开发提示词不进入产品 workspace。实际 SDK session、seq 和业务回执才作为真实模型证据。
 
 ## 三个工作流
 
 1. W1：文字原文保存 → 读取/上下文 → 候选 `needs_review` → 用户选择确认 → 事实与审计/回执同事务提交。
 2. W2：当前困扰与授权资料 → 有来源的逐句表达稿、问题、未知项 → 沟通卡。事实变化后卡片 `stale`。
 3. W3：粘贴资料或文本层 PDF → 带原文/页码的候选 → 用户确认 → 独立已确认医嘱接续 → 多个版本化事项。部分确认只使用选中的医嘱；没有医嘱可产生空事项与说明。
+
+首页“向助手提问”使用独立的 `health-assistant` Skill：读取问题 → 检索授权上下文 → 暂存 `assistant_reply`。问题和回复从后端重建，多轮会话共享，提问不生成医生沟通卡或自动确认事实。回复中的产品引导语由界面提供，引用原句与追问来自经工具校验的模型产物；只有实际 SDK 回执闭环后才显示“AGH 回执已核验”。
 
 候选值保留完整原句、否定/既往/不确定性与原文时间。逐字证据和 schema 校验只能证明指定机械约束；人工核对仍必需。科室 D01 / 观察分级 D02 未配置；OCR、音频和语音不支持。
 

@@ -8,7 +8,7 @@ test('fixture: real public Host installs approved plugin and exact-root Skills, 
  const home=await mkdtemp(join(tmpdir(),'ht-agh-fixture-'));
  let runtime;
  try{runtime=await createRuntime({home,fixture:fixtureRuntime(scriptedProvider([]))});
- assert.equal(runtime.readiness.tools.length,5); assert.equal(runtime.readiness.skills.length,3);
+ assert.equal(runtime.readiness.tools.length,5); assert.equal(runtime.readiness.skills.length,4);
  assert.ok(runtime.readiness.skills.every(s=>s.actual==='ready'&&s.trust==='trusted'));
  assert.equal(runtime.readiness.plugins.length,1); assert.equal(runtime.readiness.plugins[0].trusted,true);
  }finally{await runtime?.close();await rm(home,{recursive:true,force:true});}
@@ -16,6 +16,19 @@ test('fixture: real public Host installs approved plugin and exact-root Skills, 
 import {scriptedProvider,fixtureRuntime} from './scripted-provider.mjs';
 import {AgnesAgent} from '../../services/api/agnes-agent.mjs';
 import {DomainStore} from '../../services/api/domain-store.mjs';
+test('fixture: the home assistant uses its own preloaded Skill and three correlated SDK tools',async t=>{
+ const home=await mkdtemp(join(tmpdir(),'ht-agh-chat-'));let runtime;
+ const store=new DomainStore({demoAccounts:[{username:'runtime',password:'fixture-runtime-password'}]});
+ t.after(async()=>{await runtime?.close();store.close();await rm(home,{recursive:true,force:true});});
+ const uid=store.login('runtime','fixture-runtime-password').user.id;store.setConsent(uid,{purpose:'analysis',granted:true,expected_version:1});
+ const receipt=store.accept(uid,'chat',{question:'你好。'},'sdk-chat-fixture-0001');const run=store.claimRun(receipt.run_id);
+ const source=store.get(uid,'source',receipt.source_id);const evidence={source_id:source.id,source_text_version:1,quote:source.text,locator:{page:null,start:0,end:source.text.length}};
+ const provider=scriptedProvider([{tool:'healththread_read_source',args:{source_id:source.id}},{tool:'healththread_retrieve_context',args:{}},{tool:'healththread_stage_result',args:{kind:'assistant_reply',operation_key:'sdk-chat-stage-0001',dependencies:[{source_id:source.id,source_text_version:1}],payload:{intent:'greeting',speech:source.text,questions:[],unknowns:[],claims:[{text:source.text,fact_refs:[],evidence:[evidence]}]}}},{text:'已暂存'}]);
+ runtime=await createRuntime({home,fixture:fixtureRuntime(provider)});const agent=new AgnesAgent({runtime,store});
+ const tools=Object.fromEntries(Object.keys(store.toolsFor(run.id)).map(n=>[n,(args,invocation)=>store.toolsFor(run.id,invocation)[n](args)]));
+ const output=await agent.run({run,tools,signal:new AbortController().signal});assert.equal(output.agh.tool_receipt_ids.length,3);
+ assert.ok(JSON.stringify(provider.requests[0]).includes('kind=assistant_reply'));assert.equal(store.all('result',uid)[0].kind,'assistant_reply');assert.equal(store.profile(uid).facts.length,0);
+});
 test('fixture: genuine SDK receipts correlate three sequential bound tools and preloaded Skill',async t=>{
  const home=await mkdtemp(join(tmpdir(),'ht-agh-sdk-'));let runtime;
  const store=new DomainStore({demoAccounts:[{username:'runtime',password:'fixture-runtime-password'}]});

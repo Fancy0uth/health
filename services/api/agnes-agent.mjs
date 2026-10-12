@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {runtimeError} from '../../agents/runtime/boundary.mjs';
 const canonical=v=>JSON.stringify(v&&typeof v==='object'?Array.isArray(v)?v.map(x=>JSON.parse(canonical(x))):Object.fromEntries(Object.keys(v).sort().map(k=>[k,JSON.parse(canonical(v[k]))])):v);
-const workflowSkills={entry:'health-record',visit:'visit-preparation',document:'post-visit',care_plan:'post-visit'};
+const workflowSkills={entry:'health-record',visit:'visit-preparation',chat:'health-assistant',document:'post-visit',care_plan:'post-visit'};
 export class AgnesAgent {
  constructor({runtime,store}){this.runtime=runtime;this.store=store;this.mode=runtime?.readiness.fixture?'fixture':'real';this.sessions=new Map();}
  async isReady({signal}={}){signal?.throwIfAborted();if(!this.runtime||!this.store)throw runtimeError('AGENT_NOT_CONFIGURED');return this.runtime.isReady();}
@@ -22,7 +22,7 @@ export class AgnesAgent {
    phase='model_selection';
    for(const slot of ['primary','escalation','fast','compaction','verifier'])await session.setModel({slot,route:runtime.selected.route,model:runtime.selected.model});
    iterator=session.events()[Symbol.asyncIterator]();reader=(async()=>{for(;;){const item=await iterator.next();if(item.done)break;events.push(item.value);seen=item.value.seq;wake?.();}})();
-   const prompt=`$${skill}\n执行 HealthThread ${run.workflow==='care_plan'?'care_plan 独立已确认医嘱接续':run.workflow+' 提取/沟通'}工作流。业务输入标识（内容必须通过工具读取）：${JSON.stringify({source_id:run.source_ids[0],document_id:run.document_id,base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。完成暂存后停止，不自行确认，不声称聊天文字已保存。`;
+   const prompt=`$${skill}\n执行 HealthThread ${run.workflow==='care_plan'?'care_plan 独立已确认医嘱接续':run.workflow+' 提取/沟通'}工作流。业务输入标识（内容必须通过工具读取）：${JSON.stringify({source_id:run.source_ids[0],selected_source_ids:run.source_ids.slice(1),document_id:run.document_id,base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。完成暂存后停止，不自行确认，不声称聊天文字已保存。`;
    let turn;
    for(let attempt=0;attempt<3;attempt++){
     phase='prompt';turn=await session.prompt(attempt===0?prompt:`$${skill}\n上一轮未获得必需的 stage 工具回执。请使用已读证据完成本次暂存；不能将聊天 JSON 当作产物。`,{signal});
@@ -56,7 +56,7 @@ export class AgnesAgent {
     const correlation={receipt_id:persisted.id,operation_id:persisted.operation_id,tool:persisted.tool,tool_use_id:invocation.toolUseId,call_seq:call.seq,result_seq:result.seq,...(original?{replay_of_tool_use_id:original.tool_use_id}:{})};
     correlations.push(correlation);if(!original)effects.set(persisted.id,correlation);
    }
-   const expected=run.workflow==='care_plan'?['healththread_get_confirmed_instructions','healththread_stage_result']:['healththread_read_source','healththread_retrieve_context',run.workflow==='visit'?'healththread_stage_result':'healththread_stage_candidates'];
+   const expected=run.workflow==='care_plan'?['healththread_get_confirmed_instructions','healththread_stage_result']:['healththread_read_source','healththread_retrieve_context',['visit','chat'].includes(run.workflow)?'healththread_stage_result':'healththread_stage_candidates'];
    const actual=correlations.map(i=>i.tool);let cursor=0;for(const name of actual)if(name===expected[cursor])cursor++;
    if(cursor!==expected.length)throw runtimeError('MISSING_STAGED_OUTPUT');
    store.recordRuntimeEvidence(run.id,key,{session_id:session.id,last_seq:turn.lastSeq,reason:turn.reason,stop_reason:turn.stopReason,route:runtime.selected.route,model:runtime.selected.model,correlations,turns,repair_attempts:entry.repairs,fixture:runtime.readiness.fixture});

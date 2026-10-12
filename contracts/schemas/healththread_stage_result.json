@@ -63,6 +63,37 @@
         "dependencies",
         "operation_key"
       ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "assistant_reply"
+        },
+        "payload": {
+          "$ref": "#/$defs/chat_payload"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependency"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "operation_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "kind",
+        "payload",
+        "dependencies",
+        "operation_key"
+      ]
     }
   ],
   "$defs": {
@@ -285,6 +316,58 @@
       },
       "required": [
         "tasks"
+      ]
+    },
+    "chat_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "speech": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "minItems": 0,
+          "maxItems": 30
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "intent": {
+          "enum": [
+            "greeting",
+            "clarify",
+            "prepare",
+            "records",
+            "scope"
+          ]
+        }
+      },
+      "required": [
+        "speech",
+        "questions",
+        "unknowns",
+        "claims",
+        "intent"
       ]
     }
   }

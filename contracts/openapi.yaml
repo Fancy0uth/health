@@ -2094,7 +2094,7 @@
     },
     "/api/health-assistant": {
       "post": {
-        "summary": "Legacy migration adapter into visit-preparations",
+        "summary": "Start a source-backed assistant conversation through the dedicated AGH health-assistant Skill",
         "operationId": "post_health_assistant",
         "responses": {
           "202": {
@@ -2168,7 +2168,34 @@
           {
             "$ref": "#/components/parameters/HealthThreadEpoch"
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "selected_source_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/api/runs/{id}/reanalyse": {
@@ -2458,7 +2485,8 @@
               "entry",
               "document",
               "visit",
-              "care_plan"
+              "care_plan",
+              "chat"
             ]
           },
           "status": {
@@ -2561,6 +2589,9 @@
           },
           "runtime": {
             "$ref": "#/components/schemas/Runtime"
+          },
+          "conversation_id": {
+            "type": "string"
           }
         }
       },
@@ -3943,6 +3974,9 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -4114,6 +4148,9 @@
           },
           "saved": {
             "const": true
+          },
+          "conversation_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -4537,7 +4574,8 @@
               "entry",
               "document",
               "visit",
-              "care_plan"
+              "care_plan",
+              "chat"
             ]
           },
           "status": {
@@ -4672,6 +4710,9 @@
             "items": {
               "$ref": "#/components/schemas/FactReference"
             }
+          },
+          "conversation_id": {
+            "type": "string"
           }
         },
         "required": [

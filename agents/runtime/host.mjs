@@ -46,7 +46,7 @@ export async function createRuntime({home,fixture,runConnection=false,accountHom
  const snapshots=await manager.runtimePluginSnapshots(profileDir);
  if(snapshots.length!==1||!snapshots[0].trusted||snapshots[0].snapshot.packageId!==packageId)throw runtimeError('AGH_PLUGIN_PIN_REQUIRED');
  const skillsPath=join(workspace,'.agh/skills'); await mkdir(skillsPath,{recursive:true,mode:0o700});
- const skillNames=['health-record','visit-preparation','post-visit'];
+ const skillNames=['health-record','visit-preparation','post-visit','health-assistant'];
  for(const name of skillNames){const expected=await readFile(join(source,'skills',name,'SKILL.md'));await mkdir(join(skillsPath,name),{recursive:true,mode:0o700});const target=join(skillsPath,name,'SKILL.md');try{if(!expected.equals(await readFile(target)))throw runtimeError('AGH_SKILL_REVISION');}catch(e){if(e.code!=='ENOENT')throw e;await writeFile(target,expected,{mode:0o600,flag:'wx'});}}
  const canonicalRoot=await realpath(skillsPath);
  const checked=async path=>inside(canonicalRoot,await realpath(path));
@@ -54,12 +54,12 @@ export async function createRuntime({home,fixture,runConnection=false,accountHom
  const root={scope:'workspace',rootKey:'workspace-agnes',priority:500,path:skillsPath,workspaceKey:B.workspaceSkillKey(await realpath(workspace))};
  const scan=await B.discoverSkillRoot(fs,root);
  const candidates=scan.candidates;
- if(candidates.length!==3||candidates.some(s=>!skillNames.includes(s.name))||scan.skipped?.length)throw runtimeError('AGH_SKILL_DISCOVERY');
+ if(candidates.length!==skillNames.length||candidates.some(s=>!skillNames.includes(s.name))||scan.skipped?.length)throw runtimeError('AGH_SKILL_DISCOVERY');
  const barrier=H.createExtensionActivationBarrier();
  const skills=R.createSkillCandidateRegistry({barrier,canRead:(_resource,session)=>{try{bindings.lookup(session.sessionKey);return true;}catch{return false;}}});
  skills.replaceRoot('workspace-agnes',candidates);skills.setControl({desired:candidates.map(s=>({resourceId:s.resourceId,state:'enabled'})),trust:candidates.map(s=>({resourceId:s.resourceId,revision:s.revision,capabilityHash:s.capabilityHash,state:'trusted'}))});
  await skills.activate(randomUUID(),async()=>{});
- if(skills.actual().length!==3||skills.actual().some(s=>s.actual!=='ready'||s.trust!=='trusted'||s.desired!=='enabled'||!s.resolution.winner))throw runtimeError('AGH_SKILL_NOT_READY');
+ if(skills.actual().length!==skillNames.length||skills.actual().some(s=>s.actual!=='ready'||s.trust!=='trusted'||s.desired!=='enabled'||!s.resolution.winner))throw runtimeError('AGH_SKILL_NOT_READY');
  const profile=await H.resolveProfile({builtin:'local-dev',lock:P.lockState(P.readLock(profileDir,{profile:profileName,agnesVersion:'0.0.0'}),{profileDir}).lock,user:{name:profileName,dataDir,cacheDir,packages:[{id:'@agnes/code',source:'builtin',tombstone:true},{id:packageId,source:'file:./plugin',enabled:true}],provider:{...providerInput.provider,routes,catalog:{include:[]}},...(providerInput.adapters?{adapters:providerInput.adapters}:{}),presets:{default:'healththread',allowed:['healththread']},policy:{capabilityCeiling:['hooks','slots','events','resources','ui','artifacts'],workspacePackages:'deny'},computerUse:{enabled:false},commandHooks:{trustedUnconfined:[]}}},{platform:{os:process.platform,arch:process.arch,capabilities:{}},agnesVersion:'0.0.0',now:new Date().toISOString(),homeDir:home});
  await P.snapshotPolicy(profileDir,profile,'0.0.0');
  const jiti=H.createLoader({cacheDir,hostRoot:dirname(fileURLToPath(import.meta.url)),agnesVersion:'0.0.0'});const external=H.createJitiPackageLoader(jiti);

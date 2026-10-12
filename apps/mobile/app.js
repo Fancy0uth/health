@@ -3,7 +3,7 @@ import {nativeBridge} from '../../packages/client/native-bridge.js';
 const native=nativeBridge();
 import { requestAgent } from '../../packages/client/api.js';
 import { flushData } from '../../packages/client/data.js';
-import { askAssistant } from '../../packages/client/chat.js';
+import { askAssistant, appendAssistantReply, executionLabel } from '../../packages/client/chat.js';
 import * as store from './store.js';
 
 const app = document.getElementById('app');
@@ -171,14 +171,14 @@ function content() {
 }
 function home() {
   const recent = store.sessions()[0];
-  return `<h2 class="greeting">你好，林悦</h2><p class="muted">今天想聊些什么？</p><section class="assistant-hero"><div class="assistant-heading">${mark(52)}<div><h2>AI 健康助手</h2><small>聊聊近况，也能整理就诊资料</small></div></div>${button('饭后腹胀，想准备就诊', 'suggest', 'secondary')}</section>${heading('最近对话', '<button class="text-button" type="button" data-action="conversations">查看全部</button>')}${recent ? actionRow(recent.title, sessionTime(recent), 'chat', 'conversation', `data-id="${escape(recent.id)}"`) : actionRow('还没有对话记录', '开始新对话', 'chat', 'new-chat')}${actionRow(store.pending() ? `${store.pending()} 项待核对` : '当前没有待核对事项', store.pending() ? '开始时间、症状描述' : '记录身体感受后可在这里核对', 'document', store.pending() ? 'review' : 'record-change')}`;
+  return `<h2 class="greeting">你好，${escape(native.client.state.user?.username||'')}</h2><p class="muted">今天想聊些什么？</p><section class="assistant-hero"><div class="assistant-heading">${mark(52)}<div><h2>AI 健康助手</h2><small>聊聊近况，也能整理就诊资料</small></div></div>${button('饭后腹胀，想准备就诊', 'suggest', 'secondary')}</section>${heading('最近对话', '<button class="text-button" type="button" data-action="conversations">查看全部</button>')}${recent ? actionRow(recent.title, sessionTime(recent), 'chat', 'conversation', `data-id="${escape(recent.id)}"`) : actionRow('还没有对话记录', '开始新对话', 'chat', 'new-chat')}${actionRow(store.pending() ? `${store.pending()} 项待核对` : '当前没有待核对事项', store.pending() ? '开始时间、症状描述' : '记录身体感受后可在这里核对', 'document', store.pending() ? 'review' : 'record-change')}`;
 }
 function messageMarkup(messages) {
-  return messages.map(m => `<article class="message ${m.role === 'user' ? 'user' : 'assistant'} ${m.error ? 'error' : ''}">${m.role === 'assistant' ? `<div class="assistant-label">${mark(24)}<span>健康助手</span></div>` : ''}<p>${lines(m.text)}</p>${m.error ? button('重试回复', 'retry-chat', 'secondary') : m.action ? button(({ visit: '查看就诊准备', timeline: '查看健康时间线', review: '核对这条记录', home: '继续记录' })[m.action] || '继续', m.action === 'review' ? 'review' : 'message-' + m.action, 'secondary', `data-id="${escape(m.recordId || '')}"`) : ''}</article>`).join('');
+  return messages.map(m => `<article class="message ${m.role === 'user' ? 'user' : 'assistant'} ${m.error ? 'error' : ''}">${m.role === 'assistant' ? `<div class="assistant-label">${mark(24)}<span>健康助手</span></div>` : ''}<p>${lines(m.text)}</p>${m.run_id?`<small class="muted" title="${escape(m.run_id)}">${escape(executionLabel(native.client.state.runs[m.run_id]))}</small>`:''}${m.error ? button('重试回复', 'retry-chat', 'secondary') : m.action ? button(({ visit: '查看就诊准备', timeline: '查看健康时间线', review: '核对这条记录', home: '继续记录' })[m.action] || '继续', m.action === 'review' ? 'review' : 'message-' + m.action, 'secondary', `data-id="${escape(m.recordId || '')}"`) : ''}</article>`).join('');
 }
 function chat() {
   const current = activeChat();
-  return `${window.HEALTHTHREAD_API_URL ? '' : '<p class="demo-label">演示回复 · 尚未接入 AI 服务</p>'}${current?.messages.length ? messageMarkup(current.messages) : empty('今天想聊点什么？', '描述不适、整理记录，或准备就诊。', button('饭后腹胀，想准备就诊', 'suggest', 'secondary'))}${busySession === current?.id ? `<article class="message assistant" role="status"><div class="assistant-label">${mark(24)}<span>健康助手</span></div><div class="loading-dots"><i></i><i></i><i></i></div><small>正在整理回复…</small></article>` : ''}`;
+  return `${window.HEALTHTHREAD_API_URL ? '' : '<p class="demo-label">演示回复 · 尚未接入 AI 服务</p>'}${current?.messages.length ? messageMarkup(current.messages) : empty('今天想聊点什么？', '描述不适、整理记录，或准备就诊。', button('饭后腹胀，想准备就诊', 'suggest', 'secondary'))}${busySession === current?.id ? `<article class="message assistant" role="status"><div class="assistant-label">${mark(24)}<span>健康助手</span></div><div class="loading-dots"><i></i><i></i><i></i></div><small>正在通过 AGH 生成回复…</small></article>` : ''}`;
 }
 function conversations() {
   const all = store.sessions();
@@ -258,7 +258,7 @@ function printCard() {
   return `<article class="print-sheet"><h2 class="print-title">医生沟通卡</h2><p class="small muted">林悦 · ${escape(d().cardGeneratedAt)} · v${d().cardVersion}${store.stale() ? ' · 内容已过期' : ''}</p><hr/><h2>一分钟表达稿</h2><p>${lines(store.speech())}</p><h2>本次情况</h2><p>开始时间：${escape(d().cardStartDate || '未记录')}<br>用药情况：未记录<br>过敏情况：未记录</p><h2>想问医生</h2><ol>${d().questions.map(q => `<li>${escape(q)}</li>`).join('')}</ol><hr/><p class="small muted">来源：用户自述。未核对字段请在就诊时说明。</p>${(d().cardRecords || []).map(r => `<p class="small muted">${dateLabel(r.date)} · ${escape(r.text)}</p>`).join('')}</article>${button('复制内容', 'copy-card', 'secondary')}`;
 }
 function settings() {
-  return `<section class="profile"><span class="avatar">林</span><div><h2>林悦</h2><small>个人健康资料</small></div></section>${heading('授权与隐私')}${actionRow('授权管理', '记录整理、病历解析与语音', 'shield', 'consent')}${heading('我的数据')}${actionRow('数据导出', '记录、对话与沟通卡', 'download', 'export')}${actionRow('删除数据', '查看范围并确认处理', 'trash', 'delete', 'class="danger-row"')}${actionRow('处理结果', '查看最近一次数据操作', 'document', 'result')}<label class="switch-row"><span class="row-copy"><strong>减少动态效果</strong><small>保留操作反馈，减少移动与波形</small></span><input type="checkbox" name="reduceMotion" role="switch" ${store.preferences.reduceMotion ? 'checked' : ''}/><span class="switch-track"></span></label><div class="settings-brand">${wordmark(156)}<small>HealthThread · 个人健康管家</small><a href="../index.html">查看网页端</a></div>`;
+  return `<section class="profile"><span class="avatar">${escape((native.client.state.user?.username||'账号').slice(0,1))}</span><div><h2>${escape(native.client.state.user?.username||'账号')}</h2><small>个人健康资料</small></div></section>${actionRow('退出登录', '手机和电脑共享登录状态', 'shield', 'logout')}${heading('授权与隐私')}${actionRow('授权管理', '记录整理、病历解析与语音', 'shield', 'consent')}${heading('我的数据')}${actionRow('数据导出', '记录、对话与沟通卡', 'download', 'export')}${actionRow('删除数据', '查看范围并确认处理', 'trash', 'delete', 'class="danger-row"')}${actionRow('处理结果', '查看最近一次数据操作', 'document', 'result')}<label class="switch-row"><span class="row-copy"><strong>减少动态效果</strong><small>保留操作反馈，减少移动与波形</small></span><input type="checkbox" name="reduceMotion" role="switch" ${store.preferences.reduceMotion ? 'checked' : ''}/><span class="switch-track"></span></label><div class="settings-brand">${wordmark(156)}<small>HealthThread · 个人健康管家</small><a href="../index.html">查看网页端</a></div>`;
 }
 function consent() {
   const endpoint = window.HEALTHTHREAD_API_URL;
@@ -368,16 +368,16 @@ async function sendChat(retry = false) {
   go('home', 'chat', current.id, route.view === 'chat');
   scrollChat();
   try {
-    const response = await askAssistant(question, { messages: current.messages.map(({ role, text }) => ({ role, text })), records: d().records });
+    const response = await askAssistant(question, { messages: current.messages.map(({ role, text,source_id }) => ({ role, text,source_id })), records: d().records });
     const stillPresent = store.session(current.id);
     if (request !== requestSequence || !stillPresent) return;
-    stillPresent.messages.push({ role: 'assistant', text: response.answer, action: response.action, demo: response.demo });
-    delete stillPresent.failedQuestion;
+    const userMessage=[...stillPresent.messages].reverse().find(m=>m.role==='user');if(userMessage)userMessage.source_id=response.source_id;
+    appendAssistantReply(d().sessions,current.id,{text:response.answer,action:response.action,demo:response.demo,run_id:response.run_id,runtime:response.runtime,execution_error:response.execution_error});
   } catch (error) {
     const stillPresent = store.session(current.id);
     if (request !== requestSequence || !stillPresent) return;
     stillPresent.failedQuestion = question;
-    stillPresent.messages.push({ role: 'assistant', text: error.name === 'TimeoutError' ? '回复超时，原话已保留。' : '回复失败，原话已保留。可以重试。', error: true });
+    stillPresent.messages.push({ role: 'assistant', text: error.name === 'TimeoutError' ? '回复超时，原话已保留。' : error.message||'回复失败，原话已保留。可以重试。', error: true });
   } finally {
     if (request === requestSequence) {
       busySession = null;
@@ -479,6 +479,7 @@ async function action(name, el) {
     case 'return-parent': return go(route.page, route.page === 'timeline' && ['upload', 'medicalReview', 'parsing'].includes(route.view) ? 'medical' : '');
     case 'new-chat': d().activeSessionId = null; drafts.ask = ''; inputMode = 'ask'; save(); return go('home', 'chat');
     case 'mode-ask': case 'mode-record': inputMode = name === 'mode-ask' ? 'ask' : 'record'; render(); return document.querySelector('#message-input')?.focus();
+    case 'logout': return native.client.logout();
     case 'send': return inputMode === 'record' ? saveRecord() : sendChat();
     case 'retry-chat': return sendChat(true);
     case 'suggest': inputMode = 'ask'; drafts.ask = '饭后总腹胀，偶尔反酸，去医院前该准备什么？'; return sendChat();

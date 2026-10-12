@@ -1,6 +1,7 @@
 import {DomainClient} from './domain-client.js';
 import {INITIAL} from './demo-data.js';
 import {cardText} from './presentation.js';
+import {assistantText} from './chat-result.js';
 
 const clone=value=>structuredClone(value);
 const hasSource=(value,id)=>value.evidence?.some(e=>e.source_id===id);
@@ -47,7 +48,31 @@ export class NativeBridge {
     const cardRun=runs.find(r=>r.result_id===card?.id);
     const tasks=s.tasks.tasks.map(t=>({...t,status:taskStatus(t.status)}));
     const hidden=new Set(ui.hiddenSessions||[]);
-    const sessions=clone(ui.sessions||[]).filter(session=>!hidden.has(session.id));
+    const chatResults=s.results.filter(r=>r.kind==='assistant_reply').sort((a,b)=>a.created_at.localeCompare(b.created_at));
+    const chatSourceIds=new Set(chatResults.map(r=>r.source_ids[0]));
+    const sessions=clone(ui.sessions||[]).filter(session=>!hidden.has(session.id)&&!session.messages?.some(m=>chatSourceIds.has(m.source_id)));
+    const conversations=new Map();
+    for(const result of chatResults){
+      const run=runs.find(r=>r.id===result.run_id),source=this.sources.get(result.source_ids[0]);if(!source)continue;
+      const key=result.conversation_id||run?.conversation_id||result.run_id;
+      let conversation=conversations.get(key);
+      if(!conversation){conversation={id:key,title:source.text.slice(0,24),updatedAt:result.created_at,messages:[]};conversations.set(key,conversation);}
+      conversation.messages.push({role:'user',text:source.text,source_id:source.id},{role:'assistant',text:assistantText(result.payload),run_id:result.run_id,action:result.payload.intent==='prepare'?'visit':result.payload.intent==='records'?'timeline':null,demo:false});
+      conversation.updatedAt=result.created_at;
+    }
+    for(const conversation of conversations.values()){
+      const local=(ui.sessions||[]).find(session=>session.messages?.some(m=>conversation.messages.some(c=>c.source_id&&c.source_id===m.source_id)));
+      if(local){
+        conversation.id=local.id;
+        const canonicalSources=new Set(conversation.messages.filter(m=>m.role==='user').map(m=>m.source_id));
+        const canonicalRuns=new Set(conversation.messages.filter(m=>m.role==='assistant').map(m=>m.run_id));
+        const lastSettled=local.messages.findLastIndex(m=>canonicalSources.has(m.source_id)||canonicalRuns.has(m.run_id));
+        const remaining=local.messages.slice(lastSettled+1);
+        const firstPending=remaining.findIndex(m=>m.role==='user'&&(!m.source_id||this.sources.has(m.source_id)));
+        if(firstPending>=0){conversation.messages.push(...clone(remaining.slice(firstPending)));conversation.updatedAt=local.updatedAt;if(local.failedQuestion)conversation.failedQuestion=local.failedQuestion;}
+      }
+      if(!hidden.has(conversation.id))sessions.push(conversation);
+    }
     for(const item of records)if(!hidden.has(item.id)&&!sessions.some(session=>session.messages?.some(m=>m.recordId===item.id)))sessions.push({id:item.id,title:item.text.slice(0,24),updatedAt:this.sources.get(item.id)?.recorded_at||this.sources.get(item.id)?.created_at,messages:[{role:'user',text:item.text,kind:'record',recordId:item.id}]});
     const concernSource=this.sources.get(cardRun?.source_ids?.[0]);
     if(concernSource&&!hidden.has(concernSource.id)&&!sessions.some(session=>session.id===concernSource.id))sessions.push({id:concernSource.id,title:concernSource.text.slice(0,24),updatedAt:card.created_at,messages:[{role:'user',text:concernSource.text},{role:'assistant',text:card.payload.speech,action:'visit'}]});
@@ -62,7 +87,7 @@ export class NativeBridge {
   async createDocument(input) {const receipt=await this.client.createDocument(input);this.saveOverlay({...this.snapshot(),selectedDocumentId:receipt.source_id});await this.refresh();return receipt;}
   async wait(id,options={}) {
     const cancel=()=>this.client.cancelRun(id).catch(()=>{});options.signal?.addEventListener('abort',cancel,{once:true});
-    try {const run=await this.client.pollRun(id,options);await this.refresh();
+    try {const run=await this.client.pollRun(id,{requireRuntime:this.client.state.capabilities?.analysis?.mode==='real',...options});await this.refresh();
       if(['failed','blocked','interrupted','cancelled'].includes(run.status))throw fail(run.error?.code||run.status,run.error?.message||'分析未完成；原文已保存，可以读取运行状态后重试。');
       return run;
     }finally{options.signal?.removeEventListener('abort',cancel);}
@@ -91,16 +116,20 @@ export class NativeBridge {
     const receipt=await this.client.changeFact(fact,'correction',text);await this.refresh();return receipt;
   }
   async deleteAll() {const receipt=await this.client.deleteData('all');this.sources.clear();this.ui={};const job=await this.client.operation(receipt.deletion_job_id);this.lastDeletion={...receipt,recorded_at:job.recorded_at};this.client.setDraft('nativeDeletion',this.lastDeletion);await this.refresh();return this.lastDeletion;}
-  async recover(file=null){const op=this.client.pendingOperations()[0];if(!op)throw fail('NO_PENDING_OPERATION','没有结果未知的原请求。');const receipt=await this.client.retryOperation(op.id,file);await this.refresh();if(receipt.run_id)await this.wait(receipt.run_id);if(receipt.continuation_run_id)await this.wait(receipt.continuation_run_id);return receipt;}
+  linkChatSource(question,receipt){const ui=clone(this.client.getDraft('nativeUi',{})||{});const candidates=(ui.sessions||[]).filter(s=>[...s.messages].reverse().find(m=>m.role==='user')?.text===question);const session=candidates.find(s=>s.id===ui.activeSessionId)||candidates.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0];if(session){[...session.messages].reverse().find(m=>m.role==='user').source_id=receipt.source_id;this.client.setDraft('nativeUi',ui);}}
+  async recover(file=null){const op=this.client.pendingOperations()[0];if(!op)throw fail('NO_PENDING_OPERATION','没有结果未知的原请求。');const receipt=await this.client.retryOperation(op.id,file);if(op.path==='/api/health-assistant')this.linkChatSource(op.body.question,receipt);await this.refresh();if(receipt.run_id)await this.wait(receipt.run_id);if(receipt.continuation_run_id)await this.wait(receipt.continuation_run_id);return receipt;}
   copyText(){const result=this.client.state.results.filter(r=>r.kind==='visit_preparation').sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''))[0];if(!result)throw fail('NO_CARD','尚无沟通卡。');const current=this.snapshot();return cardText(result,{sources:[...this.sources.values()],run:current.cardRun,localDraft:current.cardEdit?.result_id===result.id?current.cardDraft:null});}
   async requestAgent(path,payload,options={}) {
     let receipt;
     if(path==='/api/health-record')receipt=await this.createEntry(payload.text);
     else if(path==='/api/medical-document')receipt=await this.createDocument(payload instanceof FormData?{file:payload.get('file')}:{text:payload.text,name:payload.name});
-    else if(path==='/api/health-assistant'||path==='/api/visit-preparations')receipt=await this.client.createVisit(payload.current_concern||payload.question,payload.selected_record_ids||[]);
+    else if(path==='/api/health-assistant')receipt=await this.client.createChat(payload.question,(payload.messages||[]).filter(m=>m.role==='user').map(m=>m.source_id).filter(Boolean));
+    else if(path==='/api/visit-preparations')receipt=await this.client.createVisit(payload.current_concern,payload.selected_record_ids||[]);
     else throw fail('UNSUPPORTED_WORKFLOW','该页面操作尚未接入，请使用记录、就诊准备或病历核对。');
+    if(path==='/api/health-assistant')this.linkChatSource(payload.question,receipt);
+    options.onRun?.(receipt.run_id);
     const run=await this.wait(receipt.run_id,options);
-    if(run.result)return {...run.result.payload,answer:run.result.payload.speech,action:'visit',run_id:run.id};
+    if(run.result)return {...run.result.payload,answer:run.result.kind==='assistant_reply'?assistantText(run.result.payload):run.result.payload.speech,action:run.result.kind==='assistant_reply'?(run.result.payload.intent==='prepare'?'visit':run.result.payload.intent==='records'?'timeline':null):'visit',run_id:run.id,source_id:receipt.source_id,runtime:run.runtime,execution_error:run.execution_error};
     const source=await this.client.source(receipt.source_id);
     const proposals=run.change?.proposals||[];
     return {source_id:source.id,run_id:run.id,change_id:run.fact_change_id,original:source.text,description:proposals.map(p=>p.value).join('\n'),date:iso(proposals.find(p=>p.effective_time?.start)?.effective_time.start),onset:iso(proposals.find(p=>p.effective_time?.start)?.effective_time.start),task:proposals.filter(p=>p.field==='instruction').map(p=>p.value).join('\n')||null,proposals};

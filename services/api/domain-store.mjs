@@ -82,6 +82,13 @@ export class DomainStore {
       }
     }
     this.transaction(() => {
+      // Add durable conversation metadata to the initial chat implementation's results.
+      // Content and inference receipts remain untouched.
+      for (const result of this.all("result")) if (result.kind === "assistant_reply" && !result.conversation_id) {
+        const prior = this.db.prepare("SELECT data FROM objects WHERE id=? AND owner=? AND type='run'").get(result.run_id, result.owner);
+        const conversationId = prior && JSON.parse(prior.data).conversation_id;
+        if (conversationId) {result.conversation_id=conversationId;this.save("result",result);}
+      }
       for (const r of this.all("run"))
         if (r.status === "running") {
           r.status = "interrupted";
@@ -377,8 +384,8 @@ export class DomainStore {
         () => {
           this.checkExpectedEpoch(uid, expectedEpoch);
           this.requireConsent(uid);
-          check(["entry", "document", "visit"].includes(workflow));
-          const text = this.text(workflow === "visit" ? input.current_concern : input.text);
+          check(["entry", "document", "visit", "chat"].includes(workflow));
+          const text = this.text(workflow === "visit" ? input.current_concern : workflow === "chat" ? input.question : input.text);
           this.checkQueueAdmission(uid);
           const selected = input.selected_source_ids || [];
           check(Array.isArray(selected) && selected.length <= this.limits.retrievalCount);
@@ -391,7 +398,7 @@ export class DomainStore {
             content_hash: hash(text),
             recorded_at: this.now(),
             pages: document?.pages || [],
-            input_kind: document ? "pdf" : workflow === "document" ? "pasted_document" : "self_report",
+            input_kind: workflow === "chat" ? "assistant_question" : document ? "pdf" : workflow === "document" ? "pasted_document" : "self_report",
           });
           const episode = input.episode_id
             ? this.get(uid, "episode", input.episode_id)
@@ -422,7 +429,8 @@ export class DomainStore {
             if (document)
               this.db.prepare("INSERT INTO originals VALUES(?,?,?)").run(source.id, uid, document.bytes);
           }
-          const run = this.newRun(uid, workflow, [source.id, ...selected], { document_id: doc?.id || null });
+          const priorChat = workflow === "chat" ? this.all("run", uid).filter(r=>r.workflow === "chat" && selected.includes(r.source_ids[0])).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0] : null;
+          const run = this.newRun(uid, workflow, [source.id, ...selected], { document_id: doc?.id || null, ...(workflow === "chat" ? {conversation_id:priorChat?.conversation_id||id("chat")} : {}) });
           const operation = this.insert(uid, "operation", {
             kind: "accept",
             status: "committed",
@@ -438,6 +446,7 @@ export class DomainStore {
             entry_id: entry.id,
             source_id: source.id,
             ...(doc ? { document_id: doc.id } : {}),
+            ...(run.conversation_id ? {conversation_id:run.conversation_id} : {}),
             run_id: run.id,
             operation_id: operation.id,
             saved: true,
@@ -1094,6 +1103,7 @@ export class DomainStore {
       check(Buffer.byteLength(JSON.stringify(args)) <= this.limits.outputBytes, "INVALID_AGENT_OUTPUT", 422);
       check(
         (run.workflow === "visit" && args.kind === "visit_preparation") ||
+          (run.workflow === "chat" && args.kind === "assistant_reply") ||
           (run.workflow === "care_plan" && args.kind === "care_plan"),
         "INVALID_AGENT_OUTPUT",
         422,
@@ -1105,7 +1115,7 @@ export class DomainStore {
         .filter((x) => x.run_id === run.id)
         .map((x) => x.tool);
       check(
-        run.workflow === "visit"
+        ["visit", "chat"].includes(run.workflow)
           ? seenTools.includes("healththread_read_source") &&
               seenTools.includes("healththread_retrieve_context")
           : seenTools.includes("healththread_get_confirmed_instructions"),
@@ -1137,10 +1147,12 @@ export class DomainStore {
       const hasFact = (ref) =>
         args.dependencies.some((d) => d.fact_id === ref.fact_id && d.revision === ref.revision);
       const payload = structuredClone(args.payload);
-      if (args.kind === "visit_preparation") {
+      if (["visit_preparation", "assistant_reply"].includes(args.kind)) {
+        const chat = args.kind === "assistant_reply";
+        if (chat) check(["greeting", "clarify", "prepare", "records", "scope"].includes(payload.intent), "INVALID_AGENT_OUTPUT", 422);
         keys(
           payload,
-          ["speech", "questions", "unknowns", "claims"],
+          ["speech", "questions", "unknowns", "claims", ...(chat ? ["intent"] : [])],
           ["speech", "questions", "unknowns", "claims"],
         );
         check(
@@ -1210,8 +1222,10 @@ export class DomainStore {
         }
         // Only source-supported sentences may be asserted in the speech. Questions/unknowns remain explicitly questions.
         check(payload.speech === supported.join("\n"), "INVALID_AGENT_OUTPUT", 422);
-        payload.department = { status: "not_configured" };
-        payload.triage = { status: "not_configured" };
+        if (!chat) {
+          payload.department = { status: "not_configured" };
+          payload.triage = { status: "not_configured" };
+        }
       } else {
         keys(payload, ["tasks", "explanation"], ["tasks"]);
         check(Array.isArray(payload.tasks) && payload.tasks.length <= 100, "INVALID_AGENT_OUTPUT", 422);
@@ -1277,6 +1291,7 @@ export class DomainStore {
       }
       const result = this.insert(run.owner, "result", {
         kind: args.kind,
+        ...(run.conversation_id ? {conversation_id:run.conversation_id} : {}),
         schema_version: 1,
         payload,
         dependencies: args.dependencies,
