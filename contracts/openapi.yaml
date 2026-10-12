@@ -25,8 +25,16 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SessionState"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -81,6 +89,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -116,8 +132,16 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SessionState"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -207,10 +231,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -238,6 +290,9 @@
               "minLength": 16,
               "maxLength": 128
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -283,10 +338,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -314,6 +397,9 @@
               "minLength": 16,
               "maxLength": 128
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -353,6 +439,61 @@
             }
           }
         }
+      },
+      "get": {
+        "operationId": "get_documents",
+        "summary": "Bounded owner-only documents discovery across sessions; excludes deleted records and private authority",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "Opaque next_cursor from the previous page; newest first."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest-first page; no owner/private runtime binding fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummaryPage"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "default": {
+            "description": "Authenticated domain error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/visit-preparations": {
@@ -368,10 +509,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -399,6 +568,9 @@
               "minLength": 16,
               "maxLength": 128
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -451,6 +623,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -478,6 +658,14 @@
                 "schema": {
                   "type": "object"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -507,6 +695,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -535,6 +731,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -561,10 +765,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -582,6 +814,9 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -627,6 +862,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -654,6 +897,14 @@
                 "schema": {
                   "type": "object"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -692,6 +943,26 @@
                 }
               }
             }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -702,6 +973,9 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -718,6 +992,14 @@
                 "schema": {
                   "type": "object"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -756,8 +1038,16 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/RunSummary"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -799,6 +1089,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -838,6 +1136,14 @@
                 "schema": {
                   "type": "object"
                 }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
               }
             }
           },
@@ -879,6 +1185,14 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
@@ -919,10 +1233,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -950,6 +1292,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -967,10 +1312,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1008,6 +1381,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -1025,10 +1401,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1066,6 +1470,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -1114,10 +1521,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1155,6 +1590,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -1192,10 +1630,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1233,6 +1699,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -1281,10 +1750,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1312,6 +1809,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -1357,10 +1857,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1398,6 +1926,9 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -1415,10 +1946,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1446,6 +2005,9 @@
               "minLength": 16,
               "maxLength": 128
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -1463,10 +2025,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1494,6 +2084,9 @@
               "minLength": 16,
               "maxLength": 128
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -1511,10 +2104,38 @@
                   "type": "object"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1542,6 +2163,9 @@
               "minLength": 16,
               "maxLength": 128
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ]
       }
@@ -1576,6 +2200,9 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
           }
         ],
         "requestBody": {
@@ -1607,10 +2234,118 @@
                   "$ref": "#/components/schemas/ReanalysisReceipt"
                 }
               }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
             }
           },
           "default": {
             "description": "Same-origin/CSRF/owner/consent and current-revision checks; stale version or non-review run returns409",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "operationId": "get_runs",
+        "summary": "Bounded owner-only runs discovery across sessions; excludes deleted records and private authority",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "Opaque next_cursor from the previous page; newest first."
+          },
+          {
+            "name": "source_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "enum": [
+                "queued",
+                "running",
+                "needs_review",
+                "completed",
+                "failed",
+                "blocked",
+                "interrupted",
+                "cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest-first page; no owner/private runtime binding fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunSummaryPage"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "default": {
+            "description": "Authenticated domain error",
             "content": {
               "application/json": {
                 "schema": {
@@ -1696,6 +2431,397 @@
           "saved": {
             "const": true
           }
+        }
+      },
+      "RunSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "workflow",
+          "status",
+          "phase",
+          "source_ids",
+          "base_profile_revision",
+          "created_at",
+          "operation_id",
+          "saved_receipt",
+          "tool_receipts"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workflow": {
+            "enum": [
+              "entry",
+              "document",
+              "visit",
+              "care_plan"
+            ]
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "needs_review",
+              "completed",
+              "failed",
+              "blocked",
+              "interrupted",
+              "cancelled"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "fact_change_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tool_receipts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "base_profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "repair_attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Error/properties/error"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Error/properties/error"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "saved_receipt": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "saved": {
+                "type": "boolean"
+              }
+            }
+          },
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "enum": [
+                  "fixture",
+                  "real"
+                ]
+              },
+              "agh": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "model",
+                  "session_id",
+                  "last_seq",
+                  "tool_receipt_ids"
+                ],
+                "properties": {
+                  "provider": {
+                    "const": "agnes-ai"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "last_seq": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "tool_receipt_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "DocumentSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source_id",
+          "name",
+          "media_type",
+          "byte_size",
+          "content_hash",
+          "extraction_status",
+          "pages"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_type": {
+            "enum": [
+              "application/pdf",
+              "text/plain"
+            ]
+          },
+          "byte_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "extraction_status": {
+            "const": "extracted"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "page",
+                "start",
+                "end"
+              ],
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "start": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "RunSummaryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runs",
+          "next_cursor"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        }
+      },
+      "DocumentSummaryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "documents",
+          "next_cursor"
+        ],
+        "properties": {
+          "documents": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummary"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        }
+      },
+      "SessionState": {
+        "type": "object",
+        "required": [
+          "user",
+          "csrf_token",
+          "profile_revision",
+          "scope_epoch",
+          "all_clear_epoch"
+        ],
+        "properties": {
+          "user": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "id",
+                  "username"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "username": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "csrf_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "scope_epoch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "all_clear_epoch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parameters": {
+      "HealthThreadEpoch": {
+        "name": "X-HealthThread-Epoch",
+        "in": "header",
+        "required": true,
+        "description": "Immutable operation-ticket scope_epoch from login/me. Positive safe integer. Missing/invalid428; stale uncommitted mutation409. Same-key committed receipt lookup precedes epoch comparison; never an owner identity.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "headers": {
+      "HealthThreadEpoch": {
+        "description": "Fresh authenticated scope_epoch after this successful response. Do not upgrade an existing pending operation ticket.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "HealthThreadAllClearEpoch": {
+        "description": "Fresh durable all_clear_epoch; increments only on new all-data erase, including empty scope.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

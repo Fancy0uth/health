@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 export const PROJECT=fileURLToPath(new URL('../',import.meta.url));
-export const AGH_ROOT='/Users/fancyouth123/Documents/Codex/2026-10-06/https-github-com-agnesai-labs-agnes/work/agnes-harness';
+export const AGH_ROOT=process.env.AGH_ROOT||'/Users/fancyouth123/Documents/Codex/2026-10-06/https-github-com-agnesai-labs-agnes/work/agnes-harness';
 export async function buildRuntime(){
  const lock=JSON.parse(await readFile(join(PROJECT,'agents/harness.lock.json'),'utf8'));
  const commit=execFileSync('git',['rev-parse','HEAD'],{cwd:AGH_ROOT,encoding:'utf8'}).trim();
