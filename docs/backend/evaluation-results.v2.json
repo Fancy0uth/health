@@ -1,0 +1,474 @@
+{
+  "label": "NO_MODEL_INFERENCE_LAUNCH_APPROVAL_BLOCKED",
+  "dataset_version": 2,
+  "execution_state": "blocked-on-explicit-approval",
+  "execution_head": "a7f71c42be60bd3d760133f0a08e6a46d2378ab0",
+  "evaluator_sha256": "dd2c2b51d2b632d4423e0e5f294a80e13a9ac905f4fe535b3af9df602777e95e",
+  "dataset_sha256": "7976bcddf9fcd66c1050955d8033da00624a2edad8e68c064dd5c4efa9b2daf1",
+  "freeze_manifest_sha256": "eee02c9724d1667333158d6dfa3b521f36cb4360532730b36251732525535507",
+  "dataset_freeze_commit": "715fa6f",
+  "frozen_approved_asset_generation": "10bed8c45398820ee485",
+  "prelaunch_verified_at": "2026-10-12T07:40:15.091Z",
+  "launch_command": "node --env-file-if-exists=.env scripts/evaluate-model.mjs --version v2 --dataset tests/fixtures/model-evaluation.v2.json --output .runtime/evidence",
+  "approval_rejection": {
+    "code": "AUTO_REVIEW_REJECTED",
+    "phase": "before_process_creation",
+    "reason": "This action was rejected due to unacceptable risk. Reason: This launches a real model evaluation that may use .env credentials, external network services, and incur side effects or costs; the user did not explicitly authorize this exact live run or its destination. Do not bypass this rejection through a workaround or indirect execution."
+  },
+  "actual_process_started": false,
+  "actual_model_inferences": 0,
+  "actual_sdk_sessions": 0,
+  "actual_primary_attempts": 0,
+  "actual_continuation_attempts": 0,
+  "actual_runtime_observation": null,
+  "started_at": null,
+  "finished_at": null,
+  "limits": {
+    "concurrency": 2,
+    "user_concurrency": 1,
+    "deadline_ms": 120000,
+    "repair_limit": 2
+  },
+  "setup_error": "AUTO_REVIEW_REJECTED",
+  "stop_reason": "AUTO_REVIEW_REJECTED",
+  "cases": [],
+  "not_run": [
+    {
+      "id": "v2-dev-entry-01",
+      "split": "development",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-entry-02",
+      "split": "development",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-entry-03",
+      "split": "development",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-entry-04",
+      "split": "development",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-visit-01",
+      "split": "development",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-visit-02",
+      "split": "development",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-visit-03",
+      "split": "development",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-visit-04",
+      "split": "development",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-document-01",
+      "split": "development",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-document-02",
+      "split": "development",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-document-03",
+      "split": "development",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-dev-document-04",
+      "split": "development",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-entry-01",
+      "split": "heldout",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-entry-02",
+      "split": "heldout",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-entry-03",
+      "split": "heldout",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-entry-04",
+      "split": "heldout",
+      "workflow": "entry",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-visit-01",
+      "split": "heldout",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-visit-02",
+      "split": "heldout",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-visit-03",
+      "split": "heldout",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-visit-04",
+      "split": "heldout",
+      "workflow": "visit",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-document-01",
+      "split": "heldout",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-document-02",
+      "split": "heldout",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-document-03",
+      "split": "heldout",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    },
+    {
+      "id": "v2-heldout-document-04",
+      "split": "heldout",
+      "workflow": "document",
+      "reason": "AUTO_REVIEW_REJECTED_BEFORE_PROCESS_CREATION"
+    }
+  ],
+  "scoring_version": "v2-frozen-literal-time-schedule",
+  "gold_limit": {
+    "method": "Freshly authored developer-synthetic literal semantics, using only assigned requirements and declared preimplementation finite time policy. Not bedside or expert clinical labeling.",
+    "blindness": {
+      "v1_case_gold_results_archive_reports_read": false,
+      "labels_derived_from_validator_implementation_or_outputs": false,
+      "model_outputs_read_before_labels": false,
+      "clinical_expert_review": false
+    },
+    "freeze_rule": "No label/input/split/alternative changes after freeze or any V2 inference; primary 24 attempted at most once with separately counted W3 confirmations.",
+    "literal_values": "Whole original source sentences, including original source prefixes and terminal sentence punctuation; ASCII PDF sentence spans include their original terminating newline. No strip-prefix or punctuation alternatives.",
+    "pdf_mechanical_verification": "Generic Helvetica synthetic PDF does not round-trip CJK/emoji; newly authored ASCII pages round-trip exactly, retaining page and final newlines. Separate non-PDF entries/visits exercise UTF-16 emoji offsets."
+  },
+  "scoring_policy": {
+    "origin": "Root/final_fix declared finite policy before V2 calls, not validator outputs",
+    "hard_supported_cues": [
+      "每日",
+      "每天",
+      "每周",
+      "每月",
+      "qualified numeral offsets in Chinese",
+      "daily",
+      "weekly",
+      "monthly",
+      "every day/week/month",
+      "qualified English numeral offsets",
+      "last/next weekday/week/month/year",
+      "literal dates"
+    ],
+    "strong_raw": "Enclosing verbatim span of all supported cues in the sentence, retaining adjacent qualifiers and intervening words; never infer calendar dates.",
+    "relative_frequency": {
+      "precision": "relative",
+      "start": null,
+      "end": null
+    },
+    "malformed_or_non_normalized_dates": {
+      "precision": "unknown",
+      "start": null,
+      "end": null
+    },
+    "lone_valid_ISO_date": "Either unknown/null endpoints or exact/start identical literal ISO/end null, both with identical required raw.",
+    "multiple_date_or_date_relative": "unknown precision/null endpoints with enclosing literal raw.",
+    "weak_past_current": "No forced time slot solely from weak scope labels; alternatives explicitly listed per candidate. Scope and literal quote still required."
+  },
+  "aggregates": {
+    "development": {
+      "cases": 12,
+      "attempted_cases": 0,
+      "not_run": 12,
+      "raw_observed": 0,
+      "strict_raw_case_pass": 0,
+      "strict_final_case_pass": 0,
+      "strict_end_to_end_case_pass": 0,
+      "raw_structural_first_stage": [],
+      "genuine_primary_closed": 0,
+      "correct_refusals": 0,
+      "system_guarded_unsupported_outputs": 0,
+      "unknown_refusal_denominator": 1,
+      "actual_runs": 0,
+      "genuine_runs_closed": 0,
+      "continuation_attempted": 0,
+      "continuation_expected": 4,
+      "continuation_completed": 0,
+      "repair_total": 0,
+      "runs_repaired": 0,
+      "failed_primary": [],
+      "strict_final_disagreements": [],
+      "source_preserved": 0,
+      "preservation": {
+        "raw": {
+          "negation": {
+            "preserved": 0,
+            "applicable_cases": 4
+          },
+          "uncertainty": {
+            "preserved": 0,
+            "applicable_cases": 4
+          },
+          "past_current": {
+            "preserved": 0,
+            "applicable_cases": 10
+          }
+        },
+        "final": {
+          "negation": {
+            "preserved": 0,
+            "applicable_cases": 4
+          },
+          "uncertainty": {
+            "preserved": 0,
+            "applicable_cases": 4
+          },
+          "past_current": {
+            "preserved": 0,
+            "applicable_cases": 10
+          }
+        }
+      },
+      "raw": {
+        "candidate_fields_correct": 0,
+        "candidate_field_components": 65,
+        "literal_source_supported": 0,
+        "expected_primary_components": 21,
+        "matched_primary_components": 0,
+        "raw_time_required": 10,
+        "raw_time_preserved": 0,
+        "schedule_required": 4,
+        "schedule_preserved": 0,
+        "task_source_supported": 0,
+        "expected_tasks": 4,
+        "matched_tasks": 0
+      },
+      "final": {
+        "candidate_fields_correct": 0,
+        "candidate_field_components": 65,
+        "literal_source_supported": 0,
+        "expected_primary_components": 21,
+        "matched_primary_components": 0,
+        "raw_time_required": 10,
+        "raw_time_preserved": 0,
+        "schedule_required": 4,
+        "schedule_preserved": 0,
+        "task_source_supported": 0,
+        "expected_tasks": 4,
+        "matched_tasks": 0
+      }
+    },
+    "heldout": {
+      "cases": 12,
+      "attempted_cases": 0,
+      "not_run": 12,
+      "raw_observed": 0,
+      "strict_raw_case_pass": 0,
+      "strict_final_case_pass": 0,
+      "strict_end_to_end_case_pass": 0,
+      "raw_structural_first_stage": [],
+      "genuine_primary_closed": 0,
+      "correct_refusals": 0,
+      "system_guarded_unsupported_outputs": 0,
+      "unknown_refusal_denominator": 1,
+      "actual_runs": 0,
+      "genuine_runs_closed": 0,
+      "continuation_attempted": 0,
+      "continuation_expected": 4,
+      "continuation_completed": 0,
+      "repair_total": 0,
+      "runs_repaired": 0,
+      "failed_primary": [],
+      "strict_final_disagreements": [],
+      "source_preserved": 0,
+      "preservation": {
+        "raw": {
+          "negation": {
+            "preserved": 0,
+            "applicable_cases": 3
+          },
+          "uncertainty": {
+            "preserved": 0,
+            "applicable_cases": 4
+          },
+          "past_current": {
+            "preserved": 0,
+            "applicable_cases": 9
+          }
+        },
+        "final": {
+          "negation": {
+            "preserved": 0,
+            "applicable_cases": 3
+          },
+          "uncertainty": {
+            "preserved": 0,
+            "applicable_cases": 4
+          },
+          "past_current": {
+            "preserved": 0,
+            "applicable_cases": 9
+          }
+        }
+      },
+      "raw": {
+        "candidate_fields_correct": 0,
+        "candidate_field_components": 65,
+        "literal_source_supported": 0,
+        "expected_primary_components": 21,
+        "matched_primary_components": 0,
+        "raw_time_required": 11,
+        "raw_time_preserved": 0,
+        "schedule_required": 5,
+        "schedule_preserved": 0,
+        "task_source_supported": 0,
+        "expected_tasks": 5,
+        "matched_tasks": 0
+      },
+      "final": {
+        "candidate_fields_correct": 0,
+        "candidate_field_components": 65,
+        "literal_source_supported": 0,
+        "expected_primary_components": 21,
+        "matched_primary_components": 0,
+        "raw_time_required": 11,
+        "raw_time_preserved": 0,
+        "schedule_required": 5,
+        "schedule_preserved": 0,
+        "task_source_supported": 0,
+        "expected_tasks": 5,
+        "matched_tasks": 0
+      }
+    },
+    "all": {
+      "cases": 24,
+      "attempted_cases": 0,
+      "not_run": 24,
+      "raw_observed": 0,
+      "strict_raw_case_pass": 0,
+      "strict_final_case_pass": 0,
+      "strict_end_to_end_case_pass": 0,
+      "raw_structural_first_stage": [],
+      "genuine_primary_closed": 0,
+      "correct_refusals": 0,
+      "system_guarded_unsupported_outputs": 0,
+      "unknown_refusal_denominator": 2,
+      "actual_runs": 0,
+      "genuine_runs_closed": 0,
+      "continuation_attempted": 0,
+      "continuation_expected": 8,
+      "continuation_completed": 0,
+      "repair_total": 0,
+      "runs_repaired": 0,
+      "failed_primary": [],
+      "strict_final_disagreements": [],
+      "source_preserved": 0,
+      "preservation": {
+        "raw": {
+          "negation": {
+            "preserved": 0,
+            "applicable_cases": 7
+          },
+          "uncertainty": {
+            "preserved": 0,
+            "applicable_cases": 8
+          },
+          "past_current": {
+            "preserved": 0,
+            "applicable_cases": 19
+          }
+        },
+        "final": {
+          "negation": {
+            "preserved": 0,
+            "applicable_cases": 7
+          },
+          "uncertainty": {
+            "preserved": 0,
+            "applicable_cases": 8
+          },
+          "past_current": {
+            "preserved": 0,
+            "applicable_cases": 19
+          }
+        }
+      },
+      "raw": {
+        "candidate_fields_correct": 0,
+        "candidate_field_components": 130,
+        "literal_source_supported": 0,
+        "expected_primary_components": 42,
+        "matched_primary_components": 0,
+        "raw_time_required": 21,
+        "raw_time_preserved": 0,
+        "schedule_required": 9,
+        "schedule_preserved": 0,
+        "task_source_supported": 0,
+        "expected_tasks": 9,
+        "matched_tasks": 0
+      },
+      "final": {
+        "candidate_fields_correct": 0,
+        "candidate_field_components": 130,
+        "literal_source_supported": 0,
+        "expected_primary_components": 42,
+        "matched_primary_components": 0,
+        "raw_time_required": 21,
+        "raw_time_preserved": 0,
+        "schedule_required": 9,
+        "schedule_preserved": 0,
+        "task_source_supported": 0,
+        "expected_tasks": 9,
+        "matched_tasks": 0
+      }
+    }
+  },
+  "metric_interpretation": "All success and observation numerators are zero because no evaluator process/model inference occurred. These are not failed-model predictions or model-accuracy measurements; all 24 primary cases remain not_run. W3 continuation expectations remain separate. Gold is independent AI-assisted developer-synthetic, not derived from evaluated Agnes outputs/business validator and not clinically annotated."
+}
