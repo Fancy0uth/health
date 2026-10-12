@@ -33,7 +33,8 @@ hr { border: 0; border-top: 1px solid var(--border); width: 100%; margin: 4px 0;
 .status-bar { height: max(44px, env(safe-area-inset-top)); flex: none; display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 20px 0; font-size: 15px; line-height: 23px; font-weight: 500; }
 .status-bar span:last-child { font-size: 13px; font-weight: 400; }
 .app-header { flex: none; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px; }
-.app-header h1 { flex: 1; min-width: 0; }
+.app-header > .button { width: auto; flex: none; white-space: nowrap; }
+.app-header h1 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand { display: flex; align-items: center; gap: 12px; flex: 1; }
 .brand-mark, .wordmark { display: block; flex: none; object-fit: contain; }
 .icon { display: inline-flex; width: var(--icon-size, 24px); height: var(--icon-size, 24px); flex: none; justify-content: center; align-items: center; vertical-align: middle; }
