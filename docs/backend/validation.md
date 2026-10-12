@@ -15,7 +15,7 @@
 
 ## 一次真实24例质量评估
 
-开发12 + 留出12由可靠性实现者在任何本轮质量调用前独立按原文语义标注并冻结，commit `621be3f`。数据SHA256：`0e5b3d16a2badd3417ff77e2f5fdb9d6c058407fbbd4df7fd47f8d3542496b10`；标注是developer synthetic gold，没有临床专家复核，不来自模型或现有validator。12/12顺序批次，每次最多2个不同owner，正常global2/owner1、每run120s、repair≤2；没有扩credits/steps/budget。
+开发12 + 留出12由独立编程 Agent 在任何本轮质量调用前按原文语义标注并冻结，commit `621be3f`。数据SHA256：`0e5b3d16a2badd3417ff77e2f5fdb9d6c058407fbbd4df7fd47f8d3542496b10`；这是 AI 辅助开发者合成标签，没有人工临床专家复核，未使用被测 Agnes 输出或业务 validator 生成标签。冻结资料中“不来自模型”的表述仅应理解为未用被测模型输出作自评分，不代表标签未经 AI 辅助。本说明澄清来源，未修改冻结数据或历史指标。12/12顺序批次，每次最多2个不同owner，正常global2/owner1、每run120s、repair≤2；没有扩credits/steps/budget。
 
 实际执行：2026-10-12 `05:38:44.783Z`–`05:50:32.944Z`，执行HEAD `621be3f`，固定Task2 `e72cbed`的领域/adapter/runtime资产。本次24个主运行各执行一次，另8个文档确认后独立care_plan接续，总计32个run。没有重新运行失败/留出例或根据留出调prompt/Skills/schema。输入只有虚构原文，包含emoji、相对时间、否定、既往/当前、不确定诊断、未提及/未询问、药名/剂量缺失、部分医嘱确认、多医嘱、无医嘱、病历命令与真实两页文本PDF。
 

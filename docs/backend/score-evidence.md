@@ -5,9 +5,9 @@
 |维度/权重|当前具体实现与证据|限制|
 |---|---|---|
 |技术深度与系统实现25%|SQLite immutable来源/FactRevision、receipt/outbox、事务CAS、owner隔离、scope/epoch、派生失效；`contracts/openapi.yaml` typed responses；`tests/faults/crash.test.mjs`五阶段真实SIGKILL、`isolation.test.mjs`回滚派生状态|单进程Node+SQLite；没有全局分布式exactly-once|
-|验证与异常20%|I01–I12、E01–E22实际测试名/路径/部分覆盖映射；独立28个fault/contract/eval测试；DB锁、PDF三边界、晚结果、未知写恢复|每行未注入子边界明确列出；没有零故障保证|
-|任务完成与结果15%|三工作流、双端动作映射、原文/否定/不确定/时间/出处；冻结12+12 independent gold一次真实评估，raw vs final/漏提/失败/repair/session详表|严格raw9/24→final11/24；未知拒绝3/3仍失败workflow；time gold有编码歧义；没有临床专家复核|
-|AGH闭环15%|真实Host+公开SDK、受信任五工具、三ready Skills、固定provider/资产；真实主闭环21/24、32runs中29成功、8care接续都完成|失败保留真实session/seq诊断；不伪造correlation或fixture为real|
+|验证与异常20%|完整201项工程测试零失败/跳过；I01–I12、E01–E22覆盖映射；DB锁、真实SIGKILL、PDF边界、迟到结果、未知写恢复；时间完整token/限定词/频率标点、旧候选重校验和队列限额回滚|每行未注入子边界明确列出；没有零故障保证|
+|任务完成与结果15%|最终双端真实W1/W2/W3及来源/版本/更正/时间/复制过期状态验收；历史V1的12+12真实评测保留；新V2独立AI辅助合成标签和首次输出/完整分母/时间日程评分已冻结复核|历史严格raw9/24→final11/24不能代表最终版本；新V2尚未获批执行，0例；标签无临床专家复核|
+|AGH闭环15%|真实Host+公开SDK、受信任五工具/三个ready Skills、固定provider/资产；最终浏览器三工作流留真实session/seq/回执；历史V1主闭环21/24、全部29/32及8care完成单独标注|最终W2首轮上游TRANSPORT失败保留、一次显式恢复完成；系统拦截与模型正确性/任务完成分开；新批量评测等待授权|
 |问题价值/融合15%|手机保存→电脑核对；更正后旧卡stale；医嘱部分确认和多事项；失败原文仍在；每结果沿source/run/commit回执解释|未测量节省整理时间或临床健康效果；真人医生处理仍必需|
 |创新/发展10%|可操作的来源证据+事务确认+版本失效，而不是仅聊天JSON；固定工程错误注入对照见下表|fixture治理实验，不能称模型能力或临床结局提高|
 

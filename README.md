@@ -50,7 +50,9 @@ node --test tests/faults/*.test.mjs
 AGH_ROOT=/absolute/path/to/agnes-harness node --test tests/sdk-build.test.mjs
 ```
 
-工程测试中的 scripted provider / fixture 不是模型质量证据。冻结的 12开发 +12留出独立合成金标见 [数据与冻结记录](tests/fixtures/model-evaluation.freeze.json)；真实一次性评估见 [验证记录](docs/backend/validation.md)。`node --env-file-if-exists=.env scripts/evaluate-model.mjs` 会消耗真实模型额度并产生新的独立评估运行；本次结果已经记录，不需要为演示重复运行。
+最终后端/评测脚本工程验证为 **201/201，通过且零跳过**；scripted provider / fixture 不是模型质量证据。双端真实 W1/W2/W3、事项版本同步、无关更正后医嘱依赖保留、旧卡复制过期标识及一次传输失败恢复见 [浏览器验收](docs/backend/reviews/browser-acceptance.md)。手机子页标题另经 359px 实际截图验证。
+
+历史 V1 的 12开发 +12留出评估见 [历史验证](docs/backend/validation.md)，不能代表最终版本。新 V2 [冻结数据](tests/fixtures/model-evaluation.v2.freeze.json) 和评测器已独立复核；批量调用在启动前被自动批准审核拒绝，目前 **0 次执行、24 例 not_run**，见 [V2 状态](docs/backend/validation.v2.md)。需明确授权现有 Agnes 账号向 `agnes-ai / agnes-3.0-flash` 发送这批合成资料及至多8次医嘱续接并消耗模型额度，才能执行一次新评测；不绕过审核、不更改冻结标签或重跑刷分。标签是独立 AI 辅助开发者合成标注，未经临床专家复核。
 
 详细验收操作见 [runbook](docs/backend/runbook.md)，接口见 [OpenAPI](contracts/openapi.yaml)，故障范围见 [fault-matrix](docs/backend/fault-matrix.md)。所有运行数据库、凭据和原始 SDK 证据保存在被忽略的 `.runtime/` / `.env`，不要提交真实健康资料。
 

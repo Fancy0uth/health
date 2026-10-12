@@ -1,6 +1,8 @@
 # 本地人工验收 runbook
 
-当前项目：`/Users/fancyouth123/Documents/ChatGPT/expressforpatient`；branch `codex/healththread-shared-backend`。Task4开始时模型执行HEAD与数据冻结commit为`621be3f`，AGH领域修复`e72cbed`已独立review CLEAR；本runbook写作时完整分支HEAD为`03af5b2`（前端恢复修复）。验收当前checkout时用`git rev-parse HEAD`记录实际commit；不能将旧prototype或历史smoke当成当前版本。Task4改动的最终commit见该文件的git history及任务报告。未推送、合并或部署。
+当前项目：`/Users/fancyouth123/Documents/ChatGPT/expressforpatient`；branch `codex/healththread-shared-backend`。最终领域代码 `8ba8460`，评测脚本 `a7f71c4`，受信任模型资产 `10bed8c45398820ee485`，均经独立复核。后续文档/界面提交见 `git rev-parse HEAD`。完整工程测试 201/201、检查通过；真实双端 W1/W2/W3 验收记录在 [浏览器验收](reviews/browser-acceptance.md)。未推送、合并或部署。
+
+本机预览已启动，可以直接打开电脑版 `http://127.0.0.1:4173/web/` 和手机界面 `http://127.0.0.1:4173/mobile/`，使用下述合成演示账号验收；只有服务停止后才需要重新执行启动命令。示例库中保留了本轮合成记录和两条医嘱事项，便于检查来源、版本、确认过程与恢复历史。
 
 ## 启动前提
 
@@ -16,7 +18,7 @@ npm run verify:agh-runtime
 npm start
 ```
 
-预览是同一个`127.0.0.1:4173`服务器、同一个`.runtime/healththread-domain.sqlite`：电脑`/web/`，手机`/mobile/`，并非两个后端端口。原4173旧prototype已经由协调者停止；当前真实UI服务器由协调者完成前端review gate后启动。`/api/health`是liveness+依赖状态，不能仅凭`ok:true`宣称模型可用。Node SQLite实验性警告已知。
+预览是同一个`127.0.0.1:4173`服务器、同一个`.runtime/healththread-domain.sqlite`：电脑`/web/`，手机`/mobile/`，并非两个后端端口。真实 AGH 运行环境已构建/核验，当前服务已启动。`/api/health`是liveness+依赖状态，不能仅凭`ok:true`宣称模型可用。Node SQLite实验性警告已知。
 
 ## W1：手机录入、电脑核对与冲突
 
@@ -49,8 +51,8 @@ npm start
 
 ## 验收登记与边界
 
-Task4完成的是工程自动故障、typed contracts、真实独立24例评估及本操作材料；真实浏览器双端验收由协调者执行并另登记实际URL/commit/provider/session/seq/操作/结果。当前该人工记录尚未由Task4观察，不标通过。前端/全分支最后独立review仍由协调者处理；这两个gate不能从fixture或本轮模型数据推断通过。
+当前工程与独立代码复核已完成，真实双端验收由协调者执行并单独保存实际 URL、版本、provider、session/seq、操作与结果。W2 记录了一次上游传输失败和一次显式同原文重试成功；它证明恢复行为，不表示首次生成必然成功。PDF 原生选择器自动化及实际 OS 打印未通过本轮浏览器验证。
 
-真实质量结果不是“全部正确”：原文保存24/24，主真实闭环21/24，完整严格gold11/24，未知项拒绝3/3但没有成功产物，四个明确每日/daily时间槽遗漏、一个重复不确定候选，另五例标签编码差异。详见`validation.md`和`evaluation-results.v1.json`。
+历史 V1 质量结果：原文保存24/24，主真实闭环21/24，完整严格gold11/24，四个明确时间槽遗漏、一个重复不确定候选，以及失败/标签编码差异，见`validation.md`和`evaluation-results.v1.json`。这些记录没有被修改或标成最终版本。V2 合成标签已独立冻结，未经临床专家标注；批量实跑目前被自动批准审核阻断、尚未启动，需用户明确授权现有 Agnes 账号向 agnes-ai / agnes-3.0-flash 发送24例合成资料及至多8次医嘱续接并消耗额度。不得通过其他执行路径绕过。
 
 旧原型SQLite、历史浏览器local数据不会导入领域，也不属于本次当前用户删除。AGH traces、外部备份和SQLite/WAL/OS残留无法认证擦除；真实负载、断电/磁盘满/完整渗透、临床专家正确性不在本次证明范围。不要提交`.env`、`.runtime`或真实病历。
