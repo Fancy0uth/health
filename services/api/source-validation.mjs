@@ -249,14 +249,17 @@ export function literalSourceTime(quote, sourceId) {
   const number = String.raw`(?:${numeric}|one|two|three|four|five|six|seven|eight|nine|ten|十一|十二|[一二三四五六七八九十两]+)`;
   const dateNumber = String.raw`[+-]?[0-9]+(?:\.[0-9]+)*`;
   const date = String.raw`(?:${dateNumber}-${dateNumber}-${dateNumber}|${dateNumber}/${dateNumber}/${dateNumber}|${dateNumber}年${dateNumber}月${dateNumber}日)`;
-  const relative = String.raw`(?:每[日天周月]|${number}(?:小时|天|日|周|个月|月)(?:后|前)|\b(?:daily|weekly|monthly|every (?:day|week|month)|(?:after|before|in)\s+(?:(?:about|approximately|at least|at most)\s+)?${number}\s+(?:days?|weeks?|months?|hours?)|(?:last|next) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year))\b)`;
+  const numericRelative = String.raw`${number}(?:小时|天|日|周|个月|月)(?:后|前)`;
+  const wordRelative = String.raw`(?:每[日天周月]|\b(?:daily|weekly|monthly|every (?:day|week|month)|(?:after|before|in)\s+(?:(?:about|approximately|at least|at most)\s+)?${number}\s+(?:days?|weeks?|months?|hours?)|(?:last|next) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year))\b)`;
   const qualifier = String.raw`(?:(?:大约|约|至少|最多|\babout|\bapproximately|\bat least|\bat most)\s*)?`;
   const suffix = String.raw`(?:\s*(?:左右|以内|之前|之后))?`;
   // A comma can separate two dates; within a numeric offset it must not expose
   // a suffix such as 5天后 from the literal 1,5天后.
   const dateCue = String.raw`(?<![A-Za-z0-9_.+/-])${qualifier}${date}${suffix}(?![A-Za-z0-9_/+-]|\.[0-9])`;
-  const relativeCue = String.raw`(?<![A-Za-z0-9_.,+/-])${qualifier}${relative}${suffix}(?![A-Za-z0-9_/+-]|[.,][0-9])`;
-  const pattern = new RegExp(`${dateCue}|${relativeCue}`, "gi");
+  const numericCue = String.raw`(?<![A-Za-z0-9_.,+/-])${qualifier}${numericRelative}${suffix}(?![A-Za-z0-9_/+-]|[.,][0-9])`;
+  // Word cues use word boundaries: ordinary punctuation is not part of a number.
+  const wordCue = String.raw`(?<![A-Za-z0-9_])${qualifier}${wordRelative}${suffix}(?![A-Za-z0-9_])`;
+  const pattern = new RegExp(`${dateCue}|${numericCue}|${wordCue}`, "gi");
   const matches = [...quote.matchAll(pattern)];
   const raw = matches.length
     ? quote.slice(matches[0].index, matches.at(-1).index + matches.at(-1)[0].length)

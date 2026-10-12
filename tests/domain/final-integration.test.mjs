@@ -514,3 +514,41 @@ test("comma-separated literal dates stay complete instead of merging into a nume
   assert.equal(time.precision, "unknown");
   assert.ok(stage(f, p, candidate(p, null, { effective_time: time })));
 });
+
+for (const [text, raw] of [
+  ["Record symptoms,daily.", "daily"],
+  ["Record symptoms,weekly.", "weekly"],
+  ["记录症状,每日一次。", "每日"],
+])
+  test(`frequency after ordinary comma stays required through care: ${raw}`, (t) => {
+    const f = fixture(t),
+      p = prepare(f, text, "document");
+    assert.equal(p.read.sentence_annotations[0].effective_time.raw, raw);
+    assert.throws(() => stage(f, p, candidate(p, null, { field: "instruction" })), {
+      code: "INVALID_AGENT_OUTPUT",
+    });
+    const c = stage(f, p, candidate(p, raw, { field: "instruction" }));
+    const receipt = confirm(f, c);
+    f.s.claimRun(receipt.continuation_run_id);
+    const tools = f.s.toolsFor(receipt.continuation_run_id),
+      i = tools.healththread_get_confirmed_instructions({ document_id: p.document_id }).instructions[0],
+      ref = { fact_id: i.fact_id, revision: i.revision };
+    const result = tools.healththread_stage_result({
+      kind: "care_plan",
+      payload: { tasks: [{ text: i.value, instruction_refs: [ref], schedule: raw }] },
+      dependencies: [ref],
+      operation_key: key(),
+    });
+    assert.equal(f.s.get(f.a, "result", result.result_id).payload.tasks[0].schedule, raw);
+  });
+import { literalSourceTime } from "../../services/api/source-validation.mjs";
+test("finite frequency literals survive ordinary punctuation on either side", () => {
+  for (const delimiter of [",", ".", ":", ";", "/", "+", "-", "(", ")", "，", "：", "、", "—"])
+    for (const cue of ["daily", "weekly", "monthly", "every day", "每日", "每天", "每周", "每月"]) {
+      const text = `记录${delimiter}${cue}${delimiter}记录`;
+      assert.equal(literalSourceTime(text, "source").raw, cue, text);
+    }
+  for (const text of ["notdaily", "dailyish", "weekly2", "x1,5天后"])
+    assert.equal(literalSourceTime(text, "source").raw, null, text);
+  assert.equal(literalSourceTime("1,5天后复诊。", "source").raw, "1,5天后");
+});
