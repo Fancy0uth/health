@@ -50,9 +50,9 @@ node --test tests/faults/*.test.mjs
 AGH_ROOT=/absolute/path/to/agnes-harness node --test tests/sdk-build.test.mjs
 ```
 
-最终后端/评测脚本工程验证为 **201/201，通过且零跳过**；scripted provider / fixture 不是模型质量证据。双端真实 W1/W2/W3、事项版本同步、无关更正后医嘱依赖保留、旧卡复制过期标识及一次传输失败恢复见 [浏览器验收](docs/backend/reviews/browser-acceptance.md)。手机子页标题另经 359px 实际截图验证。
+当前后端 `1a673d4` 工程验证为 **208/208，通过且零失败、零跳过**，语法/JSON 检查通过 67 个模块；scripted provider / fixture 不是模型质量证据。双端真实 W1/W2/W3、事项版本同步、无关更正后医嘱依赖保留、旧卡复制过期标识及一次传输失败恢复见 [浏览器验收](docs/backend/reviews/browser-acceptance.md)。手机子页标题另经 359px 实际截图验证。
 
-历史 V1 的 12开发 +12留出评估见 [历史验证](docs/backend/validation.md)，不能代表最终版本。新 V2 [冻结数据](tests/fixtures/model-evaluation.v2.freeze.json) 和评测器已独立复核；批量调用在启动前被自动批准审核拒绝，目前 **0 次执行、24 例 not_run**，见 [V2 状态](docs/backend/validation.v2.md)。需明确授权现有 Agnes 账号向 `agnes-ai / agnes-3.0-flash` 发送这批合成资料及至多8次医嘱续接并消耗模型额度，才能执行一次新评测；不绕过审核、不更改冻结标签或重跑刷分。标签是独立 AI 辅助开发者合成标注，未经临床专家复核。
+历史 V1 的 12开发 +12留出评估见 [历史验证](docs/backend/validation.md)。用户[明确授权](docs/backend/reviews/evaluation-v2-authorization.md)后，V2 已完成唯一一次 24 例实跑：原文保存 24/24，真实主闭环 12/24，严格全字段匹配 6/24，12 例 TRANSPORT 失败均留在分母。8 个预选医嘱续接均未满足固定确认条件，未执行，日程质量未评测。完整 [V2 报告](docs/backend/validation.v2.md) 区分了 4 个范围标签差异与 2 个未知信息校验缺口；后者已在 `1a673d4` 修复并独立复核。这批分数属于修复前 `cf632b9`，未重跑，不代表修复后模型表现。冻结标签为独立 AI 辅助开发者合成标注，未经临床专家复核。
 
 详细验收操作见 [runbook](docs/backend/runbook.md)，接口见 [OpenAPI](contracts/openapi.yaml)，故障范围见 [fault-matrix](docs/backend/fault-matrix.md)。所有运行数据库、凭据和原始 SDK 证据保存在被忽略的 `.runtime/` / `.env`，不要提交真实健康资料。
 

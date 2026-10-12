@@ -1,6 +1,6 @@
 # 本地人工验收 runbook
 
-当前项目：`/Users/fancyouth123/Documents/ChatGPT/expressforpatient`；branch `codex/healththread-shared-backend`。最终领域代码 `8ba8460`，评测脚本 `a7f71c4`，受信任模型资产 `10bed8c45398820ee485`，均经独立复核。后续文档/界面提交见 `git rev-parse HEAD`。完整工程测试 201/201、检查通过；真实双端 W1/W2/W3 验收记录在 [浏览器验收](reviews/browser-acceptance.md)。未推送、合并或部署。
+当前项目：`/Users/fancyouth123/Documents/ChatGPT/expressforpatient`；branch `codex/healththread-shared-backend`。当前领域代码含未知信息修复 `1a673d4`，评测脚本 `a7f71c4`，受信任模型资产 `10bed8c45398820ee485`，均经独立复核。后续文档提交见 `git rev-parse HEAD`。完整工程测试 208/208、67 模块检查通过；真实双端 W1/W2/W3 验收记录在 [浏览器验收](reviews/browser-acceptance.md)。V2 分数属于修复前 `cf632b9`。未推送、合并或部署。
 
 本机预览已启动，可以直接打开电脑版 `http://127.0.0.1:4173/web/` 和手机界面 `http://127.0.0.1:4173/mobile/`，使用下述合成演示账号验收；只有服务停止后才需要重新执行启动命令。示例库中保留了本轮合成记录和两条医嘱事项，便于检查来源、版本、确认过程与恢复历史。
 
@@ -53,6 +53,6 @@ npm start
 
 当前工程与独立代码复核已完成，真实双端验收由协调者执行并单独保存实际 URL、版本、provider、session/seq、操作与结果。W2 记录了一次上游传输失败和一次显式同原文重试成功；它证明恢复行为，不表示首次生成必然成功。PDF 原生选择器自动化及实际 OS 打印未通过本轮浏览器验证。
 
-历史 V1 质量结果：原文保存24/24，主真实闭环21/24，完整严格gold11/24，四个明确时间槽遗漏、一个重复不确定候选，以及失败/标签编码差异，见`validation.md`和`evaluation-results.v1.json`。这些记录没有被修改或标成最终版本。V2 合成标签已独立冻结，未经临床专家标注；批量实跑目前被自动批准审核阻断、尚未启动，需用户明确授权现有 Agnes 账号向 agnes-ai / agnes-3.0-flash 发送24例合成资料及至多8次医嘱续接并消耗额度。不得通过其他执行路径绕过。
+历史 V1 质量结果：原文保存24/24，主真实闭环21/24，完整严格gold11/24，四个明确时间槽遗漏、一个重复不确定候选，以及失败/标签编码差异，见`validation.md`和`evaluation-results.v1.json`；它们没有被修改或标成最终版本。V2 在准确授权后以 agnes-ai / agnes-3.0-flash 唯一实跑24例，原文24/24保存、真实主闭环12、严格匹配6/24、12个传输失败。预选8次care均未满足冻结确认条件，续接/日程质量未评测。4个范围标签差异与2个实际未知信息校验缺口分开记录，后两者已修复并工程复核。原分数属于修复前cf632b9，不证明当前代码的模型表现，详见[评测报告](validation.v2.md)。本次额度授权已经执行完毕；后续真实批量评测需另行授权，验收无需重复跑分。
 
 旧原型SQLite、历史浏览器local数据不会导入领域，也不属于本次当前用户删除。AGH traces、外部备份和SQLite/WAL/OS残留无法认证擦除；真实负载、断电/磁盘满/完整渗透、临床专家正确性不在本次证明范围。不要提交`.env`、`.runtime`或真实病历。

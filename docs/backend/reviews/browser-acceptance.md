@@ -1,4 +1,4 @@
-# Root genuine browser acceptance (in progress)
+# Root genuine browser acceptance (historical stages and completed named checks)
 
 Current service localhost4173, exec11162 / PID25248, source e72cbed runtime +03af5b2 clients; synthetic new .runtime/healththread-domain.sqlite, opt-in demo account. Actual Agnes route via Host/SDK; no fixture browser model.
 
@@ -36,3 +36,9 @@ Root fresh code checks atHEADa7f71c4: configured `node --env-file-if-exists=.env
 A final real359px screenshot revealed the mobile subpage return button taking full mobile button width and clipping its title. Small CSS-only commit eb5932d scopes content-width to .app-header>.button and nowrap/ellipsis/min-width0 to h1. Root reloaded the existing actual mobile tab and verified readable horizontal return/title at359x738. Existing body/PDF form buttons retain full width; no backend/asset changes. Saved docs/backend/evidence/mobile-header-fixed.png. Root also inspected desktop at1280x900 and saved both real tasks with 每日/三天后 and current versions/dependencies in docs/backend/evidence/desktop-shared-tasks.png. Temporary viewport override reset; both preview tabs marked deliverables. No new model call or data mutation in viewport checks.
 
 Prepared V2 execution was rejected before process creation by automatic approval review. Root sent the explicit existing-Agnes-account/24 synthetic primary/up-to8care/normalcaps quota authorization question. V2 calls remain0 until a trusted human answer. No indirect launch or approval bypass.
+
+### Subsequent authorization, evaluation and guard restart
+
+The human subsequently answered the exact question with `允许这次真实评测`. The approved once-only V2 ran to completion at cf632b9; its separate [report](../validation.v2.md) retains24 attempts,12 closures,6/24 strict cases,12TRANSPORT failures and0/8 care attempts. These quantitative synthetic results do not overwrite or substitute for the earlier browser checks above.
+
+The two newly observed missingness guard gaps were repaired in1a673d4 and independently reviewed CLEAR, with208/208 engineering tests and67module checks. Root verified the old process belonged to this preview, had no queued/running jobs, then restarted the same synthetic database on4173 (exec54632/PID49582). Fresh readonly HTTP checks for /web/, /mobile/ and /api/health returned200, dispatch ready/unsuspended/zero consecutive failures. Saved demo sources/facts/tasks remain. No new model or UI workflow was run after this guard; the earlier genuine browser checks are evidence for their recorded versions, not a fresh live-model score for1a673d4.
