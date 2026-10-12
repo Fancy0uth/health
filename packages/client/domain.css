@@ -1,0 +1,38 @@
+/* Additive evidence/auth styles; native desktop and phone shells keep their own theme. */
+.domain-login { max-width: 640px; margin: 24px auto; }
+.domain-error { border: 1px solid #d6a698; border-radius: 12px; padding: 16px; background: #fff2ed; margin-bottom: 16px; }
+.domain-error p { margin: 8px 0 0; }
+.domain-message { background: #edf5ee; color: #195b37; border-radius: 10px; padding: 12px 16px; }
+.domain-meta { display: grid; grid-template-columns: minmax(95px, 150px) 1fr; gap: 8px 14px; font-size: 14px; line-height: 1.7; }
+.domain-meta dt { color: #66776c; }
+.domain-meta dd { margin: 0; overflow-wrap: anywhere; }
+.domain-check { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; }
+.domain-check input { flex: none; width: 20px; height: 20px; margin: 3px 0; accent-color: #2d7048; }
+.domain-check small { display: block; }
+.domain-evidence { margin-top: 12px; }
+.domain-evidence blockquote { white-space: normal; overflow-wrap: anywhere; }
+.domain-source { background: none; color: #195b37; padding: 6px 0; text-decoration: underline; text-align: left; }
+.domain-claim, .domain-fact, .domain-list-item { border-bottom: 1px solid #dfe7e0; padding: 16px 0; }
+.domain-claim:last-child, .domain-fact:last-child, .domain-list-item:last-child { border-bottom: none; }
+.domain-unavailable { background: #edf5ee; border-radius: 12px; padding: 16px; margin-top: 16px; }
+.domain-unavailable p { margin-bottom: 8px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font: inherit; font-size: 14px; }
+.domain-print pre { font-size: 16px; line-height: 1.8; }
+.domain-candidate { margin-bottom: 16px; }
+.phone .domain-login { margin: 12px 0; }
+.phone .domain-evidence blockquote { background: var(--soft); padding: 12px; border-radius: 10px; }
+.phone .domain-meta { grid-template-columns: 100px 1fr; font-size: 13px; }
+.phone .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.phone .button-row .button { width: auto; flex: 1 1 auto; }
+.phone .domain-source { color: var(--primary); }
+.phone .domain-home-intro { padding: 12px 0; }
+.phone .domain-home-intro p { margin: 8px 0; }
+.phone .composer { margin: 12px 0 0; }
+.phone .upload-zone { display: flex; flex-direction: column; gap: 8px; }
+.phone .content > .card > .button { margin: 8px 0; }
+@media print {
+  .app-header,.status-bar,.bottom-navigation,.domain-print button,.domain-error,.domain-message { display:none!important; }
+  .phone,.screen-body,.content { height:auto!important; overflow:visible!important; background:white!important; }
+  .domain-print { box-shadow:none!important; min-height:0!important; padding:15mm!important; }
+  .domain-print pre { white-space:pre-wrap; }
+}
