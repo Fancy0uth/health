@@ -1,0 +1,10 @@
+{
+  "dataset": "tests/fixtures/model-evaluation.v1.json",
+  "sha256": "0e5b3d16a2badd3417ff77e2f5fdb9d6c058407fbbd4df7fd47f8d3542496b10",
+  "frozen_at": "2026-10-12T05:38:25.727Z",
+  "asset_generation": "fc8a1a31ae4ba17db898",
+  "development": 12,
+  "heldout": 12,
+  "annotation": "Independent synthetic developer labels, no clinical expert review; frozen before any quality evaluation call",
+  "policy": "Run each case once under default limits; do not tune runtime, Skills, prompts or schema after heldout."
+}
