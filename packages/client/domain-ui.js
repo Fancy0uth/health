@@ -18,19 +18,19 @@ export function mountDomainApp({mobile=false,root=document.getElementById('app')
   const state=()=>client.state;
   const sources=()=>state().timeline.entries.map(e=>e.source);
   const result=()=>state().results.find(r=>r.id===selectedResult)||[...state().results].filter(r=>r.kind==='visit_preparation').sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];
-  const publicError=err=>({CONSENT_REQUIRED:'尚未授权原文分析，请到设置管理授权。',REVISION_CONFLICT:'资料版本已变化，请刷新后重新核对。',STALE_DEPENDENCY:'这项资料依赖已过期，请先核对当前资料。',AGENT_NOT_CONFIGURED:'运行模型尚未配置；原文仍然保留。',AGH_NOT_READY:'运行模型尚未就绪；原文仍然保留。',AUTH_FAILED:'账号或密码不正确。',PAYLOAD_TOO_LARGE:'输入或文件超过服务端限额，原文尚未保存。',PDF_NO_TEXT:'PDF 没有可读取的文本层，请粘贴原文。',PDF_CORRUPT:'PDF 文件无法解析，请核对原文件。',UNSUPPORTED_DOCUMENT:'此文件类型不受支持，请选择文本层 PDF。'})[err.code]||(/^[A-Z_]+$/.test(err.message||'')?'请求未完成；输入已保留。':err.message);
+  const publicError=err=>({CONSENT_REQUIRED:'尚未授权原文分析，请到设置管理授权。',REVISION_CONFLICT:'资料版本已变化，请刷新后重新核对。',STALE_DEPENDENCY:'这项资料依赖已过期，请先核对当前资料。',AGENT_NOT_CONFIGURED:'运行模型尚未配置；原文仍然保留。',AGH_NOT_READY:'运行模型尚未就绪；原文仍然保留。',AUTH_FAILED:'账号或密码不正确。',SCOPE_EPOCH_CONFLICT:'该请求所属资料范围已变化；旧请求不会改用新范围提交，请刷新并重新核对。',EPOCH_REQUIRED:'尚未取得资料范围，请读取当前账号后重试。',STALE_SCOPE:'收到旧的资料状态，已忽略，请重新读取。',PAYLOAD_TOO_LARGE:'输入或文件超过服务端限额，原文尚未保存。',PDF_NO_TEXT:'PDF 没有可读取的文本层，请粘贴原文。',PDF_CORRUPT:'PDF 文件无法解析，请核对原文件。',UNSUPPORTED_DOCUMENT:'此文件类型不受支持，请选择文本层 PDF。'})[err.code]||(/^[A-Z_]+$/.test(err.message||'')?'请求未完成；输入已保留。':err.message);
   const sourceButton=id=>button('查看原文','source','quiet',`data-id="${esc(id)}"`);
   const runFor=id=>Object.values(state().runs).find(r=>r.result_id===id||r.result_ref===id);
   function navigate(next,secondary='') {page=next;view=secondary;menu=false;error=null;history.replaceState(null,'','#'+next);render();}
   function unknownOperations() {
-    return client.pendingOperations().map(op=>panel(op.state==='sending'?'请求处理中 · 尚未取得回执':'前次请求结果未知',`${warning('输入与原请求已保留。先恢复原请求回执；编辑后的内容不会替换原请求，也不会自动提交。')}<details><summary>查看保留的原请求</summary><pre>${esc(JSON.stringify(op.body,null,2))}</pre><p class="small muted">请求键 ${esc(op.key)}</p></details>${op.file_required?`<label class="field"><span>重新选择原文件（会核对内容指纹）</span><input type="file" data-recovery-file="${esc(op.id)}" accept="application/pdf"></label>`:''}${button('查询 / 重试原请求回执','recover','primary',`data-id="${esc(op.id)}"`)}`)).join('');
+    return client.pendingOperations().map(op=>panel(op.method==='DELETE'?'删除回执待恢复':op.state==='sending'?'请求处理中 · 尚未取得回执':'前次请求结果未知',`${warning(op.method==='DELETE'?'删除请求结果尚待核对。请用原请求恢复真实回执；不会再次使用新请求键删除资料。':'输入与原请求已保留。先恢复原请求回执；编辑后的内容不会替换原请求，也不会自动提交。')}<details><summary>查看保留的原请求</summary><pre>${esc(JSON.stringify(op.body,null,2))}</pre><p class="small muted">请求键 ${esc(op.key)}</p></details>${op.file_required?`<label class="field"><span>重新选择原文件（会核对内容指纹）</span><input type="file" data-recovery-file="${esc(op.id)}" accept="application/pdf"></label>`:''}${button('查询 / 重试原请求回执','recover','primary',`data-id="${esc(op.id)}"`)}`)).join('');
   }
   function capabilities() {
     return `<div class="domain-unavailable">${['department','triage','audio','ocr'].map(name=>`<p class="small muted">${esc(capabilityText(name))}</p>`).join('')}<div class="button-row">${button('科室推荐未配置','unavailable','secondary','disabled')}${button('观察分级未配置','unavailable','secondary','disabled')}${button('语音输入未支持','unavailable','secondary','disabled')}</div></div>`;
   }
   function runs() {
     const items=Object.values(state().runs).sort((a,b)=>b.created_at.localeCompare(a.created_at));
-    return items.map(run=>panel(run.workflow==='care_plan'?'诊后事项续接运行':'原文整理运行',`<p>${esc(runLabel(run))}</p><p class="small muted">${run.workflow==='care_plan'?'已核对医嘱的独立续接':'原文保存 '+(run.saved_receipt?.saved?'已有服务端回执':run.deleted?'已删除':'尚未取得回执')}</p>${diagnostics('运行 '+run.id+' · 阶段 '+run.phase)}${runtimeWarning(run)}${run.error?warning(publicError(run.error))+diagnostics(JSON.stringify(run.error,null,2)):''}<div class="button-row">${run.fact_change_id&&run.change?.status==='pending'?button('核对候选','review','primary',`data-id="${esc(run.fact_change_id)}"`):''}${['failed','blocked','interrupted'].includes(run.status)&&!run.deleted?button('从已保存原文重试','retry-run','secondary',`data-id="${esc(run.id)}"`):''}${['queued','running','needs_review'].includes(run.status)?button('取消该运行','cancel-run','secondary',`data-id="${esc(run.id)}"`):''}${button('读取任务状态','read-run','quiet',`data-id="${esc(run.id)}"`)}${run.source_ids[0]?sourceButton(run.source_ids[0]):''}</div>`)).join('');
+    return items.map(run=>panel(run.workflow==='care_plan'?'诊后事项续接运行':'原文整理运行',`<p>${esc(runLabel(run))}</p><p class="small muted">${run.workflow==='care_plan'?'已核对医嘱的独立续接':'原文保存 '+(run.saved_receipt?.saved?'已有服务端回执':run.deleted?'已删除':'尚未取得回执')}</p>${diagnostics('运行 '+run.id+' · 阶段 '+run.phase)}${runtimeWarning(run)}${run.error?warning(publicError(run.error))+diagnostics(JSON.stringify(run.error,null,2)):''}<div class="button-row">${run.fact_change_id&&state().profile.pending_changes.some(change=>change.id===run.fact_change_id)?button('核对候选','review','primary',`data-id="${esc(run.fact_change_id)}"`):''}${['failed','blocked','interrupted'].includes(run.status)&&!run.deleted?button('从已保存原文重试','retry-run','secondary',`data-id="${esc(run.id)}"`):''}${['queued','running','needs_review'].includes(run.status)?button('取消该运行','cancel-run','secondary',`data-id="${esc(run.id)}"`):''}${button('读取任务状态','read-run','quiet',`data-id="${esc(run.id)}"`)}${run.source_ids[0]?sourceButton(run.source_ids[0]):''}</div>`)).join('')+(state().runPage.next_cursor?button('读取更早的任务','more-runs','secondary'):'');
   }
   function runtimeWarning(run) {
     if(!run) return paragraph('尚未取得运行来源；产物内容需核对。');
@@ -65,8 +65,8 @@ export function mountDomainApp({mobile=false,root=document.getElementById('app')
   function medical() {
     const tasks=state().tasks.tasks;
     const pdfReady=state().capabilities?.pdf_text?.status==='enabled';
-    const docs=state().timeline.entries.filter(e=>e.source.kind==='medical_document');
-    return `${panel('上传并核对病历',`<label class="field upload-zone"><span>选择有文本层的 PDF</span><input type="file" id="medical-file" accept="application/pdf"></label>${file?paragraph(file.name+' · 文件仍在本机，只有点击上传才提交'):''}${paragraph(`服务端上限 ${state().capabilities?.limits?.upload_bytes||5000000} 字节 · ${state().capabilities?.limits?.pdf_pages||30} 页；扫描件与音频未支持。`)}${!pdfReady?warning('服务器文本层 PDF 提取未配置，请先粘贴病历文字。'):''}${button('上传选中的 PDF','upload-file','primary',file&&pdfReady?'':'disabled')}${textarea('也可以粘贴病历原文','medicalText','粘贴原始文字，逐项核对后才形成事实与诊后事项。')}<label class="field"><span>病历名称（可选）</span><input name="medicalName" data-draft="medicalName" value="${esc(draft('medicalName'))}"></label>${button('保存病历原文并提取候选','paste-document','secondary')}`)}${pending()}${panel('病历来源',docs.map(e=>`<article class="domain-list-item"><p>${lines(e.source.text)}</p>${sourceButton(e.source_id)}${button('删除该来源','delete-source','danger',`data-id="${esc(e.source_id)}"`)}</article>`).join('')||paragraph('当前没有病历原文。'))}${panel('诊后事项',`${paragraph('事项只来自用户已确认的医嘱；运行续接完成后出现。事项标为完成只表示执行状态，不代表康复。')}${tasks.map(task=>`<article class="domain-list-item"><h3>${lines(task.text)}</h3><p>${esc(({open:'待完成',done:'已完成（执行状态）',paused:'已暂停'})[task.status])} · v${task.version} · ${task.validity==='current'?'当前依赖':'依赖已过期'}</p><p>时间：${esc(unknown(task.schedule))}</p><p class="small muted">${task.instruction_refs.map(ref=>`已确认医嘱版本 ${ref.revision}`).join(' · ')}</p>${diagnostics(task.instruction_refs.map(ref=>'医嘱 '+ref.fact_id+' v'+ref.revision).join('\n'))}${task.source_ids.map(sourceButton).join('')}${task.validity==='current'?`<div class="button-row">${[['done','标为完成'],['paused','暂停'],['open','重新打开']].map(([status,label])=>button(label,'task-status','secondary',`data-id="${esc(task.id)}" data-status="${status}" data-version="${task.version}"`)).join('')}</div>`:warning('资料已变化；请核对当前医嘱并重新整理，不能更新旧事项。')}</article>`).join('')||paragraph('尚无诊后事项。候选医嘱核对后将创建独立续接运行；未核对时不会创建事项。')}`)}${runs()}${capabilities()}`;
+    const docs=state().documents.documents;
+    return `${panel('上传并核对病历',`<label class="field upload-zone"><span>选择有文本层的 PDF</span><input type="file" id="medical-file" accept="application/pdf"></label>${file?paragraph(file.name+' · 文件仍在本机，只有点击上传才提交'):''}${paragraph(`服务端上限 ${state().capabilities?.limits?.upload_bytes||5000000} 字节 · ${state().capabilities?.limits?.pdf_pages||30} 页；扫描件与音频未支持。`)}${!pdfReady?warning('服务器文本层 PDF 提取未配置，请先粘贴病历文字。'):''}${button('上传选中的 PDF','upload-file','primary',file&&pdfReady?'':'disabled')}${textarea('也可以粘贴病历原文','medicalText','粘贴原始文字，逐项核对后才形成事实与诊后事项。')}<label class="field"><span>病历名称（可选）</span><input name="medicalName" data-draft="medicalName" value="${esc(draft('medicalName'))}"></label>${button('保存病历原文并提取候选','paste-document','secondary')}`)}${pending()}${panel('病历来源',docs.map(e=>`<article class="domain-list-item"><h3>${esc(e.name||'未命名病历')}</h3><p class="small muted">${e.media_type==='application/pdf'?'文本层 PDF':'粘贴病历原文'} · ${(e.pages||[]).length?(e.pages||[]).length+' 页':'文字来源'}</p><p>${lines(sources().find(source=>source.id===e.source_id)?.text||'请读取原文')}</p>${sourceButton(e.source_id)}${button('删除该来源','delete-source','danger',`data-id="${esc(e.source_id)}"`)}</article>`).join('')||paragraph('当前没有病历原文。'))}${state().documents.next_cursor?button('读取更早的病历','more-documents','secondary'):''}${panel('诊后事项',`${paragraph('事项只来自用户已确认的医嘱；运行续接完成后出现。事项标为完成只表示执行状态，不代表康复。')}${tasks.map(task=>`<article class="domain-list-item"><h3>${lines(task.text)}</h3><p>${esc(({open:'待完成',done:'已完成（执行状态）',paused:'已暂停'})[task.status])} · v${task.version} · ${task.validity==='current'?'当前依赖':'依赖已过期'}</p><p>时间：${esc(unknown(task.schedule))}</p><p class="small muted">${task.instruction_refs.map(ref=>`已确认医嘱版本 ${ref.revision}`).join(' · ')}</p>${diagnostics(task.instruction_refs.map(ref=>'医嘱 '+ref.fact_id+' v'+ref.revision).join('\n'))}${task.source_ids.map(sourceButton).join('')}${task.validity==='current'?`<div class="button-row">${[['done','标为完成'],['paused','暂停'],['open','重新打开']].map(([status,label])=>button(label,'task-status','secondary',`data-id="${esc(task.id)}" data-status="${status}" data-version="${task.version}"`)).join('')}</div>`:warning('资料已变化；请核对当前医嘱并重新整理，不能更新旧事项。')}</article>`).join('')||paragraph('尚无诊后事项。候选医嘱核对后将创建独立续接运行；未核对时不会创建事项。')}`)}${runs()}${capabilities()}`;
   }
   function reviewView() {
     if(!review) return paragraph('正在读取核对检查点…');
@@ -111,6 +111,7 @@ export function mountDomainApp({mobile=false,root=document.getElementById('app')
     if(name) {const target=[...root.querySelectorAll('[name]')].find(el=>el.name===name);if(target){target.focus({preventScroll:true});if(selection&&target.setSelectionRange&&!['checkbox','file'].includes(target.type)) target.setSelectionRange(...selection);}}
   }
   async function startRun(receipt) {
+    if(receipt.deletion_job_id) {deletion=receipt;view='';page='settings';message='已恢复真实删除回执：活动资料与原件已删除，远程痕迹和备份尚未验证，结果为部分删除。';render();return;}
     message=receipt.saved?'原文已保存，已有服务端回执。整理结果仍需核对。':'操作已接收。';
     if(receipt.run_id) watch(receipt.run_id);
     if(receipt.commit_receipt) {
@@ -120,9 +121,9 @@ export function mountDomainApp({mobile=false,root=document.getElementById('app')
     if(receipt.fact_change_id) {review=await client.factChange(receipt.fact_change_id);view='review';}
     await client.refresh();render();
   }
-  function watch(id) {
+  function watch(id,{force=false}={}) {
     if(polling.has(id)) return;polling.add(id);
-    client.pollRun(id).then(run=>{if(run.status==='needs_review') message='候选已暂存，等待逐项核对；尚未成为正式事实。';else if(run.phase==='confirmed') message='用户核对事务已完成，正式事实已更新。';else if(run.phase==='rejected') message='候选已明确拒绝。';else if(run.status==='completed') message=run.execution_error?'检查点已保存，但后续执行异常。':'产物检查点已保存，请查看来源与核对状态。';}).catch(err=>{if(err.code!=='SESSION_CHANGED') error=err;}).finally(()=>{polling.delete(id);render();});
+    client.pollRun(id,{force,refresh:false}).then(async run=>{if(run.status==='needs_review') message='候选已暂存，等待逐项核对；尚未成为正式事实。';else if(run.phase==='confirmed') message='用户核对事务已完成，正式事实已更新。';else if(run.phase==='rejected') message='候选已明确拒绝。';else if(run.status==='completed') message=run.execution_error?'检查点已保存，但后续执行异常。':'产物检查点已保存，请查看来源与核对状态。';await client.refresh();}).catch(err=>{if(err.code!=='SESSION_CHANGED') error=err;}).finally(()=>{polling.delete(id);render();});
   }
   async function act(action,el) {
     if(action==='nav') return navigate(el.dataset.page);
@@ -165,7 +166,9 @@ export function mountDomainApp({mobile=false,root=document.getElementById('app')
         case 'delete-source': {if(!window.confirm('删除这条原文及其相关事实、候选与产物？远程痕迹及备份仍无法确认擦除。')) break;deletion=await client.deleteData(el.dataset.id);review=source=fact=null;view='';page='settings';message='该来源已部分删除，详情见回执。';break;}
         case 'retry-run': await startRun(await client.retryRun(el.dataset.id));break;
         case 'cancel-run': await client.cancelRun(el.dataset.id);await client.refresh();message='运行已取消；已保存的原文仍保留。';break;
-        case 'read-run': watch(el.dataset.id);break;
+        case 'read-run': watch(el.dataset.id,{force:true});break;
+        case 'more-runs': await client.loadMoreRuns();await discoverRuns();break;
+        case 'more-documents': await client.loadMoreDocuments();break;
         case 'recover': {const receipt=await client.retryOperation(el.dataset.id,recoveryFiles.get(el.dataset.id));await startRun(receipt);if(receipt.continuation_run_id) watch(receipt.continuation_run_id);break;}
       }
     } catch(err) {error=err;if(err.status===409){message='版本或原请求冲突；输入与选择保留，请刷新当前资料后重新核对。';await client.refresh().catch(()=>{});} }
@@ -185,16 +188,19 @@ export function mountDomainApp({mobile=false,root=document.getElementById('app')
   });
   async function discoverRuns() {
     if(!state().user) return;
-    const ids=new Set([...state().profile.pending_changes.map(c=>c.run_id),...state().results.map(r=>r.run_id),...client.operations.filter(op=>op.state==='resolved').map(op=>op.outcome?.run_id),...client.operations.filter(op=>op.state==='resolved').map(op=>op.outcome?.continuation_run_id)].filter(Boolean));
-    for(const id of ids) if(!polling.has(id)) watch(id);
+    // The owner catalog already provides terminal status/receipt/provenance. Only active
+    // work needs a watcher; reading settled history never loops through whole projections.
+    for(const run of Object.values(state().runs)) if(['queued','running'].includes(run.status)&&!polling.has(run.id)) watch(run.id);
   }
   client.subscribe(event=>{
     if(['identity','scope'].includes(event.type)) {review=source=fact=selectedResult=null;file=null;recoveryFiles.clear();historyFacts=[];if(event.type==='identity'){view='';message='登录状态已变化，请登录或读取当前账号。';}}
+    if(event.type==='deletion') {deletion=event.receipt;view='';page='settings';message='活动资料与原件已删除；远程痕迹和备份尚未验证，结果为部分删除。';}
+    if(event.type==='selection-pruned') message='已从相关历史选择中移除 '+event.count+' 条已删除来源；当前困扰与其他有效选择已保留。';
     if(event.type==='error') error=event.error;
     if(event.type==='storage') message=event.message;
     render();
   });
-  const interval=setInterval(async()=>{if(!state().user||refreshing||busy||document.hidden) return;refreshing=true;try{await client.refresh();await discoverRuns();}catch(err){if(!['SESSION_CHANGED','PROFILE_CHANGED'].includes(err.code)) error=err;}finally{refreshing=false;render();}},5000);
+  const interval=setInterval(async()=>{if(!state().user||refreshing||busy||document.hidden) return;refreshing=true;try{await client.refresh();await discoverRuns();}catch(err){if(!['SESSION_CHANGED','PROFILE_CHANGED','STALE_SCOPE'].includes(err.code)) error=err;}finally{refreshing=false;render();}},5000);
   window.addEventListener('pagehide',()=>{clearInterval(interval);client.dispose();},{once:true});
   window.addEventListener('popstate',()=>{const next=location.hash.slice(1);if(navigation.some(n=>n[0]===next)) navigate(next);});
   render();client.initialize().then(discoverRuns).catch(err=>{error=err;render();});
