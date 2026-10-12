@@ -25,7 +25,7 @@ At launch the evaluator records its exact SHA, code HEAD, dataset/manifest SHA a
 Verification evidence:
 
 - Fresh prefreeze independent checks: 24 distinct IDs; 12/12 splits; 4/4/4 workflows per split; source SHA, exact UTF-16 quotes, PDF text/page round-trip, null endpoints, literal qualifiers and task-confirmation membership all verified.
-- Five new V2 evaluator tests observed RED for missing functions/versioned CLI, then GREEN.
+- Five new V2 evaluator tests observed RED for missing functions/versioned CLI, then GREEN. The actual public SDK observation regression also observed RED before V2-only stage-result retention, then GREEN; it now preserves the real Core error object alongside first arguments.
 - `node --test tests/faults/evaluation.test.mjs`: 18 passed, zero failures.
 - Complete `npm test` under socket-authorized execution: 175 total, 174 passed, zero failures, one existing skipped test (`the bundled public AGH SDK loads with its real CommonJS dependencies`). Initial sandbox-only full-suite execution failed at loopback `listen EPERM`; the authorized rerun completed successfully.
 - `npm run check`: syntax and JSON checks passed for 66 JavaScript modules.
