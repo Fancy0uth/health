@@ -1,0 +1,251 @@
+{
+  "version": 2,
+  "label": "PREINFERENCE_IMMUTABLE_DEVELOPER_SYNTHETIC_GOLD",
+  "frozen_at": "2026-10-12T06:58:11.893Z",
+  "dataset_path": "tests/fixtures/model-evaluation.v2.json",
+  "dataset_sha256": "7976bcddf9fcd66c1050955d8033da00624a2edad8e68c064dd5c4efa9b2daf1",
+  "approved_asset_generation": "10bed8c45398820ee485",
+  "primary_case_denominator": 24,
+  "split_denominators": {
+    "development": 12,
+    "heldout": 12
+  },
+  "workflow_counts_per_split": {
+    "entry": 4,
+    "visit": 4,
+    "document": 4
+  },
+  "component_denominators": {
+    "visit_claims": 16,
+    "hard_primary_raw_time": 21,
+    "hard_confirmed_schedule": 9,
+    "candidate_rows": 26,
+    "candidate_field_components": 130
+  },
+  "annotation_evidence": {
+    "method": "Freshly authored developer-synthetic literal semantics, using only assigned requirements and declared preimplementation finite time policy. Not bedside or expert clinical labeling.",
+    "blindness": {
+      "v1_case_gold_results_archive_reports_read": false,
+      "labels_derived_from_validator_implementation_or_outputs": false,
+      "model_outputs_read_before_labels": false,
+      "clinical_expert_review": false
+    },
+    "freeze_rule": "No label/input/split/alternative changes after freeze or any V2 inference; primary 24 attempted at most once with separately counted W3 confirmations.",
+    "literal_values": "Whole original source sentences, including original source prefixes and terminal sentence punctuation; ASCII PDF sentence spans include their original terminating newline. No strip-prefix or punctuation alternatives.",
+    "pdf_mechanical_verification": "Generic Helvetica synthetic PDF does not round-trip CJK/emoji; newly authored ASCII pages round-trip exactly, retaining page and final newlines. Separate non-PDF entries/visits exercise UTF-16 emoji offsets."
+  },
+  "temporal_policy": {
+    "origin": "Root/final_fix declared finite policy before V2 calls, not validator outputs",
+    "hard_supported_cues": [
+      "每日",
+      "每天",
+      "每周",
+      "每月",
+      "qualified numeral offsets in Chinese",
+      "daily",
+      "weekly",
+      "monthly",
+      "every day/week/month",
+      "qualified English numeral offsets",
+      "last/next weekday/week/month/year",
+      "literal dates"
+    ],
+    "strong_raw": "Enclosing verbatim span of all supported cues in the sentence, retaining adjacent qualifiers and intervening words; never infer calendar dates.",
+    "relative_frequency": {
+      "precision": "relative",
+      "start": null,
+      "end": null
+    },
+    "malformed_or_non_normalized_dates": {
+      "precision": "unknown",
+      "start": null,
+      "end": null
+    },
+    "lone_valid_ISO_date": "Either unknown/null endpoints or exact/start identical literal ISO/end null, both with identical required raw.",
+    "multiple_date_or_date_relative": "unknown precision/null endpoints with enclosing literal raw.",
+    "weak_past_current": "No forced time slot solely from weak scope labels; alternatives explicitly listed per candidate. Scope and literal quote still required."
+  },
+  "verification": {
+    "quote_locators": "Each exact original input.slice(start,end) verified using native UTF-16 JavaScript string offsets",
+    "pdf_source_maps": "Both newly authored ASCII PDFs mechanically round-trip exactly; all page and final newlines retained",
+    "unknown_fields": "Unknown/missing fields absent from candidate gold; no clinical negative inferred",
+    "confirmation": "Expected task texts are a subset of literal explicitly selected independent gold instructions",
+    "endpoints": "No calendar inference; only declared valid-lone-ISO exact alternative permits literal start"
+  },
+  "ownership": "Only dataset and this manifest in freeze commit; commit ID recorded externally to avoid self-reference",
+  "case_manifest": [
+    {
+      "id": "v2-dev-entry-01",
+      "split": "development",
+      "workflow": "entry",
+      "input_sha256": "26ea2f4366d3645ecf4ef9e0e94bb161733c19b4b820a45b0b2402c82b4bfe05",
+      "gold_sha256": "43ce9b97ee8361971e497e47cea253f000d0bb23b62a86291a822314ad9b5519"
+    },
+    {
+      "id": "v2-dev-entry-02",
+      "split": "development",
+      "workflow": "entry",
+      "input_sha256": "1339aa15489548eae5763e7c954949632c2460b69cc8928b96351b6634729560",
+      "gold_sha256": "f879028d18f8f4341e0225c0748db62a748b679c5a6f45711f40feff673ae3e2"
+    },
+    {
+      "id": "v2-dev-entry-03",
+      "split": "development",
+      "workflow": "entry",
+      "input_sha256": "6a9bfa7611d7c77d8e08fbb5513ae7bbb5e430373a4ba2a3cb2429bf9668e2f5",
+      "gold_sha256": "1bdd251705126f7a7acfd74e71f0d250e96cc9827e493615679ffaadab07735b"
+    },
+    {
+      "id": "v2-dev-entry-04",
+      "split": "development",
+      "workflow": "entry",
+      "input_sha256": "36884b021d93582cf471dd3e8ff33cf27757d50918192e4da62315fd649d2e8f",
+      "gold_sha256": "2a39dcbeef8fff67afe9eb09a371d389898940bbcd296a44beb432b824b24d0c"
+    },
+    {
+      "id": "v2-dev-visit-01",
+      "split": "development",
+      "workflow": "visit",
+      "input_sha256": "549aec7799b191ebf5100eec991f9865c5ad574e5e5250b6dc2b324a8e6fbabf",
+      "gold_sha256": "d2d01241997995913b3280aa0099419f4270bf7be805003c80b1c700337883bc"
+    },
+    {
+      "id": "v2-dev-visit-02",
+      "split": "development",
+      "workflow": "visit",
+      "input_sha256": "f8354c2fb05a84b6ac3655ff8e487ffc0c4af75b87d3659c6abdd1d6bd17efa9",
+      "gold_sha256": "0103d34ee05960d8cd283db663a6b1f2555285f22739deb527e1cfa94e6c1b1f"
+    },
+    {
+      "id": "v2-dev-visit-03",
+      "split": "development",
+      "workflow": "visit",
+      "input_sha256": "ec4f2b78a24a9f75871e0d2d56344a9b0cd7714649345f17fe1c55bbbe1abe3c",
+      "gold_sha256": "317d056fced12308fe301beca36cce170a7df7b80cdc9e3d9da79bcc481e6fbc"
+    },
+    {
+      "id": "v2-dev-visit-04",
+      "split": "development",
+      "workflow": "visit",
+      "input_sha256": "0343001457fbc10708070d838f7463e70edf9c5de317be98c1fa5b7b8afa46b8",
+      "gold_sha256": "7f7570e0345ecfd328d17d4d504c48e9a63c69976a79f55f92063e5af40286c2"
+    },
+    {
+      "id": "v2-dev-document-01",
+      "split": "development",
+      "workflow": "document",
+      "input_sha256": "5f44b6661a8f2f6f7c573ec6f6e63506e887bbe4c340515b7ba40b6e8a6e1d00",
+      "gold_sha256": "6b325bc612e83fb7a388d4c296b5557603f7adaef651901c292593de2eaa5cd2"
+    },
+    {
+      "id": "v2-dev-document-02",
+      "split": "development",
+      "workflow": "document",
+      "input_sha256": "85e0376f17dfe3f8e160833a3dbd8ff23bbfeca69feb20eb9be01d30a5aec712",
+      "gold_sha256": "02dcc2b7b06ece74a27253fdaa55ffc6bb12c0cf30cb6ce081100dd22685cf93"
+    },
+    {
+      "id": "v2-dev-document-03",
+      "split": "development",
+      "workflow": "document",
+      "input_sha256": "d9a7623d837f4a1a48edc6300040ad63dc504ace87f0e2b0c1a8db038658cd6f",
+      "gold_sha256": "cf3d007bf0db2f02121a814d1720d66fcd118bf28b3d459bf499904dceef213e"
+    },
+    {
+      "id": "v2-dev-document-04",
+      "split": "development",
+      "workflow": "document",
+      "input_sha256": "3b1d48d343e0639c295a549dbf3a69a9d406457e4173913b32bb684167eb32fd",
+      "gold_sha256": "52a6b860acc6bae9b4cb7fa4428e4a29830c4ae224c84fa81915c4e65785eada"
+    },
+    {
+      "id": "v2-heldout-entry-01",
+      "split": "heldout",
+      "workflow": "entry",
+      "input_sha256": "2c7b382e24ddfed5d8f846359325df0d8451ff09d640808a3040741cae29cc0a",
+      "gold_sha256": "24e95bc7a6a3644ebe5b691cefc0546e3773268c73de58b60d594af6cc401f35"
+    },
+    {
+      "id": "v2-heldout-entry-02",
+      "split": "heldout",
+      "workflow": "entry",
+      "input_sha256": "e88286d8d33d3a60e76f7679d3388c210061860d9012bd029ab233ea8a133b59",
+      "gold_sha256": "167752ff6a95db7290fa0ed455af73056356ae9ee23522e878b5e295c773b5ca"
+    },
+    {
+      "id": "v2-heldout-entry-03",
+      "split": "heldout",
+      "workflow": "entry",
+      "input_sha256": "d6c5cd9c8aeea258fe8b37e2a60a5f088b21721eb0367c297f80e046a5fc76d8",
+      "gold_sha256": "2f19cadf03e58195b54bf8c01ad2206d57253b76d65552311ed99e8b22ef0e9a"
+    },
+    {
+      "id": "v2-heldout-entry-04",
+      "split": "heldout",
+      "workflow": "entry",
+      "input_sha256": "71f882523412d336ad54fbd0e8f82acb0088f9c43cce41d1c6dc952548d9930f",
+      "gold_sha256": "2a39dcbeef8fff67afe9eb09a371d389898940bbcd296a44beb432b824b24d0c"
+    },
+    {
+      "id": "v2-heldout-visit-01",
+      "split": "heldout",
+      "workflow": "visit",
+      "input_sha256": "0ba2f3aed2a3ee2edf11376fd59d7aaa0a0d901f73dd8e0d5e6c01f58dc1bb3e",
+      "gold_sha256": "55f7d1fea1bf7812718fdd2dc9988e8882e1868b0042281dc8093be4a0616952"
+    },
+    {
+      "id": "v2-heldout-visit-02",
+      "split": "heldout",
+      "workflow": "visit",
+      "input_sha256": "2fba2954f48995d74bbadd4353df88eceb87b5bd05ac6a269590a8a608eaf915",
+      "gold_sha256": "464dba9f700123575306267a9e68dabaedf9081e644daa71f160ea3d144366b7"
+    },
+    {
+      "id": "v2-heldout-visit-03",
+      "split": "heldout",
+      "workflow": "visit",
+      "input_sha256": "ede4763ae89b4a21cf738ebe4c0818cd5699c2111a71075498f7eb00bd40208d",
+      "gold_sha256": "2cf00ba0a6b145a49353d7e5bfd7edd1318efd8679779ef07511e3836b91d2a8"
+    },
+    {
+      "id": "v2-heldout-visit-04",
+      "split": "heldout",
+      "workflow": "visit",
+      "input_sha256": "730d02b960e5bde680f5cd9a106088f796a682dcac2e52b1c87dd16fae4b963a",
+      "gold_sha256": "fb6c28b334e5998564b91c6e2bb97d72664b3a2419534a06442dd7a696cf2b37"
+    },
+    {
+      "id": "v2-heldout-document-01",
+      "split": "heldout",
+      "workflow": "document",
+      "input_sha256": "02eeabdcf16145fc613e7712ea37ff6eaa972107435da7bd619cce7513d4ab61",
+      "gold_sha256": "133c77569ba71129f33b9fdabde51981108afb2d9f29fed97f5bcb97350aab1c"
+    },
+    {
+      "id": "v2-heldout-document-02",
+      "split": "heldout",
+      "workflow": "document",
+      "input_sha256": "3732927b48c48465f7416a456efc2f1616d62f429751ecd111e1b0ba3982e86d",
+      "gold_sha256": "0beead018eca2d3ac20f31d7df0c9730f693ea7f2235b8f04065b317c7da036b"
+    },
+    {
+      "id": "v2-heldout-document-03",
+      "split": "heldout",
+      "workflow": "document",
+      "input_sha256": "d47aa781772d0761a52184cfbb5422e59df2a2980ce4cad6fd9c3dabf1ad9f01",
+      "gold_sha256": "7fb88ccebe3b485458548f2123516f0959e862a9191d512b68fcfeae4fc91c44"
+    },
+    {
+      "id": "v2-heldout-document-04",
+      "split": "heldout",
+      "workflow": "document",
+      "input_sha256": "0b74794e14bcab7d816a95c4b9aeb46d6eac9b1a919a2e81a949948bf009db99",
+      "gold_sha256": "65c8933a5d2a92a588d3ebe009f62328b90d79acaf03f2d293a44fa5941d6c58"
+    }
+  ],
+  "inference": {
+    "performed_before_freeze": false,
+    "first_v2_output_seen_before_labels": false
+  },
+  "rule": "Do not modify dataset inputs, gold, alternatives or manifest after any inference. Once-only real primary evaluations and separate confirmation continuations are root-gated."
+}
