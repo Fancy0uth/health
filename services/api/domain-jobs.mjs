@@ -69,9 +69,9 @@ export class DispatchQueue {
   else this.store.failRun(run.id,code,['AGENT_NOT_CONFIGURED','AGH_NOT_READY','AGNES_PROVIDER_REQUIRED'].includes(code)?'blocked':'failed');
  }finally{clearTimeout(timeout);if(abortHandler)controller.signal.removeEventListener('abort',abortHandler);}}
  boundTools(runId,signal){
-  return Object.freeze(Object.fromEntries(Object.entries(this.store.toolsFor(runId)).map(([name,call])=>[name,args=>{
+  return Object.freeze(Object.fromEntries(Object.entries(this.store.toolsFor(runId)).map(([name,call])=>[name,(args,invocation)=>{
    if(signal.aborted)throw new DomainError(409,'RUN_CANCELLED');
-   return call(args);
+   return invocation?this.store.toolsFor(runId,invocation)[name](args):call(args);
   }])));
  }
  cancel(runId){this.running.get(runId)?.controller.abort();}

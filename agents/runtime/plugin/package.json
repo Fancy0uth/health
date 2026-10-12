@@ -1,0 +1,1 @@
+{"name":"@healththread/runtime","version":"1.0.0","license":"MIT","type":"module","exports":"./index.mjs","dependencies":{},"agnes":{"plugins":[{"export":"healththread","id":"ext:healththread/runtime","runtime":"in-process","default":true,"inject":["extension"]}]}}

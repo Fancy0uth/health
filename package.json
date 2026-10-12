@@ -17,6 +17,9 @@
     "dev": "node --env-file-if-exists=.env scripts/start.mjs",
     "test": "node scripts/test.mjs",
     "check": "node scripts/check.mjs",
-    "build:agh-sdk": "node --env-file-if-exists=.env scripts/build-agh-sdk.mjs"
+    "build:agh-sdk": "node --env-file-if-exists=.env scripts/build-agh-sdk.mjs",
+    "build:agh-runtime": "node scripts/build-agh-runtime.mjs",
+    "verify:agh-runtime": "node scripts/verify-agh-runtime.mjs",
+    "verify:real-workflows": "node scripts/verify-real-workflows.mjs"
   }
 }

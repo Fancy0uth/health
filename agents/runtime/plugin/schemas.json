@@ -1,0 +1,567 @@
+{
+  "healththread_read_source": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://healththread.local/schemas/healththread_read_source.json",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "source_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "source_id"
+    ]
+  },
+  "healththread_retrieve_context": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://healththread.local/schemas/healththread_retrieve_context.json",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "episode_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_ids": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "minItems": 0,
+        "maxItems": 100
+      }
+    },
+    "required": []
+  },
+  "healththread_stage_candidates": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://healththread.local/schemas/healththread_stage_candidates.json",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "candidates": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/candidate"
+        },
+        "minItems": 0,
+        "maxItems": 100
+      },
+      "base_profile_revision": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "operation_key": {
+        "type": "string",
+        "minLength": 16,
+        "maxLength": 128
+      }
+    },
+    "required": [
+      "candidates",
+      "base_profile_revision",
+      "operation_key"
+    ],
+    "$defs": {
+      "evidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "source_text_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "locator": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "page",
+              "start",
+              "end"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source_id",
+          "source_text_version",
+          "locator",
+          "quote"
+        ]
+      },
+      "effective_time": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "raw": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "precision": {
+            "enum": [
+              "exact",
+              "interval",
+              "relative",
+              "unknown"
+            ]
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "enum": [
+              null,
+              "Asia/Shanghai",
+              "UTC"
+            ]
+          },
+          "anchor_source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "raw",
+          "precision",
+          "start",
+          "end",
+          "timezone",
+          "anchor_source_id"
+        ]
+      },
+      "candidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/$defs/effective_time"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind"
+        ],
+        "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
+      }
+    }
+  },
+  "healththread_get_confirmed_instructions": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://healththread.local/schemas/healththread_get_confirmed_instructions.json",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "document_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "document_id"
+    ]
+  },
+  "healththread_stage_result": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://healththread.local/schemas/healththread_stage_result.json",
+    "oneOf": [
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "visit_preparation"
+          },
+          "payload": {
+            "$ref": "#/$defs/visit_payload"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/dependency"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "operation_key": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "kind",
+          "payload",
+          "dependencies",
+          "operation_key"
+        ]
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "care_plan"
+          },
+          "payload": {
+            "$ref": "#/$defs/care_payload"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/dependency"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "operation_key": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "kind",
+          "payload",
+          "dependencies",
+          "operation_key"
+        ]
+      }
+    ],
+    "$defs": {
+      "evidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "source_text_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "locator": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "page",
+              "start",
+              "end"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source_id",
+          "source_text_version",
+          "locator",
+          "quote"
+        ]
+      },
+      "fact_ref": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "fact_id",
+          "revision"
+        ]
+      },
+      "source_ref": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "source_text_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "source_id",
+          "source_text_version"
+        ]
+      },
+      "dependency": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/fact_ref"
+          },
+          {
+            "$ref": "#/$defs/source_ref"
+          }
+        ]
+      },
+      "claim": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "fact_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/fact_ref"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            },
+            "minItems": 0,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "text",
+          "fact_refs",
+          "evidence"
+        ],
+        "description": "Every cited source quote and fact value must equal the rendered claim text. A visit must render at least one claim supported directly by the current concern source."
+      },
+      "visit_payload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "speech": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "minItems": 0,
+            "maxItems": 20
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "minItems": 0,
+            "maxItems": 30
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/claim"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "speech",
+          "questions",
+          "unknowns",
+          "claims"
+        ]
+      },
+      "care_task": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "instruction_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/fact_ref"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "schedule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "text",
+          "instruction_refs",
+          "schedule"
+        ],
+        "description": "Every instruction_ref must have exactly this task text. All distinct confirmed instruction texts must be represented; identical instruction texts may share one task with their corresponding references."
+      },
+      "care_payload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/care_task"
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "explanation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+// Fixture provider only. Real Host + SDK run normally; no network inference is made.
+import {createHash} from 'node:crypto';
+const canonical=v=>JSON.stringify(v&&typeof v==='object'?Array.isArray(v)?v.map(x=>JSON.parse(canonical(x))):Object.fromEntries(Object.keys(v).sort().map(k=>[k,JSON.parse(canonical(v[k]))])):v);
+const hash=v=>createHash('sha256').update(v).digest('hex');
+export function scriptedProvider(steps){let index=0;const requests=[];return{requests,models:()=>[{id:'agnes-fixture',name:'agnes-fixture',api:'openai-completions',route:'healththread-fixture',baseUrl:'https://fixture.invalid/v1',reasoning:false,input:['text'],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:100000,maxTokens:4000,toolCallFormats:['native'],thinkingReplay:'native',contract_id:null}],async *infer(req,{signal}={}){signal?.throwIfAborted();requests.push(req);const step=steps[index++];if(!step)throw new Error('FIXTURE_SCRIPT_EXHAUSTED');const reply=typeof step==='function'?await step(req):step;yield{type:'sent',stamp:{contract_id:req.contractId,parser_version:'2',prompt_prefix_hash:'a'.repeat(64),tool_schema_hash:hash(canonical(req.tools).normalize('NFC')),derived_hash:req.derivedHash,sent_hash:'b'.repeat(64),model:{route:req.route,id:req.model},transforms:[]}};
+ if(reply.tool)yield{type:'toolcall_end',call:{toolUseId:'',name:reply.tool,args:reply.args,ordinal:0},via:'native'};
+ else yield{type:'text_delta',delta:reply.text||'已完成暂存，等待核对。'};
+ yield{type:'usage',tokens:{input:10,output:5,cacheRead:0,cacheWrite:0},credits:0,creditSource:'estimated'};yield{type:'done',reason:reply.tool?'toolUse':'stop'};}};}
+
+export function fixtureRuntime(provider){return{provider,status:{configured:true,provider:{id:'agnes-ai',route:'healththread-fixture',model:'agnes-fixture',credentialConfigured:true}},profileInput:{provider:{package:'@agnes/ai',adapters:['@agnes/ai'],routes:[{route:'healththread-fixture',api:'openai-completions',baseUrl:'https://fixture.invalid/v1',models:scriptedProvider([]).models()}],catalog:{include:[]}}}};}

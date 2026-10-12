@@ -1,0 +1,10 @@
+Only files in this standalone @healththread/runtime plugin are MIT licensed.
+This does not change the license of the repository, domain service, or data.
+
+index.mjs adapts the TypeBox.Kind self-contained schema technique, eight-field
+tool metadata, and Cordis extension registration scaffolding from
+AgnesAI-Labs/agnes-harness examples/packages/hot-tool-plugin/index.mjs at
+7819b23c249fe47ce14bd89e3982e17986e3e197. That example's package.json explicitly
+declares MIT; it supplies no separate copyright notice or LICENSE file.
+HealthThread changes add the five bounded domain tools, request admission,
+private business bridge, rejection projection, and health workflow preset.
