@@ -1,120 +1,14 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-let createHealthThreadServer;
-try { ({ createHealthThreadServer } = await import('../services/api/server.mjs')); }
-catch (error) { if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error; }
-
-async function fixture(t, agent) {
-  assert.ok(createHealthThreadServer, 'shared backend must be implemented');
-  const directory = await mkdtemp(join(tmpdir(), 'healththread-test-'));
-  const options = { databasePath: join(directory, 'state.sqlite'), agent };
-  let app = createHealthThreadServer(options);
-  await app.listen(0, '127.0.0.1');
-  const base = () => `http://127.0.0.1:${app.server.address().port}`;
-  t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
-  return {
-    base,
-    async request(path, body, method = body ? 'POST' : 'GET') {
-      const response = await fetch(base() + path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
-      return { status: response.status, body: await response.json() };
-    },
-    async restart() { await app.close(); app = createHealthThreadServer(options); await app.listen(0, '127.0.0.1'); },
-  };
-}
-
-test('both independent apps and their shared modules are reachable', async t => {
-  const f = await fixture(t);
-  for (const path of ['/web/', '/mobile/', '/web/src/app.js', '/mobile/app.js', '/packages/client/data.js', '/packages/client/chat.js', '/web/assets/healththread-logo.svg', '/mobile/assets/mark.png']) {
-    const response = await fetch(f.base() + path);
-    assert.equal(response.status, 200, path);
-    assert.ok((await response.arrayBuffer()).byteLength > 0, path);
-  }
-  assert.equal((await fetch(f.base() + '/services/api/server.mjs')).status, 404);
-  assert.equal((await fetch(f.base() + '/.env')).status, 404);
-});
-
-test('one client saves a record and another reads it after a server restart', async t => {
-  const f = await fixture(t);
-  const before = await f.request('/api/state');
-  const state = before.body.state;
-  state.records.push({ id: 'record-cross-device', text: '合成记录', date: null, status: 'pending' });
-  const saved = await f.request('/api/state', { state, expected_revision: before.body.revision }, 'PUT');
-  assert.equal(saved.status, 200);
-  await f.restart();
-  const after = await f.request('/api/state');
-  assert.ok(after.body.state.records.some(item => item.id === 'record-cross-device'));
-  assert.equal(after.body.revision, before.body.revision + 1);
-});
-
-test('an outdated frontend cannot overwrite a newer state revision', async t => {
-  const f = await fixture(t);
-  const original = (await f.request('/api/state')).body;
-  const next = structuredClone(original.state);
-  next.currentConcern = '来自手机的新内容';
-  assert.equal((await f.request('/api/state', { state: next, expected_revision: original.revision }, 'PUT')).status, 200);
-  const stale = await f.request('/api/state', { state: original.state, expected_revision: original.revision }, 'PUT');
-  assert.equal(stale.status, 409);
-  assert.equal(stale.body.error.code, 'REVISION_CONFLICT');
-  assert.equal((await f.request('/api/state')).body.state.currentConcern, '来自手机的新内容');
-});
-
-test('a shared deletion remains empty after restart', async t => {
-  const f = await fixture(t);
-  const original = (await f.request('/api/state')).body;
-  const state = { ...original.state, records: [], sessions: [], medical: null, cardRecords: [], selectedHistory: [], cardVersion: 0, factVersion: 0, deleteResult: '2026-10-12T00:00:00Z' };
-  assert.equal((await f.request('/api/state', { state, expected_revision: original.revision }, 'PUT')).status, 200);
-  await f.restart();
-  const after = (await f.request('/api/state')).body.state;
-  assert.deepEqual(after.records, []);
-  assert.deepEqual(after.sessions, []);
-  assert.equal(after.medical, null);
-});
-
-test('AI endpoints fail explicitly when Agnes Harness is not configured', async t => {
-  const f = await fixture(t);
-  const reply = await f.request('/api/health-assistant', { question: '合成测试' });
-  assert.equal(reply.status, 503);
-  assert.equal(reply.body.error.code, 'AGENT_NOT_CONFIGURED');
-});
-
-test('AI jobs expose real result references and do not trust browser history', async t => {
-  const received = [];
-  const f = await fixture(t, { async run(task) { received.push(task); return { answer: '合成测试结果', action: 'timeline' }; } });
-  const reply = await f.request('/api/health-assistant', { question: '查看记录', records: [{ id: 'forged', text: '伪造历史' }] });
-  assert.equal(reply.status, 202);
-  let run;
-  for (let i = 0; i < 30; i++) {
-    run = (await f.request(`/api/runs/${reply.body.run_id}`)).body;
-    if (run.status === 'completed') break;
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-  assert.equal(run.status, 'completed');
-  assert.ok(run.result_ref);
-  assert.equal((await f.request(`/api/results/${run.result_ref}`)).body.answer, '合成测试结果');
-  assert.ok(!received[0].context.records.some(item => item.id === 'forged'));
-});
-
-test('malformed state and cross-origin mutations are rejected', async t => {
-  const f = await fixture(t);
-  assert.equal((await f.request('/api/state', { state: {}, expected_revision: 1 }, 'PUT')).status, 400);
-  const response = await fetch(f.base() + '/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json', Origin: 'https://unrelated.example' }, body: '{}' });
-  assert.equal(response.status, 403);
-});
-
-test('deleting shared data cancels outstanding jobs and discards their late results', async t => {
-  let release;
-  const pending = new Promise(resolve => { release = resolve; });
-  const f = await fixture(t, { run: async () => pending });
-  const accepted = (await f.request('/api/visit-preparations', { current_concern: '合成描述' })).body;
-  const current = (await f.request('/api/state')).body;
-  await f.request('/api/state', { state: { ...current.state, records: [], sessions: [], medical: null, deleteResult: '2026-10-12T01:00:00Z' }, expected_revision: current.revision }, 'PUT');
-  release({ speech: '过时的生成内容', questions: [] });
-  await new Promise(resolve => setTimeout(resolve, 10));
-  const run = (await f.request(`/api/runs/${accepted.run_id}`)).body;
-  assert.equal(run.status, 'cancelled');
-  assert.equal(run.result_ref, null);
+import test from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,rm}from 'node:fs/promises';import {tmpdir}from 'node:os';import {join}from 'node:path';
+let createApp;try{({createApp}=await import('../services/api/domain-server.mjs'));}catch(e){if(e.code!=='ERR_MODULE_NOT_FOUND')throw e;}
+async function fixture(t,options={}){assert.ok(createApp,'authenticated domain API required');const dir=await mkdtemp(join(tmpdir(),'ht-http-'));const config={dbPath:join(dir,'db.sqlite'),demoAccounts:[{username:'alice',password:'alice-password'},{username:'bob',password:'bob-password'}],...options};let app=createApp(config);await app.listen(0);const base=()=>`http://127.0.0.1:${app.server.address().port}`;let cookie='',csrf='';t.after(async()=>{await app.close();await rm(dir,{recursive:true,force:true});});return {get app(){return app;},base,async request(path,body,method=body?'POST':'GET',headers={}){const r=await fetch(base()+path,{method,headers:{Origin:base(),...(body?{'Content-Type':'application/json'}:{}),Cookie:cookie,'X-CSRF-Token':csrf,'Idempotency-Key':'http-key-'+path.replaceAll('/','-')+'-000001',...headers},body:body?JSON.stringify(body):undefined});const result={status:r.status,body:await r.json(),headers:r.headers};if(path==='/api/auth/login'&&r.ok){cookie=r.headers.get('set-cookie').split(';')[0];csrf=result.body.csrf_token;}return result;},async login(username='alice'){return this.request('/api/auth/login',{username,password:username+'-password'});},async consent(){return this.request('/api/consents',{purpose:'analysis',granted:true,expected_version:1},'PATCH');},async restart(){await app.close();app=createApp(config);await app.listen(0);}};}
+test('static mounts serve both apps while source code, DB and dot paths remain private',async t=>{const f=await fixture(t);for(const path of ['/web/','/mobile/','/packages/client/data.js'])assert.equal((await fetch(f.base()+path)).status,200,path);for(const path of ['/.env','/services/api/domain-store.mjs','/.runtime/db.sqlite','/web/.env'])assert.ok([403,404].includes((await fetch(f.base()+path)).status));});
+test('auth fails closed, cookies are protected, CSRF/origin checked and PUT state permanently denied',async t=>{const f=await fixture(t);assert.equal((await f.request('/api/profile')).status,401);assert.equal((await f.request('/api/me')).body.user,null);const login=await f.login();assert.match(login.headers.get('set-cookie'),/HttpOnly/);assert.match(login.headers.get('set-cookie'),/SameSite=Strict/);assert.equal((await f.request('/api/entries',{text:'记录。'},'POST',{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await f.request('/api/entries',{text:'记录。'},'POST',{Origin:'https://attacker.example'})).status,403);assert.equal((await f.request('/api/state',{},'PUT')).status,405);});
+test('unconfigured identity cannot login and repeated invalid credentials are rate limited',async t=>{const f=await fixture(t,{demoAccounts:[],limits:{loginAttempts:2}});assert.equal((await f.login()).status,401);assert.equal((await f.login()).status,401);const r=await f.login();assert.equal(r.status,429);assert.ok(r.body.error.request_id);});
+test('accepted original survives missing model, authenticated restart and cross-user ID guessing',async t=>{const f=await fixture(t);await f.login();assert.equal((await f.request('/api/entries',{text:'已存原文。'})).status,403);await f.consent();const accepted=await f.request('/api/entries',{text:'已存原文。',owner:'bob'});assert.equal(accepted.status,202);await f.app.jobs.drain();const a=accepted.body;assert.equal((await f.request('/api/runs/'+a.run_id)).body.status,'blocked');await f.restart();assert.equal((await f.request('/api/sources/'+a.source_id)).body.text,'已存原文。');await f.login('bob');for(const [route,id]of [['sources',a.source_id],['runs',a.run_id],['operations',a.operation_id]])assert.equal((await f.request('/api/'+route+'/'+id)).status,404);const exp=(await f.request('/api/export')).body;assert.equal(exp.sources.length,0);});
+test('acceptance same-key retry returns same receipt and different body returns recoverable conflict',async t=>{const f=await fixture(t);await f.login();await f.consent();const first=await f.request('/api/entries',{text:'第一条。'});assert.deepEqual((await f.request('/api/entries',{text:'第一条。'})).body,first.body);const conflicting=await f.request('/api/entries',{text:'第二条。'});assert.equal(conflicting.status,409);assert.equal(conflicting.body.error.code,'IDEMPOTENCY_CONFLICT');assert.equal((await f.request('/api/timeline')).body.entries.length,1);});
+test('delete returns actual layer receipts, erases local data and remains recoverable by job id',async t=>{const f=await fixture(t);await f.login();await f.consent();const a=(await f.request('/api/entries',{text:'私密原文。'})).body;await f.app.jobs.drain();const deleted=await f.request('/api/data/all',{},'DELETE');assert.equal(deleted.status,202);assert.equal(deleted.body.status,'partial');assert.equal(deleted.body.layers.sqlite.status,'deleted');assert.equal((await f.request('/api/sources/'+a.source_id)).status,404);assert.equal((await f.request('/api/operations/'+deleted.body.deletion_job_id)).status,200);assert.ok(!JSON.stringify((await f.request('/api/export')).body).includes('私密原文'));});
+test('invalid JSON and input size limits fail before persistence',async t=>{const f=await fixture(t,{limits:{textBytes:10}});await f.login();await f.consent();assert.equal((await f.request('/api/entries',{text:'这是超长的原始文本。'})).status,413);assert.equal((await f.request('/api/timeline')).body.entries.length,0);});
+test('malformed login JSON and authenticated disguised PDF fail explicitly without persisted documents',async t=>{
+ const f=await fixture(t);const bad=await fetch(f.base()+'/api/auth/login',{method:'POST',headers:{Origin:f.base(),'Content-Type':'application/json'},body:'{'});assert.equal(bad.status,400);assert.equal((await bad.json()).error.code,'INVALID_JSON');
+ const login=await f.login();await f.consent();const form=new FormData();form.set('file',new File(['not a PDF'],'../../private.pdf',{type:'application/pdf'}));const response=await fetch(f.base()+'/api/documents',{method:'POST',headers:{Origin:f.base(),Cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':login.body.csrf_token,'Idempotency-Key':'http-pdf-key-00000001'},body:form});assert.equal(response.status,415);assert.equal((await f.request('/api/export')).body.documents.length,0);
 });

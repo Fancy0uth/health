@@ -1,28 +1,51 @@
-# 当前接口契约
+# HealthThread API v1
 
-所有接口由同一个 Node 业务服务提供。当前为一个合成演示档案；正式账号和字段级事务在后续迭代实现。跨设备同步依赖服务端 SQLite，localStorage 不作为共享真相源。
+Authoritative HTTP operations: `openapi.yaml` (JSON serialization, valid YAML 1.2). Tool argument schemas: `schemas/healththread_*.json`. Node 24.10+ and SQLite required. `source-validation.mjs` enforces semantic/extractive constraints in addition to structural schemas.
 
-| 方法与路径 | 请求 | 返回 |
-| --- | --- | --- |
-| GET /api/health | 无 | storage、profile、agent 状态 |
-| GET /api/state | 无 | revision、state |
-| PUT /api/state | state、expected_revision | 新 revision、state；冲突 HTTP 409 |
-| POST /api/health-assistant | question | HTTP 202 的 run_id |
-| POST /api/health-record | text | HTTP 202 的 run_id |
-| POST /api/medical-document | text，JSON | HTTP 202；Multipart/PDF 尚不支持 |
-| POST /api/visit-preparations | current_concern、selected_record_ids | HTTP 202 的 run_id |
-| GET /api/runs/{id} | 无 | status、phase、result_ref、error |
-| POST /api/runs/{id}/cancel | 空 JSON 对象 | 当前状态；不撤销既有效果 |
-| GET /api/results/{id} | 无 | 工作流结果及 agh 会话元数据 |
+## Identity and requests
 
-错误统一为 `{ "error": { "code": "...", "message": "..." } }`。HTTP 202 表示已接收，未完成。queued/running 可取消；failed/interrupted 不伪造成功。模型错误正文、凭证和内部异常不返回浏览器。
+Default startup provisions no account. For local synthetic use only, explicitly set `HEALTHTHREAD_DEMO_AUTH=1`, `HEALTHTHREAD_DEMO_USERNAME`, `HEALTHTHREAD_DEMO_PASSWORD` (minimum 10 characters). Existing provisioned accounts persist in the domain DB. Passwords use salted scrypt; sessions are random, server-side and expire in 8 hours. Cookies: HttpOnly, SameSite=Strict, Secure when TLS terminates at this server. Deploy same origin; this service does not trust forwarded host/proto headers.
 
-## Agent 结果
+Every mutation requires exact `Origin`; all except login require `X-CSRF-Token` from `/api/me` or login. Acceptance, confirmation/rejection, correction/retraction, retry and delete require `Idempotency-Key` (16–128 characters). Same operation/key with a different request hash returns 409. Owner fields never determine identity. All object reads use session owner, including results/operations/deletion jobs. Model tools never accept user credentials or owner IDs.
 
-- assistant：answer、action（home/timeline/visit/null）。
-- daily_record：description、date（YYYY-MM-DD 或 null）。
-- medical_document：original（服务端保留输入原文）、date、onset、task；未知为 null。
-- visit_preparation：speech、questions。
-- agh：session_id、last_seq、provider、model，仅从 SDK 实际回执生成。
+Errors: `{error:{code,message,request_id,phase,retryable,details?}}`. 202 means original data/outbox committed, not model success. `/api/runs/:id` includes `saved_receipt`, status/phase/error, `fact_change_id`, `result_id` (`result_ref` alias), and server `tool_receipts` IDs. `/api/operations/:id` reads acceptance, commit or deletion receipt. JSON bodies only except one PDF `file` multipart part. HEAD is supported for static resources, not API projections.
 
-这些兼容原型字段不代表完整事实 Schema。后续需加 fact_id、source_id、原文定位、review_status、有效时间、依赖 revision 和字段级确认凭证。
+## Frozen agent interface
+
+`new DomainStore({dbPath,demoAccounts?,clock?,limits?})`; all domain operations take a trusted user ID as their first argument. HTTP server resolves it exclusively from session. Internal `toolsFor(runId)` returns five closure-bound synchronous functions (safe to `await`):
+
+- `healththread_read_source({source_id})` → `{source,receipt}`.
+- `healththread_retrieve_context({query?,episode_id?,source_ids?})` → `{facts,sources,conflicts,snapshot_revision,receipt}`. A nonempty query filters normalized literal keywords; source_ids filters fact evidence and episode_id filters assigned episode. Empty filters return the bounded authorized profile. No semantic/vector search or automatic episode merging.
+- `healththread_stage_candidates({candidates,base_profile_revision,operation_key})` → `{fact_change_id,status:'needs_review',receipt}`. New proposals only; correction/retraction starts at the authenticated user endpoint.
+- `healththread_get_confirmed_instructions({document_id})` → `{instructions,receipt}`; only for a care-plan continuation bound to that document.
+- `healththread_stage_result({kind:'visit_preparation'|'care_plan',payload,dependencies,operation_key})` → `{result_id,status:'completed',receipt}`. Stage performs all validation and persists actual result/tasks.
+
+All tool receipts include server-generated `id`, `operation_id`, `run_id`, `snapshot_revision`, `validation:'passed'`. Every invocation rechecks current owner/source ownership, consent version, epoch, scope generation, expiration and run status. Stage validation and effect/receipt use the same short SQLite transaction. Stage receipts replay at the saved checkpoint; changed payload conflicts. Replaying after cancellation/revocation/deletion fails.
+
+W1/W3 extraction and W2 must read the source and retrieve context before staging. Evidence can only cite actually read sources; fact dependencies can only cite facts actually retrieved in this run. W3 continuation must get confirmed instructions before staging tasks. `source.text_version=1`, UTF-16 `[start,end)` offsets, `locator.page=null` for pasted text or 1-based PDF page. Extracted PDF page records give global text start/end.
+
+`new DispatchQueue(store,agent,{limits?})`; `kick()`, `drain()`, `cancel(runId)`, `close()`. Agent must identify `mode:'fixture'|'real'` and implement `run({run,scope,tools,signal})`; optional `isReady({signal})` shares the deadline. It must invoke bound tools, not return invented output for the queue to save. Scope argument contains IDs/allowed sources/snapshot/consent/expiry for trusted adapter wiring, never a model-authorizable owner.
+
+Fixture return does not certify real execution. Real adapter return must be `{agh:{provider:'agnes-ai',model,session_id,last_seq,tool_receipt_ids}}`; IDs in exact order must equal actual persisted tool receipts. Adapter must derive session/seq/provider from SDK, never model text, and cap output repair at two attempts. This backend cannot prove SDK provenance by itself; the trusted adapter owns that boundary. A provider failure after a valid checkpoint preserves staged effects and records `execution_error` with `phase:'after_checkpoint'`; it does not mint real runtime metadata.
+
+## Extractive policy and review
+
+Candidate value is a verbatim complete source sentence, using period/semicolon/newline boundaries, not a generated medical inference. Preserve uncertainty, negation and temporal markers; conflicting past/current clauses and “not mentioned” reject rather than becoming false certainty. `reported_text` is the safe general field; clinical field types have narrow explicit support marker checks. This is a conservative heuristic, not general semantic proof. All facts still require user review. Unknown times retain source raw text or null; start/end remain null. Exact dates must be real calendar dates present in raw evidence. Relative time is not converted automatically.
+
+W2 `speech` must exactly equal claim texts joined with `\n`. Every claim is a verbatim confirmed fact or complete source sentence; dependencies are mandatory for each claim. At least one claim must cite the current concern source. Sources retain their `kind` and review provenance; clients must label source-only claims as unreviewed self-report/document text. Questions must end in `?`/`？`; explicit dosage/action additions are rejected. Department/triage are server-filled `{status:'not_configured'}`. W3 task text must exactly match a confirmed instruction; `instruction_refs` identify revisions; schedule is null or an exact literal substring containing an explicit time marker. No dose/time synthesis. Every confirmed document instruction must appear. Empty tasks are allowed only when none are confirmed, with an explanation. Task status updates require expected_version; stale tasks reject.
+
+A confirmation atomically checks profile revision, all accepted proposal IDs, consent/source/epoch, validates evidence again, appends FactRevisions and audit, updates profile, writes commit receipt and marks existing results/tasks stale. Invalidating all prior derivations on any fact change is deliberately conservative. W3 confirmation additionally creates a distinct queued continuation; it never waits for a model inside the HTTP transaction. Each new input receives its own pending episode unless the user explicitly selects an existing owned episode; no keyword merging.
+
+## Recovery and limits
+
+Queued → running → needs_review (W1/W3) or completed (W2/continuation). User confirmation/rejection ends needs_review; W3 optionally queues continuation. queued/running/needs_review can cancel. On startup running → interrupted, queued remains dispatchable, needs_review persists. failed/blocked/interrupted can create a new run through `/retry`; original remains historical and no source is duplicated. cancelled/completed/needs_review cannot retry. Missing model yields blocked after source preservation. Provider errors never become empty successful output.
+
+Defaults: text 100000 bytes; PDF original 5000000 bytes; PDF 30 pages / extracted text 150000 bytes; JSON body 7000000 bytes; queue 100 global / 10 per user; concurrent runs 2 global / 1 per user; runtime deadline 120000 ms including readiness; tool scope 600000 ms; output 150000 bytes; retrieve 100 records; login 10 attempts per remote address per 15 minutes. PDF extraction uses fixed `pdfinfo`/`pdftotext` executable paths, argument arrays, 15-second hard subprocess timeout, output bound and private random temporary directory; requires local Poppler. No OCR. Text over the normal source byte limit remains rejected before acceptance, even if within PDF extraction limit.
+
+`QUEUE_BUSY` (429) is rejected before saving. Auth 401; CSRF/consent/scope 403; foreign/missing IDs 404; state PUT 405; stale version/idempotency 409; replay of erased source 410; byte/page limits 413; unsupported media 415; invalid evidence/PDF 422; missing extraction dependency 503. Original-PDF rejection before extraction/acceptance does not report it saved.
+
+## Storage and erasure
+
+Live default DB is `.runtime/healththread-domain.sqlite`. Historical `.runtime/healththread.sqlite` is the anonymous prototype and is never imported or used by active domain APIs; its cleanup is outside current-user domain deletion. SQLite stores bounded original PDF BLOBs in the same acceptance transaction. Source and FactRevision text are immutable by DB trigger; corrections append revisions.
+
+Deletion removes matching local source/entry/document/episode/revisions/candidate/result/task text and PDF BLOBs, invalidates scopes, preserves minimal opaque operation/run tombstones and request hashes to prevent replay resurrection. Receipts never hold input body text. Response always reports `partial`: active SQLite rows and original BLOBs deleted, AGH trace erasure and external backups/storage remnants unverified. It does not claim secure deletion of filesystem snapshots or the historical prototype DB. `/export` includes only session-owner objects and base64 originals.

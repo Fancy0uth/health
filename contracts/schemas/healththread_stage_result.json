@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://healththread.local/schemas/healththread_stage_result.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "visit_preparation"
+        },
+        "payload": {
+          "$ref": "#/$defs/visit_payload"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependency"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "operation_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "kind",
+        "payload",
+        "dependencies",
+        "operation_key"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "care_plan"
+        },
+        "payload": {
+          "$ref": "#/$defs/care_payload"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependency"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "operation_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "kind",
+        "payload",
+        "dependencies",
+        "operation_key"
+      ]
+    }
+  ],
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "source_text_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "locator": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "page": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "page",
+            "start",
+            "end"
+          ]
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "source_id",
+        "source_text_version",
+        "locator",
+        "quote"
+      ]
+    },
+    "fact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "fact_id",
+        "revision"
+      ]
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "source_text_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "source_id",
+        "source_text_version"
+      ]
+    },
+    "dependency": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/fact_ref"
+        },
+        {
+          "$ref": "#/$defs/source_ref"
+        }
+      ]
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "fact_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact_ref"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 0,
+          "maxItems": 20
+        }
+      },
+      "required": [
+        "text",
+        "fact_refs",
+        "evidence"
+      ]
+    },
+    "visit_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "speech": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "minItems": 0,
+          "maxItems": 30
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claim"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "speech",
+        "questions",
+        "unknowns",
+        "claims"
+      ]
+    },
+    "care_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "instruction_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact_ref"
+          },
+          "minItems": 1,
+          "maxItems": 100
+        },
+        "schedule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "text",
+        "instruction_refs",
+        "schedule"
+      ]
+    },
+    "care_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/care_task"
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "explanation": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tasks"
+      ]
+    }
+  }
+}

@@ -20,7 +20,12 @@ if (process.env.AGENT_MODE === 'agnes') {
   }
   agent = new AgnesAgent({ createClient: sdk.createClient, journal: sdk.memoryJournal, connectionOptions: options, cwd: root, preset: process.env.AGH_PRESET });
 }
-const app = createHealthThreadServer({ databasePath: resolve(root, process.env.HEALTHTHREAD_DB_PATH || '.runtime/healththread.sqlite'), agent });
+let demoAccounts = [];
+if (process.env.HEALTHTHREAD_DEMO_AUTH === '1') {
+  if (!process.env.HEALTHTHREAD_DEMO_USERNAME || !process.env.HEALTHTHREAD_DEMO_PASSWORD) throw new Error('Explicit demo username and password are required.');
+  demoAccounts = [{ username: process.env.HEALTHTHREAD_DEMO_USERNAME, password: process.env.HEALTHTHREAD_DEMO_PASSWORD }];
+}
+const app = createHealthThreadServer({ demoAccounts, databasePath: resolve(root, process.env.HEALTHTHREAD_DB_PATH || '.runtime/healththread-domain.sqlite'), agent });
 const host = process.env.HOST || '127.0.0.1'; const port = Number(process.env.PORT || 4173);
 await app.listen(port, host);
 console.log(`HealthThread: http://${host}:${port}/\n电脑版：/web/\n手机版：/mobile/\nAGH：${agent ? 'SDK 接入已启用；首次调用将检查 Agnes 配置' : '未配置，AI 请求会明确失败'}`);
