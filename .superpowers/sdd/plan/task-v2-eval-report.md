@@ -34,3 +34,19 @@ Verification evidence:
 ## Pending execution
 
 The root must clear the scoped final-fix review gate before the once-only live run. Planned command uses the V2 dataset and a new isolated evidence directory. Normal limits remain global concurrency 2, owner concurrency 1, deadline 120 seconds and maximum two combined repairs. Any quota/configuration stop must record remaining cases as not_run; no silent retry or substitute model. V2 results and validation report will be separate new artifacts. V1 assets/metrics are historical and will not be relabeled or used to claim model improvement under new label rules.
+
+## Scoped independent-review fixes (four Important findings)
+
+All four named reproductions were added before fixes and observed RED; each was then run individually and observed GREEN. Frozen dataset/manifest, production/runtime/assets and V1 historical behavior remain unchanged. No model inference occurred.
+
+1. **Unreadable first SDK detail:** V2 records every SDK call identity/result sequence/detail status/error, including calls whose details cannot be read. An unresolved earlier call conservatively makes first-stage evidence `unobserved_incomplete_first_stage`; later repaired details and admitted fallback cannot be promoted to raw. If no genuine SDK stage is observed, V2 does not invent a fallback raw stage. Original identity/error and all readable later stage arguments/results are retained. The exact seq1/2 unavailable, seq3/4 readable regression passes. An actual public scripted SDK session also proves that its real Core-rejected first stage remains unobserved after genuine repair when the first readToolDetail is deliberately unavailable.
+2. **Rejected care continuation:** The same Core-prevalidation rule now applies to primary and care continuation runs. Actual rejected args/results remain intact, while structural/raw-semantic success, matched components and hard schedule/time credit are denied. The reproduction uses the frozen two-instruction case with exact confirmed refs and complete task text, but Core-rejected null operation_key; raw structural/semantic pass is false and schedule credit is zero.
+3. **Frozen preservation denominator:** Negation/uncertainty/past-current applicability now comes from each frozen dataset split, including absent, failed and not-run cases. Captured rows only contribute preserved counts. An entirely not-run V2 evaluation retains all 24 cases and applicability denominators 7/8/19 under the unchanged label-category definition, with zero preserved. Missing primary capture likewise leaves the denominator unchanged.
+4. **Positive guarded-refusal evidence:** Empty candidates alone cannot establish correct refusal. Classification now requires the intended actual guard error, a correlated SDK stage/result and AGH/session ledger, matching failed business admission, immutable source preservation and explicit zero fact/change/result/task persistence counts. The live collector records these counts from the isolated synthetic store. MODEL_TRANSPORT_ABORTED, absent AGH/session/result/admission evidence, missing state proof or persisted candidates cannot count as correct guarded refusal. They remain distinct execution failures. The positive and all named negative reproductions pass.
+
+Fresh scoped-fix verification:
+
+- `node --test tests/faults/evaluation.test.mjs`: 24 passed, zero failed/skipped. This includes the four exact review regressions and actual scripted SDK observation boundary, plus existing V1/default/offline compatibility tests.
+- Configured fixture-only complete suite (`node --env-file-if-exists=.env scripts/test.mjs`, authorized loopback socket execution): 200 passed, zero failed/skipped.
+- `npm run check`: syntax/JSON passed for 66 modules.
+- Source/gold manifest SHA will be checked again immediately before the owned-only commit. The runner is frozen after this scoped change until independent re-review/root UI gate permits the once-only real V2 run.
