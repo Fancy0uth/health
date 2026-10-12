@@ -1,0 +1,15 @@
+{
+  "name": "healththread-dev",
+  "extends": "standard",
+  "surfaces": ["cli", "sdk"],
+  "model": { "timeout_ms": 120000, "max_tokens": 8192 },
+  "budget": { "max_steps": 36, "on_exceed": "deny" },
+  "tools": { "timeout_ms": 120000, "output_max_bytes": 32768 },
+  "subagent": {
+    "max_depth": 1,
+    "max_fan_out": 2,
+    "isolation": "worktree",
+    "budget_inherit": "aggregate"
+  },
+  "harness": { "auto_refine": { "enabled": false } }
+}

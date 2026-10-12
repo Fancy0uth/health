@@ -1,0 +1,20 @@
+{
+  "name": "healththread-runtime",
+  "extends": "standard",
+  "surfaces": ["sdk"],
+  "model": {
+    "prompt_sections": ["persona", "environment"],
+    "timeout_ms": 60000,
+    "max_tokens": 4096
+  },
+  "tools": { "core": [], "timeout_ms": 30000, "output_max_bytes": 32768 },
+  "budget": { "max_steps": 12, "on_exceed": "deny" },
+  "repair": { "max_rounds": 2, "escalate_after": 2, "timeout_ms": 30000 },
+  "subagent": {
+    "max_depth": 0,
+    "max_fan_out": 0,
+    "isolation": "shared",
+    "budget_inherit": "aggregate"
+  },
+  "harness": { "auto_refine": { "enabled": false } }
+}

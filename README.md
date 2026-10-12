@@ -85,3 +85,9 @@ npm run check
 测试覆盖两个静态入口、SQLite 重启、并发版本冲突、空档案删除、来源请求限制、未配置 AI、异步结果、客户端草稿保护、Agnes provider 和未完整模型输出。原压缩包中的 Windows Edge 检查脚本不作为本仓库的验证结果。
 
 运行数据位于 `.runtime/`，不要提交数据库、模型凭证、真实病历或 AGH Home。上传来源与保留素材见 docs/frontend-source.md。
+
+## 用 AGH 继续完成正式后端
+
+详细实施 prompt、开发多 Agent 分工、产品运行 preset 模板与阶段验收见 [agents/development/README.md](agents/development/README.md)。先执行环境预检，再把总控 prompt 交给 AGH；从原文/字段级确认闭环开始，渐进接入两套前端。模板尚需实际装配，文档交付不代表后端新功能已实现。
+
+提示词当前为 v0.2：依据用户提供评分权重加强技术实现、异常与恢复验证、结果正确性和真实 AGH 证据。共同要求见 [评分与工程验收](agents/development/rubric-engineering.md)，新增独立故障测试角色；每个模块同时交付成功、失败、恢复路径。
