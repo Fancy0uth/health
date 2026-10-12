@@ -98,7 +98,12 @@ export function validateCandidate(c, readSource) {
   const quote = c.value;
   const markers = classifySourceMarkers(quote),
     { neg, uncertain, past } = markers;
-  valid(!markers.unsupported && !markers.ambiguous);
+  const withdrawalReason = c.proposal_kind === "retraction" && c.field === "reported_text";
+  valid(!markers.ambiguous);
+  valid(!markers.unsupported || withdrawalReason, {
+    path: "candidate.assertion",
+    rule: "Information missing or unknown is not an affirmed/negated clinical fact. Keep the original source without a new/corrected candidate. An explicit reported_text retraction may retain the uncertain reason.",
+  });
   valid(c.assertion === markers.assertion, {
     path: "candidate.assertion",
     expected: markers.assertion,
@@ -225,15 +230,23 @@ export function sentenceSpans(source) {
 
 // Finite surface markers only; these annotations do not assert clinical meaning.
 export function classifySourceMarkers(quote) {
+  // Finite information-absence markers take precedence over ordinary negation.
+  // Unsupported new/corrected facts remain source-only; withdrawal reasons can
+  // retain uncertainty because they remove, rather than assert, an active fact.
+  const missingness =
+    /(未提及|未询问|不详|不知道|不清楚|未知|(?:未|没(?:有)?|无)(?:记录|记载|提供)|\b(?:unknown|not\s+(?:mentioned|assessed|known|recorded|documented|provided)|(?:do|does)\s+not\s+know|(?:don|doesn)['’]t\s+know|no\s+(?:information|records?))\b)/i.test(
+      quote,
+    );
   const neg = /(否认|未见|没有|无|未发现|\bno\b|\bdenies\b|\bwithout\b)/i.test(quote);
-  const uncertain = /(考虑|待排|可能|疑似|不确定|不详|\bpossible\b|\bsuspected\b|\bmay\b)/i.test(quote);
+  const uncertain =
+    missingness || /(考虑|待排|可能|疑似|不确定|不详|\bpossible\b|\bsuspected\b|\bmay\b)/i.test(quote);
   const past = /(既往|曾|以前|过去|去年|\bhistory of\b|\bpreviously\b)/i.test(quote);
   const current = /(目前|现在|今日|今天|当前|\bcurrently\b|\btoday\b)/i.test(quote);
   return {
     assertion: uncertain ? "uncertain" : neg ? "negated" : "affirmed",
     temporal_scope: past ? "past" : current ? "current" : "unknown",
     ambiguous: past && current,
-    unsupported: /(未提及|未询问|不详|not mentioned|not assessed)/i.test(quote),
+    unsupported: missingness,
     neg,
     uncertain,
     past,

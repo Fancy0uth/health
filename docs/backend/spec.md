@@ -7,6 +7,7 @@
 - 正式事实只能由登录用户明确核对后通过事务提交。Agent 只能读取授权资料、暂存候选/产物，不能确认、修改账号/授权或执行任意 shell/文件/网络。
 - 身份从随机到期服务端会话取得，scrypt 本地合成演示账号需显式启用；浏览器提供的 owner/user_id 不作为身份。所有对象读写按用户限定，cookie HttpOnly/SameSite，写请求检查同源及 CSRF。登录限速，错误不枚举账号。
 - 原文 immutable，UTF-16 [start,end) quote 校验，PDF 页码1起。未知=null，未提及不等于否认，保留否定/既往/当前/考虑/待排/模糊时间。可验证的 extractive 值只能来自所引片段；字段必须携带 assertion/temporal_scope/time/evidence。此机制不宣称自动证明任意医学语义；人工核对始终必须。
+- 有限信息缺失词（未提及/未询问/不详/不知道/不清楚/未知、未/没[有]/无记录或记载或提供，以及 unknown/not known/not recorded/not documented/not provided/do not know/no information/no record 等明确英文词形）不表示临床肯定或否认。此类 new/correction 候选包括 reported_text 均保守拒绝，已接收原文仍保留，可从保存来源重新分析为无候选的 source-only 检查点；不能通过换 assertion 绕过。显式用户 reported_text retraction 可保留不确定的缺失原因，确认只追加 retracted 历史版本并撤回旧事实，不产生有效临床事实。人工未知更正未通过校验时不提交新来源/候选，原有事实与来源不改。明确否认和考虑/待排规则不变；不宣称一般语言缺失语义识别。
 - source/entry/document/run/outbox 接收事务；远程模型调用在事务外。所有接受操作/暂存/确认有请求哈希幂等回执；相同 key 不同请求409。确认检查当前授权、epoch、来源、候选归属和 profile_revision，审计/事实 revision/回执/派生过期同事务。重复确认不重复生效。
 - queued/running/needs_review/completed/failed/blocked/cancelled/interrupted；needs_review 是持久化检查点，不是已确认事实。重启中断 running，安全回收 queued；不会偷偷重放未知远程效果。取消/撤回/删除使 scope 失效，迟到写入拒绝，不抹除已经确认的历史。
 - W1 文本先存→read_source→retrieve_context→stage_candidates→needs_review→用户确认→有效事实/时间线。W2困扰原文先存→授权有效事实/选中来源→表达稿/问题/unknowns/claims/dependencies→stage_result→卡片，事实变化卡片 stale。W3粘贴或文本层 PDF→来源页映射→候选差异→核对→独立 continuation 读取已确认医嘱→多个 care tasks。只从明确确认医嘱提取事项，不补剂量或复诊时间。
