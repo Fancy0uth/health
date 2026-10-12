@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/AgnesAI-Labs/agnes-harness",
+  "commit": "7819b23c249fe47ce14bd89e3982e17986e3e197",
+  "sdkEntry": "@agnes/sdk",
+  "provider": "agnes-ai",
+  "note": "SDK interface inspected locally. Real model execution is not part of automated fixture tests."
+}

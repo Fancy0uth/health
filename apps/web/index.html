@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f7faf8" />
+  <title>HealthThread · 健康信息，始终连贯</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./ui.css" />
+</head>
+<body>
+  <div id="app"><div class="launch-help">正在打开 HealthThread…</div></div>
+  <script src="/runtime-config.js"></script>
+  <script type="module">
+    if (location.protocol === 'file:') {
+      document.getElementById('app').innerHTML = '<div class="launch-help"><h1>启动 HealthThread</h1><p>在仓库根目录运行 npm start 启动本地服务，然后打开下面的地址。</p><p>也可以在本目录运行 <code>npm start</code>。</p><a href="http://127.0.0.1:4173/">打开本地预览</a></div>';
+    } else {
+      import('./src/app.js').catch(() => {
+        document.getElementById('app').innerHTML = '<div class="launch-help"><h1>页面未能加载</h1><p>请确认前端文件完整，或刷新后重试。</p><a href="./">重新打开</a></div>';
+      });
+    }
+  </script>
+</body>
+</html>
