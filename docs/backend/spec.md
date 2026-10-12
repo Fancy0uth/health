@@ -19,11 +19,12 @@
 
 ## 冻结接口
 
-API 版本1，JSON {error:{code,message,request_id,phase,retryable,details?}}；公开 ID 不泄露路径/身份。所有写接口除 login 都用 X-CSRF-Token；涉及创建/确认用 Idempotency-Key（16–128字符）。服务端不信任额外 owner 字段。
+API 版本1，JSON {error:{code,message,request_id,phase,retryable,details?}}；公开 ID 不泄露路径/身份。所有写接口除 login 都用 X-CSRF-Token；除 logout 外的已登录业务写入必需 X-HealthThread-Epoch，在事务内检查，防止删除前的延迟输入重新落库。涉及创建/确认用 Idempotency-Key（16–128字符）。匹配的已提交回执允许找回而不重施加业务效果；未知旧请求返回409，不静默升级版本。服务端不信任额外 owner 字段。
 
-POST /api/auth/login {username,password}; POST /api/auth/logout; GET /api/me → {user:{id,username}|null,csrf_token,profile_revision}; GET /api/capabilities。
+POST /api/auth/login {username,password}; POST /api/auth/logout; GET /api/me → {user:{id,username}|null,csrf_token,profile_revision,scope_epoch,all_clear_epoch}; GET /api/capabilities。已登录成功响应附当前 X-HealthThread-Epoch 和 X-HealthThread-All-Clear-Epoch；全部删除才递增 all_clear_epoch，其他设备据此清理本地健康草稿。
 POST /api/entries {text,input_kind:'self_report'} →202 {entry_id,source_id,run_id,operation_id}; POST /api/documents JSON {text,name?} 或 multipart file →202 {document_id,source_id,run_id,operation_id}。
 POST /api/visit-preparations {current_concern,selected_source_ids:[]} →202同类运行回执；GET /api/runs/:id（含 phase/status/fact_change_id/result_id/保存回执）；GET /api/results/:id；POST /api/runs/:id/cancel。
+GET /api/runs → {runs,next_cursor}，GET /api/documents → {documents,next_cursor}：仅当前用户，默认50/最大100，before 为不透明游标，跨会话发现已保存/失败运行，供恢复入口使用。
 GET /api/profile →{profile_revision,facts,pending_changes}; GET /api/timeline →{entries}; GET /api/sources/:id；GET /api/fact-changes/:id →候选/原文/差异；POST /api/fact-changes/:id/confirm {accepted_change_ids,expected_profile_revision} →{profile_revision,commit_receipt,continuation_run_id?}；拒绝候选有明确 reject 操作。
 POST /api/facts/:id/change-requests {kind:'correction'|'retraction',text,expected_version} 创建原文和候选核对；GET /api/care-tasks；PATCH /api/care-tasks/:id {status:'open'|'done'|'paused',expected_version}。
 GET /api/consents；PATCH /api/consents {purpose:'analysis',granted,expected_version}；GET /api/operations/:id；GET /api/export；DELETE /api/data/all 或 /api/data/:source_id →删除 job。

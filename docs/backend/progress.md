@@ -1,20 +1,17 @@
-# 当前实施进度
+# 实施进度（验收尚未结束）
 
-2026-10-12。用户授权在当前 feature 分支开发并待独立验收。本页记录实际接口，不代表 AGH 真模型或双端最终验收已通过。
+2026-10-12。当前分支 `codex/healththread-shared-backend`，基线 `744faa9`，所有修改仅本地；桌面独立副本已删除。
 
-## 领域接口已实现，待独立复核
+- 领域后端：已实现并经独立修复复审。身份由服务端会话取得；资料接收、核对、回执和派生失效使用 SQLite 事务。
+- 真实 AGH：公开 Host→LocalEndpoint→SDK 组合、受信任插件、五个业务工具、三个产品 Skill、实际工具回执核验；会话释放、重复暂存、启动失败、删除后旧请求竞态已复审通过。
+- 双前端：共用当前领域 API。资料先保存、候选逐项核对、版本冲突及原回执恢复；已通过两轮修复复审。
+- 独立故障与评估：28 个定向测试通过。全套145项，144通过、1可选SDK构建跳过；构建测试单独1/1通过。评估脚本畸形数组/部分记录处理已修复复审，新增13个评分定向回归通过；现有24例记录和指标未变。
+- 真实模型评估 v1：冻结12开发+12留出样例，实际24个主运行和8个接续运行。严格全字段预期匹配11/24；时间字段遗漏、重复候选及3个被拒绝的未知资料处理均保留，详见 validation.md 和 evaluation-results.v1.json。
+- 当前真实浏览器验收：手机保存→电脑核对→两端同一事实已验证；真实沟通卡已生成。诊后候选遗漏“每日/三天后”的时间字段，未人工确认，作为后端校验缺口进入最终审查。PDF浏览器选择自动化失败，不能计为浏览器验收通过；HTTP接收/解析/故障测试已覆盖。
+- 全分支审查、发现问题修复、最终验证和用户验收材料仍在进行。
 
-- `services/api/domain-store.mjs`：Node SQLite；scrypt 账号、服务端 session；按 owner 的 source/entry/document/pending episode；证据候选与确认事务；append-only fact revisions；版本授权与 epoch；幂等回执；原始 PDF BLOB；导出和 partial 删除回执。
-- `domain-jobs.mjs`：持久化 dispatch、有限并发、包含 readiness 的 deadline、重启 interrupted、取消与迟到 scope 拒绝、手动 retry 新 run。缺失模型先保原文再 blocked。checkpoint 后 SDK 失败保留结果及 execution_error。
-- `domain-server.mjs` 的 `createApp({root,dbPath,agent,demoAccounts,limits})` 返回 `{server,store,jobs,listen,close}`。默认未配置账号；正式服务没有匿名 state writer。`server.mjs` 只保留 constructor compatibility。
-- `contracts/README.md`、`contracts/openapi.yaml`、`contracts/schemas/` 已冻结 HTTP、5 个 bound tools、候选/结果参数、限额和恢复语义。`agent.run({run,scope,tools,signal})` 必须调用工具落真实业务回执。真实 metadata 使用 `provider:'agnes-ai'` 和 ordered `tool_receipt_ids`，真实性仍由可信 SDK adapter 负责。
-- W3 确认返回 `continuation_run_id`；W2/事项 dependency 在确认变更后保守标 stale。source-only W2 claim 必须由两端标为未核对自述/文档；speech 只能来自逐条摘录。
-- 默认新库 `.runtime/healththread-domain.sqlite`；历史匿名原型库 `.runtime/healththread.sqlite` 不导入，不在当前账号资料删除范围内。未修改用户现有 4173 原型进程。
+默认新库 `.runtime/healththread-domain.sqlite`；旧匿名原型 `.runtime/healththread.sqlite` 不导入，不在当前账号删除范围。删除始终如实返回 partial：AGH痕迹、备份和存储残留未认证擦除。
 
-## 验证记录
+本地合成账号需显式 opt-in。AGH账户来源与产品运行目录分离，环境变量见 `.env.example`；不修改外部 AGH源码或全局配置。D01/D02未批准，OCR/音频未支持。证据和有限语义标记校验不等于自动证明医学正确性；正式事实始终需要用户确认。
 
-当前任务的 TDD 包括先失败后实现的 owner 隔离、确认审计故障回滚、幂等/冲突、旧版本确认、重启、撤回/取消/删除晚回调、原文保留、scope/session TTL、队列限额/截止时间、模型 readiness 挂起、PDF 文本/损坏/无文本/超限、证据语义、手动重试。
-
-最终完整检查：`npm test` 53 个测试、52 passed、0 failed、1 SDK build 测试按现有 opt-in 规则 skipped；`npm run check` 31 JavaScript modules passed。后续最终结果见 `.superpowers/sdd/plan/task-1-report.md`。真实 AGH session/tool 追踪、两端正式交互迁移及独立故障测试由后续任务完成。
-
-边界：证据支持是保守整句摘录与有限语言 marker，不能自动证明全部医学语义；Poppler 是本机外部依赖；远程 AGH 痕迹/外部备份及 SQLite 底层残留不可认证抹除，删除始终 partial；SQLite 实验性 API 警告保留。严格 JSON schemas 加运行时业务校验，但当前并非通用 JSON Schema 引擎。
+实现、初审和复审历史保存在 `docs/backend/reviews/`；最终启动和验收步骤见 runbook.md，最终状态以完成后的验证记录为准。
