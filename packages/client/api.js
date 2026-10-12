@@ -41,6 +41,6 @@ export function createAgentRequester({ request, flush, getGeneration, timeoutMs 
 }
 
 export async function requestAgent(path, payload, options) {
-  const { flushData, getProfileGeneration } = await import('./data.js');
-  return createAgentRequester({ request: requestJson, flush: flushData, getGeneration: getProfileGeneration })(path, payload, options);
+  const {nativeBridge}=await import('./native-bridge.js');
+  return nativeBridge().requestAgent(path,payload,options);
 }

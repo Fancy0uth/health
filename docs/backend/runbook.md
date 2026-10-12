@@ -1,5 +1,7 @@
 # 本地人工验收 runbook
 
+当前预览已恢复用户上传的电脑端和手机端原页面，沿原菜单/按钮验收。此前共享替代界面停用。此次恢复只进行工程测试和已有数据的浏览器读取，未新增真实模型调用；[准确记录](reviews/native-frontend-restoration.md)。下列后端核对原则仍适用，页面路由以原界面为准。
+
 当前项目：`/Users/fancyouth123/Documents/ChatGPT/expressforpatient`；branch `codex/healththread-shared-backend`。当前领域代码含未知信息修复 `1a673d4`，评测脚本 `a7f71c4`，受信任模型资产 `10bed8c45398820ee485`，均经独立复核。后续文档提交见 `git rev-parse HEAD`。完整工程测试 208/208、67 模块检查通过；真实双端 W1/W2/W3 验收记录在 [浏览器验收](reviews/browser-acceptance.md)。V2 分数属于修复前 `cf632b9`。未推送、合并或部署。
 
 本机预览已启动，可以直接打开电脑版 `http://127.0.0.1:4173/web/` 和手机界面 `http://127.0.0.1:4173/mobile/`，使用下述合成演示账号验收；只有服务停止后才需要重新执行启动命令。示例库中保留了本轮合成记录和两条医嘱事项，便于检查来源、版本、确认过程与恢复历史。

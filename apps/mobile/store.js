@@ -19,7 +19,7 @@ function hydrate(value) {
   value.cardArchive ||= [];
   value.cardGeneratedAt ||= '2026-10-08';
   value.consent = { organize: true, parse: true, voice: false, ...value.consent };
-  value.medical ||= (value.deleteResult || window.HEALTHTHREAD_CONFIG?.storageMode === 'shared') ? null : { name: value.uploadedName || '模拟门诊记录.pdf', original: MEDICAL_TEXT, date: '2026-10-08', onset: '2026-10-01', task: '整理近期症状记录，复诊时携带。', status: value.uploadState === 'reviewed' ? 'confirmed' : 'pending', demo: true, checkedFields: value.uploadState === 'reviewed' ? ['date', 'task'] : [] };
+  value.medical ??= null;
   return value;
 }
 export function reload() { data = hydrate(loadData()); preferences = readPreferences(); }
@@ -34,7 +34,7 @@ export const session = value => data.sessions.find(s => s.id === value);
 export const sessions = () => [...data.sessions].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 export const stale = () => !!data.cardSourceDeleted || data.cardVersion < data.factVersion;
 export const cardExists = () => data.cardVersion > 0;
-export const pending = () => data.records.filter(r => r.status !== 'confirmed').reduce((n, r) => n + 2 - (r.confirmedFields?.length || 0), 0);
+export const pending = () => data.records.reduce((n,r)=>n+(r.proposals?.length||0),0);
 export function ensureSession(text, currentId) {
   let result = session(currentId);
   if (!result) {
@@ -88,15 +88,7 @@ export function prepareVisit(chatId) {
   }
   persist();
 }
-export function speech() {
-  if (data.cardDraft) return data.cardDraft;
-  if (!cardExists()) return '';
-  if (data.cardConcern === INITIAL.cardConcern) {
-    const start = data.cardStartDate ? `${Number(data.cardStartDate.slice(5, 7))}月${Number(data.cardStartDate.slice(8, 10))}日` : '开始时间未记录';
-    return `${start}${data.cardStartDate ? '起，' : '。'}饭后腹胀，偶尔反酸。10月6日有所缓解。近期用药和过敏情况还没记录。`;
-  }
-  return `本次情况：${data.cardConcern || '未记录'}\n开始时间：${data.cardStartDate || '未记录'}。\n用药与过敏情况：未记录。`;
-}
+export function speech(){return data.cardDraft||'';}
 export function generateCard() {
   if (cardExists()) data.cardArchive.push({ version: data.cardVersion, startDate: data.cardStartDate, generatedAt: data.cardGeneratedAt, text: speech(), questions: [...data.questions], records: structuredClone(data.cardRecords || []), stale: stale() });
   data.cardSourceDeleted = false;
@@ -113,6 +105,7 @@ export function generateCard() {
 }
 export function removeConversation(value) {
   if (data.cardConversationId === value) data.cardSourceDeleted = true;
+  data.hiddenSessions=[...new Set([...(data.hiddenSessions||[]),value])];
   data.sessions = data.sessions.filter(s => s.id !== value);
   if (data.activeSessionId === value) data.activeSessionId = null;
   persist();

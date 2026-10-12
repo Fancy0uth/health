@@ -2,6 +2,8 @@
 
 电脑版 `/web/` 与手机版 `/mobile/` 共用同源 Node ESM + SQLite 领域 API。登录会话决定用户身份；原文先保存，Agnes 只暂存候选，正式事实必须由用户逐项核对并提交。更正、撤回和删除使依赖的沟通卡/事项过期。
 
+界面已按用户纠正恢复为上传的两套原页面，保留原布局/样式，仅在原按钮和数据层接入领域 API；先前的共享替代界面已停用。[恢复说明与验证](docs/backend/reviews/native-frontend-restoration.md)。
+
 ## 本地启动
 
 需要 Node ≥24.10；文本层 PDF 需要 Poppler 的 `pdfinfo` / `pdftotext`（支持 `/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`）。Node 会报告现有 `node:sqlite` 实验性警告。
