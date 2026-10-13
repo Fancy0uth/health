@@ -4,12 +4,16 @@
   "files": {
     "plugin/LICENSE": "45ae0dcb463278a1da1067bc497cae8d025cf498551185598f77e55b77b7804a",
     "plugin/NOTICE": "8fb2915d84fbea29733f4a459c36d165419a8f8802c51d4903d620d7198717a8",
-    "plugin/index.mjs": "47b9830ee9c5694bad6c8ca4ed2c280c11410d8b6f942082a01e203c0bf861d1",
+    "plugin/argument-diagnostics.mjs": "0adee23dbe4c83c486764950d7a30f339cf66d75b7200376f5e9c5f982a0b3d7",
+    "plugin/index.mjs": "ab80e772912266bf215468d00769ef840e7bdd6205c1491ad1009111af53de94",
     "plugin/package.json": "9158773845dd4027fa2a92080f00a4da03c77307c68f0869af90ef7359242ebe",
-    "plugin/schemas.json": "914801801d36bd3090976a0d488105ad98d31aa1d1e9ff18771222988582a835",
-    "skills/health-assistant/SKILL.md": "9cbcd903925e611fdb40f923818cb38b97569c999ce6680e805f65f4e42f01d7",
-    "skills/health-record/SKILL.md": "fa85db6386385b851a7e53b0db73089f9acb793dd01886f52f10d7bc2d201eb6",
-    "skills/post-visit/SKILL.md": "5cf0c6b5875c7b6b014679d329d0bfd657eb85f1e7e1164f5db0bea71b3c89d1",
-    "skills/visit-preparation/SKILL.md": "2994e814e859ad34a18a66316bda023d78da138d7d9aff9e725c13241a78d9c3"
+    "plugin/schemas.json": "803d8cf4b26ceea9dbfb4f540dac407e687eac5af01cfcb98bbfe923d1cbb7a3",
+    "plugin/workflow-schemas.mjs": "38cab90c0cbf7a96e5144bf31692c780f725b420c8d4e42508fc7630c2d9d91b",
+    "skills/care-followup/SKILL.md": "87dfe1d0285a22ec8da667775db29a4b07c4463c38ce8b0bf1723a334b03ef8e",
+    "skills/document-transcription/SKILL.md": "45fe43d56c15ac84ce53bdc9514786059e044ac8a4cc6fa546034fbd5b59d052",
+    "skills/health-assistant/SKILL.md": "8aa2dcfbc478c8485e0635613eb78884a9846bdda0e1bf199a34137649eac791",
+    "skills/health-record/SKILL.md": "c8d60871b0412905dbce13ab547bfc97b31ef150e7a9e1c02786e058ba5827da",
+    "skills/post-visit/SKILL.md": "f2d167a40b3fc52e105cab2fee634ba4715993895381d72f9c569603682ff81d",
+    "skills/visit-preparation/SKILL.md": "d798cab0e0abfdaa076f8444e48e94623773f7504bbef51905ae9ee6b79119cb"
   }
 }

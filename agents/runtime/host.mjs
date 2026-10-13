@@ -5,6 +5,8 @@ import {randomUUID,createHash} from 'node:crypto';
 import {AGH_ROOT} from '../../scripts/build-agh-runtime.mjs';
 import {verifyApprovedAssets} from './assets.mjs';
 import {assertAgnes,assertTools,createBindings,runtimeError,TOOL_NAMES} from './boundary.mjs';
+import {schemasForWorkflow} from './plugin/workflow-schemas.mjs';
+import {argumentDiagnostics} from './plugin/argument-diagnostics.mjs';
 const project=fileURLToPath(new URL('../../',import.meta.url));
 const source=fileURLToPath(new URL('./',import.meta.url));
 const packageId='@healththread/runtime';
@@ -21,7 +23,8 @@ export async function loadRuntime(){
  if(proof.commit!==lock.commit||proof.sha256!==createHash('sha256').update(await readFile(artifact)).digest('hex'))throw runtimeError('AGH_BUILD_PROVENANCE');
  return import(pathToFileURL(artifact).href);
 }
-export async function createRuntime({home,fixture,runConnection=false,accountHome=EXISTING_AGH_HOME,accountProfile=EXISTING_AGH_PROFILE}={}){
+export async function createRuntime({home,fixture,runConnection=false,workflow,accountHome=EXISTING_AGH_HOME,accountProfile=EXISTING_AGH_PROFILE}={}){
+ const schemas=schemasForWorkflow(workflow);
  const assetGeneration=await verifyApprovedAssets();home??=join(resolve(project,process.env.HEALTHTHREAD_AGH_HOME||'.runtime/agh-home'),'releases',assetGeneration);
  accountHome=await futureRealpath(resolve(accountHome));home=await futureRealpath(resolve(home));for(const protectedRoot of [accountHome,await futureRealpath(resolve(AGH_ROOT))])if(home===protectedRoot||home.startsWith(protectedRoot+sep))throw runtimeError('AGH_HOME_NOT_ISOLATED');
  const api=await loadRuntime();const {host:H,sdk,local:L,base:B,packages:P,resources:R}=api;
@@ -47,7 +50,7 @@ export async function createRuntime({home,fixture,runConnection=false,accountHom
  const snapshots=await manager.runtimePluginSnapshots(profileDir);
  if(snapshots.length!==1||!snapshots[0].trusted||snapshots[0].snapshot.packageId!==packageId)throw runtimeError('AGH_PLUGIN_PIN_REQUIRED');
  const skillsPath=join(workspace,'.agh/skills'); await mkdir(skillsPath,{recursive:true,mode:0o700});
- const skillNames=['health-record','visit-preparation','post-visit','health-assistant'];
+ const skillNames=['health-record','visit-preparation','post-visit','care-followup','health-assistant','document-transcription'];
  for(const name of skillNames){const expected=await readFile(join(source,'skills',name,'SKILL.md'));await mkdir(join(skillsPath,name),{recursive:true,mode:0o700});const target=join(skillsPath,name,'SKILL.md');try{if(!expected.equals(await readFile(target)))throw runtimeError('AGH_SKILL_REVISION');}catch(e){if(e.code!=='ENOENT')throw e;await writeFile(target,expected,{mode:0o600,flag:'wx'});}}
  const canonicalRoot=await realpath(skillsPath);
  const checked=async path=>inside(canonicalRoot,await realpath(path));
@@ -68,11 +71,22 @@ export async function createRuntime({home,fixture,runConnection=false,accountHom
  const loader={async importPackage(id,dir){if(id==='@agnes/ai')return H.readNamedExports(id,join(source,'compiled-ai.mjs'),api.ai);if(id==='@agnes/base'){const{extensionEntry,...module}=H.readNamedExports(id,join(source,'compiled-base.mjs'),B,declarations);return{...module,embeddedExtensions:api.baseManifests};}if(id!==packageId)throw runtimeError('AGH_PACKAGE_BOUNDARY');return external.importPackage(id,dir);}};
  let harness,client,endpoint;let registryHash;
  const assertRegistry=()=>{if(!harness)throw runtimeError('AGH_HOST_NOT_READY');const snapshot=harness.kernel.tools.snapshot(0);assertTools([...snapshot.byName.keys()]);for(const tool of snapshot.byName.values())if(tool.source.trust!=='trusted'||tool.packageIdentity!==packageId)throw runtimeError('AGH_TOOL_PROVENANCE');if(registryHash&&snapshot.hash!==registryHash)throw runtimeError('AGH_REGISTRY_CHANGED');return snapshot;};
- const bridge={bindings,assertRegistry,async admit(key){bindings.lookup(key);assertRegistry();const session=harness.kernel.get(key);if(!session)throw runtimeError('AGH_SCOPE_INVALID');const rows=await H.scanAll(q=>session.scan(q),{type:'tool/result',fromSeq:1,toSeq:session.lastSeq});for(const row of rows)if(row.data.isError===true)bindings.reject(key,'tool-result:'+row.seq);},assertRequest(request,ctx){bindings.lookup(ctx.session.key);assertTools(request.toolNames);if(request.model!==selected.model)throw runtimeError('AGNES_MODEL_REQUIRED');}};
+ const bridge={bindings,assertRegistry,toolSchema(name){return schemas[name];},async admit(key){bindings.lookup(key);assertRegistry();const session=harness.kernel.get(key);if(!session)throw runtimeError('AGH_SCOPE_INVALID');const rows=await H.scanAll(q=>session.scan(q),{type:['tool/call','tool/result'],fromSeq:1,toSeq:session.lastSeq});for(const row of rows)if(row.type==='tool/result'&&row.data.isError===true){
+   bindings.reject(key,'tool-result:'+row.seq);
+   const entry=bindings.lookup(key);
+   if(row.data.code==='TOOL_ARGS_INVALID'&&row.seq>(entry.schemaRepair?.seq||0)){
+    const call=rows.find(r=>r.type==='tool/call'&&r.seq<row.seq&&r.data.toolUseId===row.data.toolUseId);
+    if(call&&Object.hasOwn(schemas,call.data.name)){
+     const errors=argumentDiagnostics(schemas[call.data.name],call.data.args);
+     if(errors.length)entry.schemaRepair={seq:row.seq,tool:call.data.name,errors,pending:true};
+    }
+   }
+  }},async pauseForSchemaRepair(key){await this.admit(key);return bindings.lookup(key).schemaRepair?.pending===true;},repairContext(key){const repair=bindings.lookup(key).schemaRepair;return repair&&!repair.pending?'\n受限工具参数校验反馈（由已注册 schema 生成，仅修正这些字段，不更改已读原文；对象/数组须提交原生 JSON，不能序列化成字符串）：'+JSON.stringify({tool:repair.tool,errors:repair.errors}):'';},assertRequest(request,ctx){bindings.lookup(ctx.session.key);assertTools(request.toolNames);if(request.model!==selected.model)throw runtimeError('AGNES_MODEL_REQUIRED');}};
  const bridgeSymbol=Symbol.for('healththread.bootstrap.bridge');globalThis[bridgeSymbol]??=new Map();globalThis[bridgeSymbol].set(bridgeId,bridge);
  try{
+ const requestMedia=H.composeProductionRequestMedia({readArtifact:async()=>{throw runtimeError('AGH_ARTIFACT_SCOPE_DENIED');},surfaceLimits:{maxLedgerEvents:1000,maxSurfaceNodes:1000,maxContentBlocks:100,maxManifestEntries:100,maxCandidateBytes:5_000_000,maxCandidatePixels:40_000_000},mediaLimits:{maxManifestEntries:100,maxSelectedImages:1,maxSelectedBlocks:1,maxBytesPerImage:5_000_000,maxDimensionPerImage:40000,maxPixelsPerImage:40_000_000,maxSelectedBytes:5_000_000,maxSelectedPixels:40_000_000}});
  const prompter= L.createPrompterBridge();
- harness=await H.createHost(profile,{dataDir,profileDir,workspaceRoot:workspace,hostRoot:dirname(fileURLToPath(import.meta.url)),homeDir:home,loader,extensionLoader:jiti,packageDirs:new Map(profile.packages.filter(p=>p.enabled).map(p=>[p.id,p.id===packageId?P.packageDir(dataDir,profileName,p.id):source])),log:quiet,prompter:prompter.prompter,runtimePluginSnapshots:snapshots,skillResources:skills.snapshot(),activationBarrier:barrier,ordinaryPluginLayers:{deployment:{'ext:healththread/runtime':{enabled:true,config:{bridgeId}}}},...(fixture?{providerFactory:()=>({...fixture.provider,infer:fixture.provider.infer.bind(fixture.provider)})}: {})});
+ harness=await H.createHost(profile,{requestMedia,dataDir,profileDir,workspaceRoot:workspace,hostRoot:dirname(fileURLToPath(import.meta.url)),homeDir:home,loader,extensionLoader:jiti,packageDirs:new Map(profile.packages.filter(p=>p.enabled).map(p=>[p.id,p.id===packageId?P.packageDir(dataDir,profileName,p.id):source])),log:quiet,prompter:prompter.prompter,runtimePluginSnapshots:snapshots,skillResources:skills.snapshot(),activationBarrier:barrier,ordinaryPluginLayers:{deployment:{'ext:healththread/runtime':{enabled:true,config:{bridgeId}}}},...(fixture?{providerFactory:()=>({...fixture.provider,infer:fixture.provider.infer.bind(fixture.provider)})}: {})});
  const allowedRows=new Set(['seam:approval','seam:principals','seam:artifacts','seam:checkpoint','seam:ledger','seam:verifier','seam:repair','seam:harness','ext:healththread/runtime']);
  await harness.extensionRows.apply(harness.extensionRows.current().filter(row=>allowedRows.has(row.id)));
  registryHash=assertRegistry().hash;
@@ -80,16 +94,17 @@ export async function createRuntime({home,fixture,runConnection=false,accountHom
  const workspaces=new L.WorkspaceCatalog(new L.MemoryWorkspaceStore(),new L.MemorySessionWorkspaces(),H.resolveWorkspaceDirectory,()=>Date.now());await workspaces.add(workspace);
  endpoint=L.createLocalEndpoint(harness,{workspaces});prompter.bind(endpoint.prompter);
  client=sdk.createClient({transport:{kind:'inproc',endpoint},auth:{kind:'local'},journal:sdk.memoryJournal(),timeouts:{request:120000,initialize:10000}});await client.initialize();
- const readiness={tools:[...TOOL_NAMES],toolFingerprints:Object.fromEntries([...assertRegistry().byName].map(([name,tool])=>[name,tool.definitionFingerprint])),registryHash,profileHash:profile.hash,skills:skills.actual().map(({name,resourceId,revision,actual,trust,desired})=>({name,resourceId,revision,actual,trust,desired})),plugins:snapshots.map(s=>({id:s.snapshot.packageId,integrity:s.snapshot.integrity,treeIntegrity:s.snapshot.treeIntegrity,snapshotId:s.snapshot.snapshotId,trusted:s.trusted,pinId})),provider:selected.provider,route:selected.route,model:selected.model,fixture:!!fixture,assetGeneration};
+ const imageInput=harness.provider.models().find(m=>m.id===selected.model&&m.route===selected.route)?.input?.includes('image')===true;
+ const readiness={image_input:imageInput,tools:[...TOOL_NAMES],toolFingerprints:Object.fromEntries([...assertRegistry().byName].map(([name,tool])=>[name,tool.definitionFingerprint])),registryHash,profileHash:profile.hash,skills:skills.actual().map(({name,resourceId,revision,actual,trust,desired})=>({name,resourceId,revision,actual,trust,desired})),plugins:snapshots.map(s=>({id:s.snapshot.packageId,integrity:s.snapshot.integrity,treeIntegrity:s.snapshot.treeIntegrity,snapshotId:s.snapshot.snapshotId,trusted:s.trusted,pinId})),provider:selected.provider,route:selected.route,model:selected.model,fixture:!!fixture,assetGeneration};
  await writeFile(join(home,'installation.json'),JSON.stringify(readiness,null,2)+'\n',{mode:0o600});
  const children=new Set(),pending=new Set();let closePromise;
  const close=()=>closePromise??=(async()=>{await Promise.allSettled([...pending]);await Promise.allSettled([...children].map(child=>child.close()));try{await client.close();}finally{try{await endpoint.close();}finally{await harness.close();}}})();
  return Object.freeze({client,bindings,workspace,selected,readiness,
   lifecycle(){return{activeRunConnections:children.size,pendingRunConnections:pending.size,retainedSdkSessions:client.sessions.size,closed:!!closePromise};},
   async isReady(){if(closePromise)throw runtimeError('AGH_RUNTIME_CLOSED');assertRegistry();if(configuration){const current=assertAgnes(await configuration.get());if(current.route!==selected.route||current.model!==selected.model)throw runtimeError('AGNES_CONFIGURATION_CHANGED');}return true;},
-  async openRun(){
+  async openRun({workflow}={}){
    if(closePromise||runConnection)throw runtimeError('AGH_RUNTIME_CLOSED');
-   const opening=(async()=>{let child;try{child=await createRuntime({home:join(home,'runs',randomUUID()),fixture,runConnection:true,accountHome,accountProfile});await child.isReady();if(closePromise)throw runtimeError('AGH_RUNTIME_CLOSED');const handle=Object.freeze({...child,async close(){try{await child.close();}finally{children.delete(handle);}}});children.add(handle);return handle;}catch(error){await child?.close();throw error;}})();
+   const opening=(async()=>{let child;try{child=await createRuntime({home:join(home,'runs',randomUUID()),fixture,runConnection:true,workflow,accountHome,accountProfile});await child.isReady();if(closePromise)throw runtimeError('AGH_RUNTIME_CLOSED');const handle=Object.freeze({...child,async close(){try{await child.close();}finally{children.delete(handle);}}});children.add(handle);return handle;}catch(error){await child?.close();throw error;}})();
    pending.add(opening);try{return await opening;}finally{pending.delete(opening);}
   },close});
  }catch(error){await client?.close().catch(()=>{});await endpoint?.close().catch(()=>{});await harness?.close().catch(()=>{});throw error;}finally{globalThis[bridgeSymbol].delete(bridgeId);}

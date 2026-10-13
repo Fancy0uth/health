@@ -56,16 +56,19 @@
           "$ref": "#/$defs/candidate"
         },
         "minItems": 0,
-        "maxItems": 100
+        "maxItems": 100,
+        "description": "Native JSON array of new candidate objects; never a JSON string. No operation_key/base_profile_revision wrapper inside this array."
       },
       "base_profile_revision": {
         "type": "integer",
-        "minimum": 1
+        "minimum": 1,
+        "description": "Copy context.snapshot_revision as an integer; outer tool field, not inside candidates."
       },
       "operation_key": {
         "type": "string",
         "minLength": 16,
-        "maxLength": 128
+        "maxLength": 128,
+        "description": "Copy the exact stable operation_key from the workflow input; outer tool field, never inside a candidate."
       },
       "record_dialogue": {
         "type": "object",
@@ -114,7 +117,7 @@
         "type": "array",
         "minItems": 0,
         "maxItems": 100,
-        "description": "Natural record only: select currently valid health sentences from authorized indexed_sentences. Send candidates:[] and a nonempty record_dialogue.summary. Server derives exact evidence and metadata; never mix with manual candidates.",
+        "description": "Natural record only: select currently valid authorized indexed_sentences. Send candidates:[] and nonempty record_dialogue.summary; optional health_observations must be exact snippets supported by the selected sentence. Server derives exact complete-sentence evidence. Never mix with manual candidates.",
         "items": {
           "type": "object",
           "additionalProperties": false,
@@ -127,11 +130,144 @@
             "sentence_index": {
               "type": "integer",
               "minimum": 0
+            },
+            "health_observations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/health_observation"
+              },
+              "minItems": 0,
+              "maxItems": 50
             }
           },
           "required": [
             "source_id",
             "sentence_index"
+          ]
+        }
+      },
+      "comparisons": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/comparison"
+        },
+        "maxItems": 100
+      },
+      "overview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
+          },
+          "regions": {
+            "type": "array",
+            "maxItems": 7,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "enum": [
+                    "head_neck",
+                    "chest",
+                    "abdomen",
+                    "back",
+                    "limbs",
+                    "systemic",
+                    "other"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20000,
+                  "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
+                },
+                "status": {
+                  "enum": [
+                    "reported",
+                    "documented",
+                    "improving",
+                    "resolved",
+                    "uncertain"
+                  ]
+                },
+                "source_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "summary",
+                "status",
+                "source_ids"
+              ]
+            },
+            "description": "按资料支持的部位组织，每个部位 ID 只出现一次；同一部位的不同表现合为一张卡，保留各自时间和范围，未提及部位省略。"
+          }
+        },
+        "required": [
+          "summary",
+          "regions"
+        ],
+        "description": "供患者阅读的身体近况综合；证据原文与结构化状态由其他字段保留。"
+      },
+      "document_source_refs": {
+        "type": "array",
+        "minItems": 0,
+        "maxItems": 100,
+        "description": "Document extraction: select authorized indexed_sentences and classify each sentence with field. Use candidates:[]; never mix nonempty record_source_refs or manual candidates. Exact complete evidence and literal annotations are reconstructed and strictly validated by the server. Provide a native overview object.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "sentence_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "health_observations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/health_observation"
+              },
+              "minItems": 0,
+              "maxItems": 50
+            },
+            "field": {
+              "enum": [
+                "reported_text",
+                "symptom",
+                "diagnosis",
+                "medication",
+                "instruction",
+                "allergy",
+                "test",
+                "observation"
+              ]
+            }
+          },
+          "required": [
+            "source_id",
+            "sentence_index",
+            "field"
           ]
         }
       }
@@ -310,6 +446,14 @@
               "string",
               "null"
             ]
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/health_observation"
+            },
+            "minItems": 0,
+            "maxItems": 50
           }
         },
         "required": [
@@ -322,6 +466,90 @@
           "proposal_kind"
         ],
         "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
+      },
+      "health_observation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "enum": [
+              "body_site",
+              "symptom",
+              "onset",
+              "course",
+              "self_rating",
+              "impact",
+              "context",
+              "associated",
+              "measurement",
+              "background"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "dimension",
+          "value"
+        ],
+        "description": "Extractive metadata supported by this candidate sentence only. value, unit and observed_at must be exact supported snippets, preserving negation and uncertainty. No inferred scores, units, dates or diagnoses. Missing unit/time is omitted or null; recorded time is not event time."
+      },
+      "comparison": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "relation": {
+            "enum": [
+              "conflict",
+              "update",
+              "duplicate",
+              "related"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "candidate_index",
+          "fact_id",
+          "revision",
+          "relation",
+          "reason"
+        ],
+        "description": "Compare against a currently confirmed same-owner fact actually retrieved in this run. candidate_index is the zero-based original candidates or record_source_refs or document_source_refs index. Explicit temporal change is update; simultaneous incompatible claims are conflict. Comparisons never replace facts automatically."
       }
     },
     "allOf": [
@@ -345,6 +573,39 @@
           "required": [
             "record_dialogue"
           ]
+        }
+      },
+      {
+        "if": {
+          "required": [
+            "document_source_refs"
+          ]
+        },
+        "then": {
+          "properties": {
+            "candidates": {
+              "maxItems": 0
+            },
+            "record_source_refs": {
+              "maxItems": 0
+            }
+          },
+          "required": [
+            "overview"
+          ]
+        }
+      }
+    ],
+    "description": "Call with a native outer object: candidates is a native array, base_profile_revision is an outer integer copied from context.snapshot_revision, operation_key is the exact outer business key supplied for this run. Do not JSON.stringify candidates or put top-level metadata inside candidates.",
+    "examples": [
+      {
+        "candidates": [],
+        "base_profile_revision": 1,
+        "operation_key": "COPY-INPUT-OPERATION-KEY",
+        "comparisons": [],
+        "overview": {
+          "summary": "资料支持的概述，未提及部位不造正常。",
+          "regions": []
         }
       }
     ]
@@ -377,7 +638,8 @@
             "const": "visit_preparation"
           },
           "payload": {
-            "$ref": "#/$defs/visit_payload"
+            "$ref": "#/$defs/visit_payload",
+            "description": "Pass a native JSON object matching this workflow payload. Never JSON.stringify(payload), quote the whole object, or wrap it in a string. Other operation metadata stays at the outer tool argument level."
           },
           "dependencies": {
             "type": "array",
@@ -408,7 +670,8 @@
             "const": "care_plan"
           },
           "payload": {
-            "$ref": "#/$defs/care_payload"
+            "$ref": "#/$defs/care_payload",
+            "description": "Pass a native JSON object matching this workflow payload. Never JSON.stringify(payload), quote the whole object, or wrap it in a string. Other operation metadata stays at the outer tool argument level."
           },
           "dependencies": {
             "type": "array",
@@ -439,7 +702,8 @@
             "const": "assistant_reply"
           },
           "payload": {
-            "$ref": "#/$defs/chat_payload"
+            "$ref": "#/$defs/chat_payload",
+            "description": "Pass a native JSON object matching this workflow payload. Never JSON.stringify(payload), quote the whole object, or wrap it in a string. Other operation metadata stays at the outer tool argument level."
           },
           "dependencies": {
             "type": "array",
@@ -448,6 +712,116 @@
             },
             "minItems": 0,
             "maxItems": 100
+          },
+          "operation_key": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "kind",
+          "payload",
+          "dependencies",
+          "operation_key"
+        ],
+        "examples": [
+          {
+            "kind": "assistant_reply",
+            "payload": {
+              "format_version": 2,
+              "intent": "clarify",
+              "reply": "已记下。",
+              "speech": "",
+              "questions": [],
+              "unknowns": [],
+              "claims": [],
+              "automatic_record": {
+                "action": "save",
+                "summary": "患者本轮自述，结合已有记录综合。",
+                "candidates": [],
+                "overview": {
+                  "summary": "已有来源支持的身体情况。",
+                  "regions": []
+                }
+              }
+            },
+            "dependencies": [],
+            "operation_key": "COPY-INPUT-OPERATION-KEY"
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "transcription"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "readable",
+                  "partial",
+                  "unreadable"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 100000
+              },
+              "uncertainties": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                }
+              },
+              "source_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_text_version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "status",
+              "text",
+              "uncertainties",
+              "source_id",
+              "source_text_version"
+            ],
+            "description": "Pass a native JSON object matching this workflow payload. Never JSON.stringify(payload), quote the whole object, or wrap it in a string. Other operation metadata stays at the outer tool argument level."
+          },
+          "dependencies": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_text_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "source_id",
+                "source_text_version"
+              ]
+            }
           },
           "operation_key": {
             "type": "string",
@@ -661,6 +1035,22 @@
               "string",
               "null"
             ]
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Optional model paraphrase of referenced confirmed instructions, displayed separately from exact text. Preserve dose, frequency, timing and uncertainty; no unsupported quantities, actions or medication changes."
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "description": "Questions to clarify missing or ambiguous source details; never turn unknown medicine, dose or timing into advice."
           }
         },
         "required": [
@@ -684,6 +1074,43 @@
           },
           "explanation": {
             "type": "string"
+          },
+          "guidance": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "source_kind": {
+                  "const": "model_guidance"
+                },
+                "category": {
+                  "enum": [
+                    "precaution",
+                    "recovery"
+                  ]
+                },
+                "source_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "#/$defs/source_ref"
+                  }
+                }
+              },
+              "required": [
+                "text",
+                "source_kind",
+                "category",
+                "source_refs"
+              ]
+            }
           }
         },
         "required": [
@@ -696,7 +1123,8 @@
         "properties": {
           "speech": {
             "type": "string",
-            "maxLength": 20000
+            "maxLength": 20000,
+            "description": "Legacy visible speech. Optional for format_version:2 chat; omission is stored as an empty string."
           },
           "questions": {
             "type": "array",
@@ -714,7 +1142,8 @@
               "maxLength": 1000
             },
             "minItems": 0,
-            "maxItems": 30
+            "maxItems": 30,
+            "description": "Optional for format_version:2 chat; omission is stored as an empty list. Supplied values retain the same validation."
           },
           "claims": {
             "type": "array",
@@ -765,12 +1194,175 @@
           "confirmation_has_new_details": {
             "type": "boolean",
             "description": "False only when the consenting user turn contains no new health details or corrections; omitted means retain the source."
+          },
+          "automatic_record": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "save",
+                  "skip"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "candidates": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/$defs/automatic_new_candidate"
+                }
+              },
+              "comparisons": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/$defs/comparison"
+                }
+              },
+              "overview": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000,
+                    "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
+                  },
+                  "regions": {
+                    "type": "array",
+                    "maxItems": 7,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "enum": [
+                            "head_neck",
+                            "chest",
+                            "abdomen",
+                            "back",
+                            "limbs",
+                            "systemic",
+                            "other"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "summary": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 20000,
+                          "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
+                        },
+                        "status": {
+                          "enum": [
+                            "reported",
+                            "documented",
+                            "improving",
+                            "resolved",
+                            "uncertain"
+                          ]
+                        },
+                        "source_ids": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "summary",
+                        "status",
+                        "source_ids"
+                      ]
+                    },
+                    "description": "按资料支持的部位组织，每个部位 ID 只出现一次；同一部位的不同表现合为一张卡，保留各自时间和范围，未提及部位省略。"
+                  }
+                },
+                "required": [
+                  "summary",
+                  "regions"
+                ],
+                "description": "供患者阅读的身体近况综合；证据原文与结构化状态由其他字段保留。"
+              },
+              "record_source_refs": {
+                "type": "array",
+                "minItems": 0,
+                "maxItems": 100,
+                "description": "Select exact already-read indexed_sentences using source_id, zero-based sentence_index and field. Do not include candidates alongside record_source_refs, even if empty. The server reconstructs unchanged complete evidence and source annotations. comparison.candidate_index is this reference array index, not sentence_index. Use [] for contextual short answers with no independently extractable sentence.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "source_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "sentence_index": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "health_observations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/health_observation"
+                      },
+                      "minItems": 0,
+                      "maxItems": 50
+                    },
+                    "field": {
+                      "enum": [
+                        "reported_text",
+                        "symptom",
+                        "diagnosis",
+                        "medication",
+                        "instruction",
+                        "allergy",
+                        "test",
+                        "observation"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "source_id",
+                    "sentence_index",
+                    "field"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "record_source_refs",
+                    "candidates"
+                  ]
+                }
+              }
+            ]
           }
         },
         "required": [
-          "speech",
           "questions",
-          "unknowns",
           "claims",
           "intent"
         ],
@@ -784,6 +1376,12 @@
             "then": {
               "required": [
                 "reply"
+              ]
+            },
+            "else": {
+              "required": [
+                "speech",
+                "unknowns"
               ]
             }
           },
@@ -811,6 +1409,296 @@
             }
           }
         ]
+      },
+      "effective_time": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "raw": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "precision": {
+            "enum": [
+              "exact",
+              "interval",
+              "relative",
+              "unknown"
+            ]
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "enum": [
+              null,
+              "Asia/Shanghai",
+              "UTC"
+            ]
+          },
+          "anchor_source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "raw",
+          "precision",
+          "start",
+          "end",
+          "timezone",
+          "anchor_source_id"
+        ]
+      },
+      "candidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/$defs/effective_time"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/health_observation"
+            },
+            "minItems": 0,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind"
+        ],
+        "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
+      },
+      "health_observation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "enum": [
+              "body_site",
+              "symptom",
+              "onset",
+              "course",
+              "self_rating",
+              "impact",
+              "context",
+              "associated",
+              "measurement",
+              "background"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "dimension",
+          "value"
+        ],
+        "description": "Extractive metadata supported by this candidate sentence only. value, unit and observed_at must be exact supported snippets, preserving negation and uncertainty. No inferred scores, units, dates or diagnoses. Missing unit/time is omitted or null; recorded time is not event time."
+      },
+      "comparison": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fact_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "relation": {
+            "enum": [
+              "conflict",
+              "update",
+              "duplicate",
+              "related"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "candidate_index",
+          "fact_id",
+          "revision",
+          "relation",
+          "reason"
+        ],
+        "description": "Compare against a currently confirmed same-owner fact actually retrieved in this run. candidate_index is the zero-based original candidates or record_source_refs index. Explicit temporal change is update; simultaneous incompatible claims are conflict. Comparisons never replace facts automatically."
+      },
+      "automatic_new_candidate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/$defs/effective_time"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "const": "new",
+            "description": "New sourced candidate only; server assigns all identities and versions."
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/health_observation"
+            },
+            "minItems": 0,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind"
+        ],
+        "description": "A new source-supported candidate. Omit fact_id, expected_version and episode_id entirely, including null placeholders. Use comparisons to refer to existing retrieved facts."
       }
     }
   }

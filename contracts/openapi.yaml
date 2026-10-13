@@ -242,8 +242,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -262,8 +262,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -349,8 +349,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -369,8 +369,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -520,8 +520,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -540,8 +540,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -776,8 +776,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -796,8 +796,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -935,8 +935,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -955,8 +955,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1244,8 +1244,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1264,8 +1264,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1323,8 +1323,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1343,8 +1343,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1412,8 +1412,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1432,8 +1432,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1504,6 +1504,13 @@
                   },
                   "confirmation_message": {
                     "type": "string"
+                  },
+                  "resolutions": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ReviewResolution"
+                    },
+                    "maxItems": 100
                   }
                 },
                 "required": [
@@ -1513,7 +1520,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Explicit resolutions govern old/new comparisons. Selected conflicts require a resolution. replace uses referenced fact revision CAS and preserves history; keep_both preserves distinct records; keep_existing writes no new fact; defer keeps reviewable uncertainty. Unselected conflicts are never silently confirmed."
       }
     },
     "/api/fact-changes/{id}/reject": {
@@ -1539,8 +1547,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1559,8 +1567,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1648,8 +1656,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1668,8 +1676,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1772,8 +1780,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1792,8 +1800,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1879,8 +1887,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1899,8 +1907,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -1968,8 +1976,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -1988,8 +1996,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -2047,8 +2055,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -2067,8 +2075,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -2126,8 +2134,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -2146,8 +2154,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -2211,7 +2219,7 @@
     },
     "/api/runs/{id}/reanalyse": {
       "post": {
-        "summary": "Expire a needs_review proposal and atomically create a new run from saved sources using the current profile revision; never confirm stale facts",
+        "summary": "Reanalyse a pending review from saved sources; explicit standalone self-report legacy entry reanalysis also accepts completed/confirmed records and links one editable episode thread. Retain confirmed history and preserve whole-record edit semantics.",
         "operationId": "post_runs_id_reanalyse",
         "parameters": [
           {
@@ -2283,8 +2291,8 @@
               }
             }
           },
-          "default": {
-            "description": "Same-origin/CSRF/owner/consent and current-revision checks; stale version or non-review run returns409",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -2303,8 +2311,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Same-origin/CSRF/owner/consent and current-revision checks; stale version or non-review run returns409",
             "content": {
               "application/json": {
                 "schema": {
@@ -2419,8 +2427,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -2439,8 +2447,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -2527,8 +2535,8 @@
               }
             }
           },
-          "default": {
-            "description": "Domain error; no sensitive internals",
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
             "content": {
               "application/json": {
                 "schema": {
@@ -2547,8 +2555,8 @@
               }
             }
           },
-          "409": {
-            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+          "default": {
+            "description": "Domain error; no sensitive internals",
             "content": {
               "application/json": {
                 "schema": {
@@ -2597,6 +2605,297 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VisitEdit"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/episodes/{id}": {
+      "patch": {
+        "summary": "Update current event state with a version check; preserve historical episode",
+        "operationId": "patch_episodes_id",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeStateResponse"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "active",
+                      "improved",
+                      "resolved"
+                    ]
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "status",
+                  "expected_version"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/care-tasks/{id}/feedback": {
+      "post": {
+        "summary": "Atomically save immutable care feedback and queue authorized health conversation",
+        "operationId": "post_care_tasks_id_feedback",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReceipt"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "text",
+                  "expected_version"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Requires current consent, epoch, idempotency and expected task version. Feedback references the task and original instruction revisions; it never edits instructions, confirms facts or revives a stale task. Stale task provenance remains explicit."
+      }
+    },
+    "/api/documents/{id}": {
+      "get": {
+        "operationId": "getDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document original metadata, verified transcript and processing progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/{id}/original": {
+      "get": {
+        "operationId": "getDocumentOriginal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated same-owner original bytes with persisted MIME, nosniff and sandbox headers",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginalDocumentBytes"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginalDocumentBytes"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginalDocumentBytes"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginalDocumentBytes"
+                }
               }
             }
           }
@@ -2672,10 +2971,21 @@
             "type": "string"
           },
           "expired_fact_change_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Expired pending change, or null when confirmed legacy history is retained."
           },
           "saved": {
             "const": true
+          },
+          "record_thread_id": {
+            "type": "string"
+          },
+          "record_version": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       },
@@ -2704,7 +3014,8 @@
               "document",
               "visit",
               "care_plan",
-              "chat"
+              "chat",
+              "transcription"
             ]
           },
           "status": {
@@ -2814,6 +3125,39 @@
           "record_thread_id": {
             "type": "string",
             "minLength": 1
+          },
+          "record_save_status": {
+            "enum": [
+              "saved",
+              "saved_with_exceptions",
+              "skipped"
+            ]
+          },
+          "automatic_finalized": {
+            "type": "boolean"
+          },
+          "record_edit": {
+            "type": "boolean"
+          },
+          "transcription_finalized": {
+            "type": "boolean"
+          },
+          "continuation_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legacy_record_adoption": {
+            "type": "boolean",
+            "description": "Explicit standalone self-report legacy reanalysis requires an automatic overview and reuses its original episode."
+          },
+          "overview_refresh": {
+            "type": "boolean",
+            "description": "Server-created overview-only synthesis after resolving an automatic exception."
+          },
+          "overview_change_id": {
+            "type": "string"
           }
         }
       },
@@ -2846,7 +3190,9 @@
           "media_type": {
             "enum": [
               "application/pdf",
-              "text/plain"
+              "text/plain",
+              "image/png",
+              "image/jpeg"
             ]
           },
           "byte_size": {
@@ -2857,7 +3203,17 @@
             "type": "string"
           },
           "extraction_status": {
-            "const": "extracted"
+            "enum": [
+              "queued",
+              "transcribing",
+              "verifying",
+              "extracted",
+              "unreadable",
+              "failed",
+              "blocked",
+              "interrupted",
+              "cancelled"
+            ]
           },
           "pages": {
             "type": "array",
@@ -2881,6 +3237,77 @@
                   "type": "integer",
                   "minimum": 1
                 }
+              }
+            }
+          },
+          "analysis_source_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transcription_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analysis_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analysis_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "care_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "original_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transcript": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "status": {
+                "enum": [
+                  "readable",
+                  "partial",
+                  "unreadable"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "uncertainties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "transcript_source_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provenance": {
+                "type": "object",
+                "additionalProperties": true
               }
             }
           }
@@ -3232,6 +3659,13 @@
               "string",
               "null"
             ]
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthObservation"
+            },
+            "maxItems": 50
           }
         },
         "required": [
@@ -3313,6 +3747,44 @@
           },
           "id": {
             "type": "string"
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthObservation"
+            },
+            "maxItems": 50
+          },
+          "comparisons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactComparison"
+            }
+          },
+          "candidate_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proposal_status": {
+            "enum": [
+              "pending",
+              "deferred",
+              "confirmed",
+              "kept_existing"
+            ]
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewResolution"
+            }
+          },
+          "confirmed_fact_id": {
+            "type": "string"
+          },
+          "confirmed_revision": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -3367,8 +3839,32 @@
             "enum": [
               "self_report",
               "pasted_document",
-              "pdf"
+              "pdf",
+              "care_feedback",
+              "image",
+              "image_transcript"
             ]
+          },
+          "derived_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transcription_status": {
+            "enum": [
+              "readable",
+              "partial"
+            ]
+          },
+          "uncertainties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transcription_run_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -3400,7 +3896,9 @@
             "enum": [
               "self_report",
               "pasted_document",
-              "pdf"
+              "pdf",
+              "image",
+              "image_transcript"
             ]
           },
           "received_at": {
@@ -3442,7 +3940,9 @@
             "enum": [
               "self_report",
               "pasted_document",
-              "pdf"
+              "pdf",
+              "image",
+              "image_transcript"
             ]
           },
           "received_at": {
@@ -3501,7 +4001,9 @@
           "media_type": {
             "enum": [
               "application/pdf",
-              "text/plain"
+              "text/plain",
+              "image/png",
+              "image/jpeg"
             ]
           },
           "byte_size": {
@@ -3512,7 +4014,17 @@
             "type": "string"
           },
           "extraction_status": {
-            "const": "extracted"
+            "enum": [
+              "queued",
+              "transcribing",
+              "verifying",
+              "extracted",
+              "unreadable",
+              "failed",
+              "blocked",
+              "interrupted",
+              "cancelled"
+            ]
           },
           "pages": {
             "type": "array",
@@ -3522,6 +4034,77 @@
           },
           "owner": {
             "type": "string"
+          },
+          "analysis_source_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transcription_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analysis_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analysis_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "care_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "original_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transcript": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "status": {
+                "enum": [
+                  "readable",
+                  "partial",
+                  "unreadable"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "uncertainties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "transcript_source_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provenance": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
           }
         }
       },
@@ -3620,7 +4203,14 @@
           "conflicts": {
             "type": "array",
             "items": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/FactComparison"
+                }
+              ]
             }
           },
           "created_at": {
@@ -3653,6 +4243,93 @@
           },
           "expired_at": {
             "type": "string"
+          },
+          "comparisons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactComparison"
+            }
+          },
+          "review_state": {
+            "enum": [
+              "partially_confirmed",
+              "deferred",
+              "complete"
+            ]
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewResolution"
+            }
+          },
+          "overview": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "regions": {
+                "type": "array",
+                "maxItems": 7,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "enum": [
+                        "head_neck",
+                        "chest",
+                        "abdomen",
+                        "back",
+                        "limbs",
+                        "systemic",
+                        "other"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "summary": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 20000
+                    },
+                    "status": {
+                      "enum": [
+                        "reported",
+                        "documented",
+                        "improving",
+                        "resolved",
+                        "uncertain"
+                      ]
+                    },
+                    "source_ids": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "summary",
+                    "status",
+                    "source_ids"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "summary",
+              "regions"
+            ]
           }
         },
         "required": [
@@ -3728,7 +4405,14 @@
           "conflicts": {
             "type": "array",
             "items": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/FactComparison"
+                }
+              ]
             }
           },
           "created_at": {
@@ -3771,6 +4455,93 @@
           "review_revision": {
             "type": "integer",
             "minimum": 1
+          },
+          "comparisons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactComparison"
+            }
+          },
+          "review_state": {
+            "enum": [
+              "partially_confirmed",
+              "deferred",
+              "complete"
+            ]
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewResolution"
+            }
+          },
+          "overview": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "regions": {
+                "type": "array",
+                "maxItems": 7,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "enum": [
+                        "head_neck",
+                        "chest",
+                        "abdomen",
+                        "back",
+                        "limbs",
+                        "systemic",
+                        "other"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "summary": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 20000
+                    },
+                    "status": {
+                      "enum": [
+                        "reported",
+                        "documented",
+                        "improving",
+                        "resolved",
+                        "uncertain"
+                      ]
+                    },
+                    "source_ids": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "summary",
+                    "status",
+                    "source_ids"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "summary",
+              "regions"
+            ]
           }
         },
         "required": [
@@ -3874,13 +4645,66 @@
           "review_status": {
             "enum": [
               "confirmed",
-              "retracted"
+              "retracted",
+              "patient_report",
+              "document_report"
             ]
           },
           "confirmed_at": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "change_id": {
+            "type": "string"
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthObservation"
+            },
+            "maxItems": 50
+          },
+          "verification_status": {
+            "enum": [
+              "patient_report",
+              "document_report"
+            ]
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "patient_report",
+                  "document_report"
+                ]
+              },
+              "automatic": {
+                "type": "boolean"
+              },
+              "patient_confirmed": {
+                "const": false
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "automatic",
+              "patient_confirmed",
+              "run_id"
+            ]
+          },
+          "retraction_reason": {
             "type": "string"
           }
         },
@@ -3922,6 +4746,9 @@
             "items": {
               "$ref": "#/components/schemas/FactChange"
             }
+          },
+          "health_profile": {
+            "$ref": "#/components/schemas/HealthProfile"
           }
         },
         "required": [
@@ -4044,6 +4871,22 @@
               "string",
               "null"
             ]
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Optional model paraphrase of referenced confirmed instructions, displayed separately from exact text. Preserve dose, frequency, timing and uncertainty; no unsupported quantities, actions or medication changes."
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "description": "Questions to clarify missing or ambiguous source details; never turn unknown medicine, dose or timing into advice."
           }
         },
         "required": [
@@ -4157,7 +5000,8 @@
           "kind": {
             "enum": [
               "visit_preparation",
-              "care_plan"
+              "care_plan",
+              "transcription"
             ]
           },
           "schema_version": {
@@ -4170,6 +5014,9 @@
               },
               {
                 "$ref": "#/components/schemas/CarePayload"
+              },
+              {
+                "$ref": "#/components/schemas/TranscriptionPayload"
               }
             ]
           },
@@ -4183,7 +5030,9 @@
             "enum": [
               "current",
               "stale",
-              "withdrawn"
+              "withdrawn",
+              "staged",
+              "completed"
             ]
           },
           "validity": {
@@ -4263,6 +5112,25 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "transcription"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/TranscriptionPayload"
+                }
+              }
+            }
           }
         ]
       },
@@ -4328,6 +5196,54 @@
           "version": {
             "type": "integer",
             "minimum": 1
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Optional model paraphrase of referenced confirmed instructions, displayed separately from exact text. Preserve dose, frequency, timing and uncertainty; no unsupported quantities, actions or medication changes."
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "description": "Questions to clarify missing or ambiguous source details; never turn unknown medicine, dose or timing into advice."
+          },
+          "source_kind": {
+            "enum": [
+              "physician_instruction",
+              "model_guidance"
+            ]
+          },
+          "category": {
+            "enum": [
+              "precaution",
+              "recovery"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "source_text_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "source_id",
+                "source_text_version"
+              ]
+            }
           }
         },
         "required": [
@@ -4458,6 +5374,22 @@
           },
           "continuation_run_id": {
             "type": "string"
+          },
+          "change_status": {
+            "enum": [
+              "pending",
+              "confirmed",
+              "rejected"
+            ]
+          },
+          "remaining_change_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "overview_refresh_run_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -4484,7 +5416,8 @@
               "retry",
               "reanalyse",
               "change_request",
-              "record_turn"
+              "record_turn",
+              "care_feedback"
             ]
           },
           "status": {
@@ -4539,6 +5472,18 @@
           "record_thread_id": {
             "type": "string",
             "minLength": 1
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "feedback_id": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -4563,7 +5508,8 @@
               "retry",
               "reanalyse",
               "change_request",
-              "record_turn"
+              "record_turn",
+              "care_feedback"
             ]
           },
           "status": {
@@ -4604,7 +5550,10 @@
             "type": "string"
           },
           "expired_fact_change_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "deleted": {
             "type": "boolean"
@@ -4612,6 +5561,18 @@
           "record_thread_id": {
             "type": "string",
             "minLength": 1
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "feedback_id": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -4818,7 +5779,8 @@
               "document",
               "visit",
               "care_plan",
-              "chat"
+              "chat",
+              "transcription"
             ]
           },
           "status": {
@@ -4971,6 +5933,42 @@
           "started_at": {
             "type": "string",
             "minLength": 1
+          },
+          "care_feedback_id": {
+            "type": "string"
+          },
+          "record_save_status": {
+            "enum": [
+              "saved",
+              "saved_with_exceptions",
+              "skipped"
+            ]
+          },
+          "automatic_finalized": {
+            "type": "boolean"
+          },
+          "record_edit": {
+            "type": "boolean"
+          },
+          "transcription_finalized": {
+            "type": "boolean"
+          },
+          "continuation_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legacy_record_adoption": {
+            "type": "boolean",
+            "description": "Explicit standalone self-report legacy reanalysis requires an automatic overview and reuses its original episode."
+          },
+          "overview_refresh": {
+            "type": "boolean",
+            "description": "Server-created overview-only synthesis after resolving an automatic exception."
+          },
+          "overview_change_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -5026,6 +6024,18 @@
           },
           "recorded_at": {
             "type": "string"
+          },
+          "committed_change_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resolutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewResolution"
+            }
           }
         },
         "required": [
@@ -5132,7 +6142,12 @@
                   "type": "string"
                 },
                 "media_type": {
-                  "const": "application/pdf"
+                  "enum": [
+                    "application/pdf",
+                    "image/png",
+                    "image/jpeg",
+                    "text/plain"
+                  ]
                 },
                 "base64": {
                   "type": "string"
@@ -5161,6 +6176,31 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/RecordConfirmation"
+            }
+          },
+          "episode_states": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpisodeState"
+            }
+          },
+          "care_feedback": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CareFeedback"
+            }
+          },
+          "health_overviews": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "document_transcripts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
             }
           }
         },
@@ -5260,7 +6300,27 @@
             "additionalProperties": false,
             "properties": {
               "status": {
-                "const": "unsupported"
+                "enum": [
+                  "enabled",
+                  "fixture",
+                  "not_configured",
+                  "model_unsupported"
+                ]
+              },
+              "provider": {
+                "enum": [
+                  "agnes-ai",
+                  null
+                ]
+              },
+              "media_types": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "image/png",
+                    "image/jpeg"
+                  ]
+                }
               }
             },
             "required": [
@@ -5630,6 +6690,15 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "automatic": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -5742,7 +6811,9 @@
               "needs_details",
               "confirmed",
               "partially_confirmed",
-              "rejected"
+              "rejected",
+              "saved",
+              "saved_with_exceptions"
             ]
           },
           "created_at": {
@@ -5767,6 +6838,53 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "conversation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "edit_pending": {
+            "type": "boolean"
+          },
+          "edit_recovery": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "enum": [
+                  "pending",
+                  "failed",
+                  "stopped"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "source_id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "error_code": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "run_id",
+              "retryable",
+              "source_id",
+              "text"
             ]
           }
         },
@@ -5857,6 +6975,53 @@
             "items": {
               "$ref": "#/components/schemas/RecordConfirmation"
             }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "edit_pending": {
+            "type": "boolean"
+          },
+          "conversation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edit_recovery": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "enum": [
+                  "pending",
+                  "failed",
+                  "stopped"
+                ]
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "source_id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "error_code": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "run_id",
+              "retryable",
+              "source_id",
+              "text"
+            ]
           }
         },
         "required": [
@@ -5950,6 +7115,988 @@
             "minLength": 1
           }
         }
+      },
+      "HealthObservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "enum": [
+              "body_site",
+              "symptom",
+              "onset",
+              "course",
+              "self_rating",
+              "impact",
+              "context",
+              "associated",
+              "measurement",
+              "background"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "dimension",
+          "value"
+        ],
+        "description": "Extractive metadata supported by this candidate sentence only. value, unit and observed_at must be exact supported snippets, preserving negation and uncertainty. No inferred scores, units, dates or diagnoses. Missing unit/time is omitted or null; recorded time is not event time."
+      },
+      "FactComparison": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "fact_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "relation": {
+            "enum": [
+              "conflict",
+              "update",
+              "duplicate",
+              "related"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "model",
+              "server"
+            ]
+          },
+          "requires_resolution": {
+            "type": "boolean"
+          },
+          "possible_conflict": {
+            "type": "boolean"
+          },
+          "old_snapshot": {
+            "$ref": "#/components/schemas/FactRevision"
+          },
+          "new_snapshot": {
+            "$ref": "#/components/schemas/Candidate"
+          },
+          "change_id": {
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "pending",
+              "deferred"
+            ]
+          }
+        },
+        "required": [
+          "candidate_id",
+          "fact_id",
+          "revision",
+          "relation",
+          "reason",
+          "origin",
+          "requires_resolution",
+          "old_snapshot",
+          "new_snapshot"
+        ]
+      },
+      "HealthProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProfileObservation"
+            }
+          },
+          "current_problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthProfileRow"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthEvent"
+            }
+          },
+          "background": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthProfileRow"
+            }
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthUnknown"
+            }
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactComparison"
+            }
+          },
+          "overview": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "summary": {
+                "type": "string"
+              },
+              "updated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "not_recorded",
+                  "current",
+                  "stale",
+                  "uncertain"
+                ]
+              },
+              "regions": {
+                "type": "array",
+                "maxItems": 7,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "enum": [
+                        "head_neck",
+                        "chest",
+                        "abdomen",
+                        "back",
+                        "limbs",
+                        "systemic",
+                        "other"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "reported",
+                        "documented",
+                        "improving",
+                        "resolved",
+                        "uncertain"
+                      ]
+                    },
+                    "updated_at": {
+                      "type": "string"
+                    },
+                    "source_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "summary",
+                    "status",
+                    "updated_at",
+                    "source_ids"
+                  ]
+                }
+              },
+              "refresh_state": {
+                "enum": [
+                  "pending",
+                  "failed",
+                  "unavailable"
+                ]
+              },
+              "refresh_run_id": {
+                "type": "string"
+              },
+              "refresh_retryable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "summary",
+              "updated_at",
+              "status",
+              "regions"
+            ]
+          }
+        },
+        "required": [
+          "observations",
+          "current_problems",
+          "events",
+          "background",
+          "unknowns",
+          "conflicts"
+        ],
+        "description": "Owned health information with provenance and review state. Missing dimensions remain unknown; no inferred diagnosis, score, unit or event time."
+      },
+      "ReviewResolution": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "fact_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "action": {
+            "enum": [
+              "replace",
+              "keep_both",
+              "keep_existing",
+              "defer"
+            ]
+          }
+        },
+        "required": [
+          "candidate_id",
+          "fact_id",
+          "revision",
+          "action"
+        ]
+      },
+      "EpisodeState": {
+        "type": "object",
+        "properties": {
+          "episode_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "improved",
+              "resolved"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          }
+        },
+        "description": "Mutable current event status stored separately from immutable historical Episode. Status is a patient report, never a diagnosis.",
+        "required": [
+          "id",
+          "owner",
+          "episode_id",
+          "source_id",
+          "status",
+          "version",
+          "updated_at"
+        ]
+      },
+      "ProfileObservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "enum": [
+              "body_site",
+              "symptom",
+              "onset",
+              "course",
+              "self_rating",
+              "impact",
+              "context",
+              "associated",
+              "measurement",
+              "background"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "fact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "review_status": {
+            "enum": [
+              "confirmed",
+              "pending",
+              "deferred"
+            ]
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "change_id": {
+            "type": "string"
+          },
+          "candidate_id": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            }
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "dimension",
+          "value",
+          "fact_id",
+          "revision",
+          "review_status",
+          "source_refs"
+        ]
+      },
+      "HealthProfileRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "field": {
+            "enum": [
+              "reported_text",
+              "symptom",
+              "diagnosis",
+              "medication",
+              "instruction",
+              "allergy",
+              "test",
+              "observation"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "assertion": {
+            "enum": [
+              "affirmed",
+              "negated",
+              "uncertain"
+            ]
+          },
+          "temporal_scope": {
+            "enum": [
+              "current",
+              "past",
+              "unknown"
+            ]
+          },
+          "effective_time": {
+            "$ref": "#/components/schemas/EffectiveTime"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "proposal_kind": {
+            "enum": [
+              "new",
+              "correction",
+              "retraction"
+            ]
+          },
+          "fact_id": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supersedes_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "review_status": {
+            "enum": [
+              "confirmed",
+              "retracted",
+              "patient_report",
+              "document_report"
+            ]
+          },
+          "confirmed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "change_id": {
+            "type": "string"
+          },
+          "health_observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthObservation"
+            },
+            "maxItems": 50
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceEvidence"
+            }
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthObservation"
+            }
+          },
+          "verification_status": {
+            "enum": [
+              "patient_report",
+              "document_report"
+            ]
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "patient_report",
+                  "document_report"
+                ]
+              },
+              "automatic": {
+                "type": "boolean"
+              },
+              "patient_confirmed": {
+                "const": false
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "automatic",
+              "patient_confirmed",
+              "run_id"
+            ]
+          },
+          "retraction_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "field",
+          "value",
+          "assertion",
+          "temporal_scope",
+          "effective_time",
+          "evidence",
+          "proposal_kind",
+          "episode_id",
+          "fact_id",
+          "revision",
+          "supersedes_revision",
+          "review_status",
+          "confirmed_at",
+          "change_id"
+        ]
+      },
+      "HealthEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "improved",
+              "resolved"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "original_status": {
+            "const": "pending"
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactRevision"
+            }
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source_id"
+              ]
+            }
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "source_id",
+          "label",
+          "status",
+          "created_at"
+        ]
+      },
+      "HealthUnknown": {
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "enum": [
+              "body_site",
+              "symptom",
+              "onset",
+              "course",
+              "self_rating",
+              "impact",
+              "context",
+              "associated",
+              "measurement",
+              "background"
+            ]
+          },
+          "status": {
+            "enum": [
+              "not_recorded",
+              "unknown"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "review_status": {
+            "const": "source_only"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CareFeedback": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "task_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "task_validity": {
+            "enum": [
+              "current",
+              "stale",
+              "withdrawn"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "instruction_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactReference"
+            }
+          },
+          "instruction_snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FactRevision"
+            }
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "task_snapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "source_kind": {
+                "enum": [
+                  "physician_instruction",
+                  "model_guidance"
+                ]
+              },
+              "category": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "version": {
+                "type": "integer"
+              },
+              "validity": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "source_kind",
+              "category",
+              "version",
+              "validity"
+            ]
+          },
+          "guidance_source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "source_text_version": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "source_id",
+                "source_text_version"
+              ]
+            }
+          },
+          "guidance_source_snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
+          }
+        },
+        "description": "Immutable self-report linked to exact task/instruction revisions; historical validity does not authorize a new treatment.",
+        "required": [
+          "id",
+          "owner",
+          "task_id",
+          "task_version",
+          "task_validity",
+          "source_id",
+          "source_ids",
+          "instruction_refs",
+          "instruction_snapshots",
+          "conversation_id",
+          "recorded_at"
+        ]
+      },
+      "FeedbackReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "feedback_id": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "task_validity": {
+            "enum": [
+              "current",
+              "stale",
+              "withdrawn"
+            ]
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "saved": {
+            "const": true
+          }
+        },
+        "required": [
+          "run_id",
+          "source_id",
+          "conversation_id",
+          "feedback_id",
+          "task_id",
+          "task_validity",
+          "operation_id",
+          "saved"
+        ]
+      },
+      "EpisodeStateResponse": {
+        "type": "object",
+        "properties": {
+          "episode_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "improved",
+              "resolved"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "description": "Mutable current event status stored separately from immutable historical Episode. Status is a patient report, never a diagnosis.",
+        "required": [
+          "id",
+          "owner",
+          "episode_id",
+          "source_id",
+          "status",
+          "version",
+          "updated_at"
+        ]
+      },
+      "OriginalDocumentBytes": {
+        "type": "string",
+        "format": "binary"
+      },
+      "TranscriptionPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "readable",
+              "partial",
+              "unreadable"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "uncertainties": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_text_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "status",
+          "text",
+          "uncertainties",
+          "source_id",
+          "source_text_version"
+        ]
       }
     },
     "parameters": {

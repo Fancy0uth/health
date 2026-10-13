@@ -1,3 +1,4 @@
+import {validateObservations} from "./health-profile.mjs";
 import { check, fail } from "./domain-errors.mjs";
 const calendarDate = (x) =>
   typeof x === "string" &&
@@ -49,7 +50,7 @@ export function validateEvidence(evidence, readSource) {
     return { source: s, evidence: e };
   });
 }
-export function validateCandidate(c, readSource) {
+export function validateCandidate(c, readSource, {semantic=false}={}) {
   keys(
     c,
     [
@@ -63,6 +64,7 @@ export function validateCandidate(c, readSource) {
       "fact_id",
       "expected_version",
       "episode_id",
+      "health_observations",
     ],
     ["field", "value", "assertion", "temporal_scope", "effective_time", "evidence", "proposal_kind"],
   );
@@ -96,9 +98,11 @@ export function validateCandidate(c, readSource) {
   }
   // Each reference must support the rendered value itself. Unrelated sentences cannot lend semantics.
   const quote = c.value;
+  if(c.health_observations!==undefined)validateObservations(c.health_observations,quote);
   const markers = classifySourceMarkers(quote),
     { neg, uncertain, past } = markers;
   const withdrawalReason = c.proposal_kind === "retraction" && c.field === "reported_text";
+  if(!semantic){
   valid(!markers.ambiguous);
   valid(!markers.unsupported || withdrawalReason, {
     path: "candidate.assertion",
@@ -114,6 +118,7 @@ export function validateCandidate(c, readSource) {
     expected: markers.temporal_scope,
     rule: "Only explicit past/current source markers justify these tags.",
   });
+  }
   if (c.field === "instruction")
     valid(
       refs.every((x) => x.source.kind === "medical_document") &&
@@ -122,10 +127,15 @@ export function validateCandidate(c, readSource) {
         !uncertain &&
         !past,
     );
-  if (c.field === "diagnosis") valid(/(诊断|确诊|考虑|待排|疑似|diagnos)/i.test(quote));
-  if (c.field === "medication") valid(/(服用|用药|药物|口服|静滴|\bmedication\b|\btake\b)/i.test(quote));
-  if (c.field === "allergy") valid(/(过敏|allerg)/i.test(quote));
-  if (c.field === "test") valid(/(检查|检验|报告|化验|test|scan)/i.test(quote));
+  const fieldHint={path:'candidate.field',rule:'The exact source does not support this clinical category. Use observation or reported_text for a general patient observation, preserving value, evidence and supported health_observations unchanged; do not add a diagnosis, prescription or laboratory interpretation.'};
+  if (c.field === "diagnosis") valid(/(诊断|确诊|考虑|待排|疑似|diagnos)/i.test(quote),fieldHint);
+  if (c.field === "medication") valid(/(服用|用药|药物|口服|静滴|\bmedication\b|\btake\b)/i.test(quote),fieldHint);
+  if (c.field === "allergy") valid(/(过敏|allerg)/i.test(quote),fieldHint);
+  if (c.field === "test") valid(
+    /(检查|检验|报告|化验|test|scan)/i.test(quote) ||
+      c.health_observations?.some(o=>o.dimension==='measurement'&&/[0-9]/.test(o.value)),
+    fieldHint,
+  );
   validateSourceTime(
     c.effective_time,
     quote,
@@ -201,7 +211,14 @@ function weakSourceTimes(quote) {
   const groups = [...quote.matchAll(new RegExp(`${marker}(?:\\s*${marker})*`, "gi"))].map(
     (match) => match[0],
   );
-  return [...new Set([...single, ...groups])];
+  // These source-relative phrases carry no inferred calendar date. Limit them
+  // to time-of-day and meal/sleep anchors; never absorb following action text.
+  const day=String.raw`(?:今天|今日|昨天|昨日|前天|明天|明日|后天)`;
+  const part=String.raw`(?:凌晨|清晨|早晨|早上|上午|中午|午后|下午|傍晚|晚上|夜里|夜间)`;
+  const anchor=String.raw`(?:(?:早饭|早餐|午饭|午餐|晚饭|晚餐|饭|餐)(?:前|后)|睡前|睡觉前|起床后|起床时)`;
+  const natural=String.raw`(?:${day}(?:${part})?(?:${anchor})?|(?:今早|今晨|今晚|今夜|昨早|昨晚|昨夜|明早|明晚|前晚)(?:${anchor})?|${anchor}|最近几天|这几天|近几天|这两天|近日|最近|上周|本周|这周|下周|上个月|这个月|上月|本月|下月|\b(?:this (?:morning|afternoon|evening)|last night|yesterday(?: (?:morning|afternoon|evening))?|tomorrow(?: (?:morning|afternoon|evening))?|before breakfast|after breakfast|before lunch|after lunch|before dinner|after dinner|at bedtime)\b)`;
+  const naturalTimes=[...quote.matchAll(new RegExp(natural,'gi'))].map(match=>match[0]);
+  return [...new Set([...single, ...groups, ...naturalTimes])];
 }
 
 // Mechanical source locators, never medical extraction or model output repair.
@@ -300,4 +317,54 @@ export function sentenceAnnotations(source) {
       effective_time: literalSourceTime(e.quote, source.id),
     };
   });
+}
+
+// A compact reference selects an immutable complete sentence, never model text.
+// Callers supply the same-owner, already-read source authorization boundary.
+export function materializeSentenceCandidate(ref,readSource,path){
+  keys(ref,['source_id','sentence_index','field','health_observations'],['source_id','sentence_index','field']);
+  valid(typeof ref.source_id==='string'&&Number.isSafeInteger(ref.sentence_index)&&ref.sentence_index>=0,{path,rule:'Copy an authorized source_id and zero-based integer sentence_index from indexed_sentences.'});
+  const source=readSource(ref.source_id),span=sentenceSpans(source)[ref.sentence_index],annotation=sentenceAnnotations(source)[ref.sentence_index];
+  valid(!!span,{path:path+'.sentence_index',rule:'Copy the exact source_id and zero-based sentence_index from the authorized indexed_sentences.'});
+  valid(!annotation.unsupported&&!annotation.ambiguous,{path,rule:'This sentence has missing information or mixed temporal scope. Preserve its uncertainty in the overview and immutable source; do not select it as a clinical fact.'});
+  return {field:ref.field,value:span.quote,assertion:annotation.assertion,temporal_scope:annotation.temporal_scope,effective_time:annotation.effective_time,evidence:[span],proposal_kind:'new',...(ref.health_observations!==undefined?{health_observations:ref.health_observations}:{})};
+}
+
+// Finite literal disagreement, not an allergy diagnosis or a general conflict
+// heuristic. Unknown allergens and qualified/time-separated histories are left
+// to model comparison; this only preserves an unresolved drug-history pair.
+export function definiteDrugAllergyDisagreement(a,b){
+  if(a.field!=='allergy'||b.field!=='allergy')return false;
+  const qualified=/[0-9０-９]|首次|新发|新出现|最近|近期|近日|今天|今日|昨天|昨日|本次|这次|后来|之后|以后|曾否认|已否认|已排除|尚待|待确认|不确定|可能|疑似|考虑|食物|海鲜|花粉|尘螨|环境/;
+  const denial=v=>{
+    const m=classifySourceMarkers(v.value);
+    return v.assertion==='negated'&&m.assertion==='negated'&&!m.ambiguous&&!qualified.test(v.value)&&
+      /^(?:(?:既往史|过敏史|药物过敏史)[：:]\s*)?(?:否认|无|没有|未见)药物过敏(?:史)?[。.!！]?\s*$/.test(v.value.trim());
+  };
+  const positive=v=>{
+    const m=classifySourceMarkers(v.value);
+    return v.assertion==='affirmed'&&m.assertion==='affirmed'&&!m.ambiguous&&!m.unsupported&&!qualified.test(v.value)&&
+      /^(?:(?:过敏史|既往史|药物过敏史)[：:]\s*)?(?:曾经|曾|既往)?(?:有|对)?(?:药物|(?:青霉素|阿莫西林|头孢菌素|阿司匹林|布洛芬|磺胺)(?:类)?(?:药物)?)过敏(?:史)?$/.test(v.value.trim().split(/[，,。.!！]/)[0]);
+  };
+  return denial(a)&&positive(b)||denial(b)&&positive(a);
+}
+
+// Explanations are separate model paraphrases. Original task text remains exact.
+export function validateCareExplanation(task,instructions) {
+  const original=instructions.map(i=>i.value).join('\n');
+  const texts=[];
+  if(task.explanation!==undefined){valid(typeof task.explanation==='string'&&task.explanation.trim().length>0&&task.explanation.length<=4000,{path:'task.explanation',rule:'Provide a nonempty paraphrase of at most 4000 characters.'});texts.push(['explanation',task.explanation]);}
+  if(task.questions!==undefined){valid(Array.isArray(task.questions)&&task.questions.length<=10,{path:'task.questions'});task.questions.forEach((q,i)=>{valid(typeof q==='string'&&q.trim().length>0&&q.length<=1000&&/[？?]$/.test(q),{path:`task.questions[${i}]`,rule:'Use short questions, not new instructions.'});texts.push([`questions[${i}]`,q]);});}
+  const quantities=(text,dateQuestion=false)=>[...text.matchAll(/(?:[0-9]+(?:[.,][0-9]+)?\s*(?:mg|ml|g|毫克|毫升|克|片|粒|滴|次|天|日|周|月|小时|分钟|%|度)?|[一二三四五六七八九十百两]+\s*(?:毫克|毫升|克|片|粒|滴|次|天|日|周|月|小时|分钟|度)|每[日天周月]|\b(?:daily|weekly|monthly|once|twice|thrice|one|two|three|four|five|six|seven|eight|nine|ten)\b)/gi)].filter(m=>!(dateQuestion&&/^一(?:天|日|周|月)$/.test(m[0])&&text[m.index-1]==='哪')).map(m=>m[0].replace(/\s+/g,'').toLowerCase().replace(/^(?:每天|daily)$/,'每日').replace(/^weekly$/,'每周').replace(/^monthly$/,'每月'));
+  const sourceQuantities=quantities(original);
+  for(const [field,text]of texts){
+    valid(quantities(text,field.startsWith('questions')).every(q=>sourceQuantities.includes(q)),{path:`task.${field}`,rule:'Do not add or change quantities, doses, frequencies or dates absent from the original instruction.'});
+    // A neutral question or explicit prohibition may mention adjustment; advice may not.
+    for(const sentence of text.split(/[，,。！!；;\n]|但是|不过|然而|但/).filter(Boolean)){
+      const change=/(停药|停用|停服|加量|减量|加药|减药|换药|增减|翻倍|倍增|减半|不再(?:服|用|吃)药|停止(?:服|用|吃)药|调整.{0,8}(剂量|药量|用药)|double.{0,15}dose|stop.{0,15}(medication|medicine)|increase.{0,15}dose|reduce.{0,15}dose)/i.test(sentence);
+      const guarded=/(不要|不可|不能|勿|不应|不得|不建议|do not|don't|never).{0,20}(停药|停用|停服|加量|减量|加药|减药|换药|增减|翻倍|倍增|减半|不再(?:服|用|吃)药|停止(?:服|用|吃)药|调整|double|stop|increase|reduce)/i.test(sentence);
+      const neutral=field.startsWith('questions')&&/(医生|药师|医护|doctor|pharmacist)/i.test(sentence)&&!/(可以|建议|应该|请)(?:自行)?(?:停|加|减|换)/.test(sentence);
+      valid(!change||guarded||neutral,{path:`task.${field}`,rule:'A model explanation never grants medication changes. Retain the original instruction and ask a clinician about ambiguities.'});
+    }
+  }
 }

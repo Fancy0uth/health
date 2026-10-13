@@ -13,7 +13,10 @@ export function assistantMessage(payload,run={},runs=[],results=[]) {
   const record=['confirm_record','confirm_both'].includes(payload.intent);
   const failed=item=>item&&(['failed','blocked','interrupted','cancelled'].includes(item.status)||item.execution_error);
   const retryable=item=>item&&['failed','blocked','interrupted'].includes(item.status)&&!item.result_id&&!item.fact_change_id;
-  if(record){
+  if(run.record_save_status&&run.record_save_status!=='skipped'){
+    message.record_status=run.record_save_status;message.record_source_id=run.source_ids?.[0];message.record_thread_id=run.record_thread_id;
+  }else if(payload.automatic_record?.action==='save'){message.record_status=failed(run)?'failed':'saving';}
+  if(record&&!payload.automatic_record){
     const child=runs.find(item=>item.id===run.continuation_record_run_id);
     if(failed(child)||failed(run)){message.record_status='failed';if(retryable(child))message.record_retry_run_id=child.id;message.text+='\n\n记录整理未完成，原来的对话已保留。';}
     else if(['needs_review','completed'].includes(child?.status)&&child.runtime&&child.fact_change_id){message.record_status='needs_review';message.record_change_id=child.fact_change_id;message.record_source_id=child.source_ids?.[0];message.text+='\n\n记录已保存，待你核对后确认。';}
@@ -26,4 +29,17 @@ export function assistantMessage(payload,run={},runs=[],results=[]) {
   else if(child?.status==='completed'&&child.runtime&&result){message.text+='\n\n医生沟通卡已生成，可以查看并修改。';message.action='card';message.visit_result_id=result.id;message.visit_status='completed';}
   else {message.visit_status='generating';message.text+='\n\n正在生成医生沟通卡，完成后会在这里显示查看入口。';}
   return message;
+}
+
+// A retry may only continue the latest turn in its canonical conversation.
+export function eligibleChatRetries(runs=[]) {
+  const chats=Object.values(runs).filter(run=>run.workflow==='chat');
+  const groups=new Map();
+  for(const run of chats){const key=run.conversation_id||run.id;const group=groups.get(key)||[];group.push(run);groups.set(key,group);}
+  return [...groups.values()].flatMap(group=>{
+    if(group.some(run=>['queued','running'].includes(run.status)))return [];
+    const parents=new Set(group.map(run=>run.parent_run_id).filter(Boolean));
+    const latest=group.filter(run=>!parents.has(run.id)).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''))[0];
+    return latest&&['failed','blocked','interrupted'].includes(latest.status)&&!latest.deleted&&!latest.result_id&&!latest.fact_change_id?[latest]:[];
+  });
 }

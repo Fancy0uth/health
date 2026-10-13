@@ -1,8 +1,9 @@
+@import url("../../packages/client/health-profile.css");
 @font-face { font-family: "Noto Sans SC"; src: local("Noto Sans SC"), local("NotoSansSC-Regular"); font-weight: 100 900; font-display: swap; }
 :root {
   color-scheme: light;
   --background: #f7faf8; --surface: #fff; --ink: #17271d; --muted: #5e736a;
-  --primary: #087f75; --mint: #c2f2e4; --teal: #35c8b4; --soft: #edf5ee;
+  --primary: #2d7048; --mint: #edf5ee; --teal: #77a986; --soft: #edf5ee;
   --border: #dfe7e0; --warning: #fff4e2; --warning-ink: #9a5e16; --danger: #a94a43;
   --tab-height: calc(66px + max(22px, env(safe-area-inset-bottom)));
   --viewport-height: 100dvh;
@@ -236,3 +237,19 @@ hr { border: 0; border-top: 1px solid var(--border); width: 100%; margin: 4px 0;
   .print-sheet h2 { break-after: avoid; }
   .print-sheet p, .print-sheet li { widows: 3; orphans: 3; }
 }
+
+/* The mobile surface stays narrow even inside a desktop browser window. */
+.phone .health-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.phone .body-region-grid,.phone .health-compare-columns{grid-template-columns:1fr}
+.phone .body-region-grid{gap:14px}
+.phone .body-region{padding:18px}
+.phone .health-compare-columns>div+div{border-top:1px solid var(--border);padding-top:12px}
+.phone .health-fact,.phone .health-event,.phone .health-unknown{padding:16px}
+.phone .health-event>.health-fact{padding:12px}
+.phone .health-observations>div{grid-template-columns:88px minmax(0,1fr);gap:8px}
+.phone .health-comparison{padding:14px}
+.phone .overview-summary{padding:8px 0 16px;margin-bottom:18px}
+.phone .overview-summary>p{font-size:16px}
+.phone .overview-summary h2{font-size:20px}
+.phone .care-original h3,.phone .care-explanation h3,.phone .care-feedback h3{font-size:18px}
+.phone .care-feedback .button{white-space:normal;width:100%}

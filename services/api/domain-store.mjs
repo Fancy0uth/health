@@ -1,8 +1,10 @@
+import {validateAutomaticRecord,validateOverview,normalizeOptionalObservations,finalizeAutomaticRecords,currentOverview,queueOverviewRefresh} from './automatic-records.mjs';
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID, randomBytes, createHash, scryptSync, timingSafeEqual } from "node:crypto";
 import { check, fail, LIMITS } from "./domain-errors.mjs";
+import {attachComparisons,buildHealthProfile,correctionObservations,candidateContent,resolveProposals,refreshPendingComparisons,reviewable,feedbackContext} from './health-profile.mjs';
 import {acceptRecordTurn,stageRecordSummary,checkRecordConfirmation,finishRecordConfirmation,recordThreads,checkRecordRetry,updateRecordRetry} from './record-dialogue.mjs';
 import {
   keys,
@@ -10,9 +12,11 @@ import {
   validateEvidence,
   sentenceSpans,
   sentenceAnnotations,
+  materializeSentenceCandidate,
   classifySourceMarkers,
   literalSourceTime,
   validateSourceTime,
+  validateCareExplanation,
 } from "./source-validation.mjs";
 const indexedSentences = (source) => {
   const annotations=sentenceAnnotations(source);
@@ -53,10 +57,12 @@ export class DomainStore {
    CREATE INDEX IF NOT EXISTS objects_owner_type ON objects(owner,type);
    CREATE TABLE IF NOT EXISTS receipts(owner TEXT NOT NULL,operation TEXT NOT NULL,key TEXT NOT NULL,request_hash TEXT NOT NULL,outcome TEXT NOT NULL,PRIMARY KEY(owner,operation,key));
    CREATE TABLE IF NOT EXISTS originals(source_id TEXT PRIMARY KEY,owner TEXT NOT NULL,bytes BLOB NOT NULL);
+   CREATE TRIGGER IF NOT EXISTS immutable_transcript BEFORE UPDATE ON objects WHEN OLD.type='document_transcript' BEGIN SELECT RAISE(ABORT,'immutable_transcript'); END;
    CREATE TRIGGER IF NOT EXISTS immutable_source BEFORE UPDATE ON objects WHEN OLD.type='source' BEGIN SELECT RAISE(ABORT,'immutable_source'); END;
    CREATE TRIGGER IF NOT EXISTS immutable_input_records BEFORE UPDATE ON objects WHEN OLD.type IN ('entry','document','episode') BEGIN SELECT RAISE(ABORT,'immutable_input_record'); END;
    CREATE TRIGGER IF NOT EXISTS immutable_fact_revision BEFORE UPDATE ON objects WHEN OLD.type='fact_revision' BEGIN SELECT RAISE(ABORT,'immutable_fact_revision'); END;`);
     this.db.exec("CREATE TRIGGER IF NOT EXISTS immutable_record_summary BEFORE UPDATE ON objects WHEN OLD.type='record_summary' BEGIN SELECT RAISE(ABORT,'immutable_record_summary'); END;");
+    this.db.exec("CREATE TRIGGER IF NOT EXISTS immutable_care_feedback BEFORE UPDATE ON objects WHEN OLD.type='care_feedback' BEGIN SELECT RAISE(ABORT,'immutable_care_feedback'); END;");
     if (
       !this.db
         .prepare("PRAGMA table_info(users)")
@@ -110,6 +116,10 @@ export class DomainStore {
   }
   acceptRecordTurn(uid,input,key,epoch){return acceptRecordTurn(this,uid,input,key,epoch);}
   recordThreads(uid){return recordThreads(this,uid);}
+  editRecord(uid,threadId,body,key,epoch){
+    keys(body,['text','expected_version']);this.get(uid,'record_thread',threadId);
+    return this.acceptRecordTurn(uid,{text:body.text,record_thread_id:threadId,expected_version:body.expected_version,record_edit:true},key,epoch);
+  }
   close() {
     this.db.close();
   }
@@ -308,7 +318,7 @@ export class DomainStore {
       check(prev.request_hash === requestHash, "IDEMPOTENCY_CONFLICT", 409);
       const outcome = JSON.parse(prev.outcome);
       if(operation.startsWith('edit:'))check(this.db.prepare("SELECT id FROM objects WHERE owner=? AND type='result' AND id=?").get(uid,operation.slice(5)),'SOURCE_DELETED',410);
-      if (/^(accept|retry|reanalyse|change):/.test(operation) && outcome.source_id)
+      if (/^(accept|retry|reanalyse|change|feedback):/.test(operation) && outcome.source_id)
         check(
           this.db
             .prepare("SELECT id FROM objects WHERE id=? AND owner=? AND type='source'")
@@ -510,6 +520,7 @@ export class DomainStore {
             concern=this.get(uid,'source',previousRun.source_ids[0]).text;derivedSourceIds=[previousRun.source_ids[0]];
             selected=previousRun.source_ids.slice(1);conversationId=previousRun.conversation_id||null;
           }
+          if(workflow==='chat'){for(const feedback of this.all('care_feedback',uid))if(selected.includes(feedback.source_id))selected=[...new Set([...selected,...feedback.source_ids])];}
           const priorChat=workflow==='chat'?this.all('run',uid).filter(r=>r.workflow==='chat'&&selected.includes(r.source_ids[0])).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]:null;
           conversationId=workflow==='visit'?(input.conversation_id||conversationId):workflow==='chat'?(priorChat?.conversation_id||id('chat')):null;
           if(conversationId&&(workflow==='visit'||priorChat)){
@@ -517,7 +528,7 @@ export class DomainStore {
             if(workflow==='visit'){concern=conversation.map(source=>source.text).join('\n');derivedSourceIds=[...derivedSourceIds,...conversation.map(source=>source.id)];}
             selected=[...new Set([...selected,...conversation.map(source=>source.id)])];
           }
-          const text = this.text(workflow === "visit" ? concern : workflow === "chat" ? input.question : input.text);
+          const text = document?.requires_transcription ? "" : this.text(workflow === "visit" ? concern : workflow === "chat" ? input.question : input.text);
           check(selected.length<(conversationId?this.limits.retrievalCount:this.limits.retrievalCount+1),'PAYLOAD_TOO_LARGE',413);
           check(Buffer.byteLength(text)+selected.reduce((n,sid)=>n+Buffer.byteLength(this.get(uid,'source',sid).text),0)<=this.limits.textBytes*2,'PAYLOAD_TOO_LARGE',413);
           this.checkQueueAdmission(uid);
@@ -531,7 +542,7 @@ export class DomainStore {
             recorded_at: this.now(),
             pages: document?.pages || [],
             ...(derivedSourceIds.length?{derived_source_ids:[...new Set(derivedSourceIds)]}:{}),
-            input_kind: workflow === "chat" ? "assistant_question" : document ? "pdf" : workflow === "document" ? "pasted_document" : "self_report",
+            input_kind: workflow === "chat" ? "assistant_question" : document?.requires_transcription ? "image" : document ? (document.media_type==='text/plain'?'pasted_document':'pdf') : workflow === "document" ? "pasted_document" : "self_report",
           });
           const episode = workflow === "chat" ? null : input.episode_id
             ? this.get(uid, "episode", input.episode_id)
@@ -553,17 +564,17 @@ export class DomainStore {
             doc = this.insert(uid, "document", {
               source_id: source.id,
               name: typeof input.name === "string" ? input.name.slice(0, 200) : null,
-              media_type: document ? "application/pdf" : "text/plain",
+              media_type: document?.media_type || (document ? "application/pdf" : "text/plain"),
               byte_size: document?.bytes.length || Buffer.byteLength(text),
               content_hash: document ? hash(document.bytes) : source.content_hash,
-              extraction_status: "extracted",
+              extraction_status: document?.requires_transcription ? "queued" : "extracted",
               pages: source.pages,
             });
             if (document)
               this.db.prepare("INSERT INTO originals VALUES(?,?,?)").run(source.id, uid, document.bytes);
           }
           const visitOffer=workflow==='chat'&&conversationId?this.pendingVisitOffer(uid,conversationId):null;
-          const run = this.newRun(uid, workflow, [source.id, ...selected], { ...(visitOffer?{visit_offer_run_id:visitOffer}:{}), document_id: doc?.id || null, ...(conversationId ? {conversation_id:conversationId} : {}) });
+          const run = this.newRun(uid, document?.requires_transcription ? "transcription" : workflow, [source.id, ...selected], { ...(visitOffer?{visit_offer_run_id:visitOffer}:{}), document_id: doc?.id || null, ...(conversationId ? {conversation_id:conversationId} : {}) });
           const operation = this.insert(uid, "operation", {
             kind: "accept",
             status: "committed",
@@ -594,11 +605,9 @@ export class DomainStore {
       latest = new Map();
     for (const f of revs)
       if (!latest.has(f.fact_id) || latest.get(f.fact_id).revision < f.revision) latest.set(f.fact_id, f);
-    return {
-      profile_revision: u.revision,
-      facts: [...latest.values()].filter((x) => x.review_status === "confirmed"),
-      pending_changes: this.all("fact_change", uid).filter((x) => x.status === "pending"),
-    };
+    const facts=[...latest.values()].filter(x=>['confirmed','patient_report','document_report'].includes(x.review_status));
+    const pending_changes=this.all('fact_change',uid).filter(x=>x.status==='pending');
+    return {profile_revision:u.revision,facts,pending_changes,health_profile:{...buildHealthProfile(this,uid,facts,pending_changes),overview:currentOverview(this,uid)}};
   }
   timeline(uid) {
     this.user(uid);
@@ -863,7 +872,18 @@ export class DomainStore {
             ...new Set([...(latest.read_sources || []), ...out.sources.map((s) => s.id)]),
           ];
         if (out.instructions)
-          latest.read_facts = out.instructions.map((f) => ({ fact_id: f.fact_id, revision: f.revision }));
+          latest.read_facts = [...(latest.read_facts||[]),...out.instructions.map((f) => ({ fact_id: f.fact_id, revision: f.revision }))].filter((f,i,a)=>a.findIndex(x=>x.fact_id===f.fact_id&&x.revision===f.revision)===i);
+        if (out.care_feedback_context) {
+          // Feedback retains historical snapshots. Only a returned, still-current
+          // instruction backed by this run's authorized sources grants a fact read.
+          const contexts = out.care_feedback_context.feedback_history || [out.care_feedback_context];
+          const currentFacts = this.profile(run.owner).facts;
+          const returned = contexts.flatMap(context => context.instructions || []).filter(snapshot =>
+            currentFacts.some(f => f.fact_id === snapshot.fact_id && f.revision === snapshot.revision &&
+              f.field === "instruction" && f.evidence.some(e => run.source_ids.includes(e.source_id))));
+          latest.read_facts = [...(latest.read_facts || []), ...returned.map(f => ({ fact_id: f.fact_id, revision: f.revision }))]
+            .filter((f, i, all) => all.findIndex(r => r.fact_id === f.fact_id && r.revision === f.revision) === i);
+        }
         const receipt = this.insert(run.owner, "tool_receipt", {
           tool: name,
           run_id: run.id,
@@ -886,7 +906,7 @@ export class DomainStore {
       return write ? this.transaction(execute) : this.transaction(execute);
     };
     const read = (run, sid) => {
-      check(run.source_ids.includes(sid), "NOT_FOUND", 404);
+      check(run.source_ids.includes(sid)||run.read_sources?.includes(sid), "NOT_FOUND", 404);
       return this.get(run.owner, "source", sid);
     };
     return Object.freeze({
@@ -909,17 +929,25 @@ export class DomainStore {
           check(Array.isArray(ids) && ids.length <= this.limits.retrievalCount);
           if (a.episode_id) this.get(r.owner, "episode", a.episode_id);
           const p = this.profile(r.owner),
-            sources = ids.map((s) => read(r, s));
+            sources = [...new Set([...(r.workflow==='chat'?[r.source_ids[0]]:[]),...ids])].map((s) => read(r, s));
           const query = (a.query || "").normalize("NFKC").toLowerCase().trim();
+          const record=this.all('record_thread',r.owner).find(t=>t.id===r.record_thread_id||(r.conversation_id&&t.conversation_id===r.conversation_id));
           const facts = p.facts.filter(
             (f) =>
+              !(r.record_edit&&record&&f.episode_id===record.episode_id) &&
               (!query || f.value.normalize("NFKC").toLowerCase().includes(query)) &&
               (!a.source_ids?.length || f.evidence.some((e) => ids.includes(e.source_id))) &&
               (!a.episode_id || f.episode_id === a.episode_id),
           );
+          const record_context=record?{record_thread_id:record.id,episode_id:record.episode_id,summary:r.record_edit?this.get(r.owner,'source',r.source_ids[0]).text:record.summary||this.all('record_summary',r.owner).find(x=>x.id===record.latest_summary_id)?.summary||'',version:record.version,source_ids:[...record.source_ids],...(r.record_edit?{edit_replaces_history:true,authoritative_source_id:r.source_ids[0]}:{})}:null;
+          const contextIds=[...new Set([...sources.map(s=>s.id),...(record?.source_ids||[]),...(p.health_profile.overview.source_ids||[]),...facts.slice(0,this.limits.retrievalCount).flatMap(f=>f.evidence.map(e=>e.source_id))])].slice(0,this.limits.retrievalCount);
+          const contextualSources=contextIds.map(sid=>({...this.get(r.owner,'source',sid),...(r.record_edit&&record?.source_ids.includes(sid)&&sid!==r.source_ids[0]?{context_only:true,superseded_by_record_edit:true}:{})}));
           return {
             facts: facts.slice(0, this.limits.retrievalCount),
-            sources,
+            record_context,body_overview_context:p.health_profile.overview,
+            ...(r.overview_refresh?{overview_resolution_context:(()=>{const c=this.get(r.owner,'fact_change',r.overview_change_id);return {change_id:c.id,status:c.status,resolutions:c.resolutions||[],proposals:c.proposals.map(p=>({value:p.value,evidence:p.evidence,proposal_status:p.proposal_status,resolutions:p.resolutions||[]}))};})()}:{}),
+            ...(feedbackContext(this,r)?{care_feedback_context:feedbackContext(this,r)}:{}),
+            sources:contextualSources,
             ...(r.conversation_id?{conversation_messages:this.conversationMessages(r),pending_visit_offer:!!r.visit_offer_run_id,...(()=>{
               const offer=r.visit_offer_run_id?{run_id:r.visit_offer_run_id,action:this.get(r.owner,'result',this.get(r.owner,'run',r.visit_offer_run_id).result_id).payload.intent.replace('offer_','')}:null;
               return {pending_offer:offer,pending_action_offer:offer};
@@ -936,10 +964,11 @@ export class DomainStore {
           keys(a, ["document_id"]);
           check(r.workflow === "care_plan" && a.document_id === r.document_id, "NOT_FOUND", 404);
           const doc = this.get(r.owner, "document", a.document_id);
-          read(r, doc.source_id);
-          return {
+          const analysisSourceId=this.documentSource(r.owner,doc.id);const source=read(r, analysisSourceId),profile=this.profile(r.owner);
+          const contextIds=[...new Set([...r.source_ids,...(profile.health_profile.overview.source_ids||[]),...profile.facts.flatMap(f=>f.evidence.map(e=>e.source_id))])].slice(0,this.limits.retrievalCount);
+          return {source, sources:contextIds.map(sid=>this.get(r.owner,'source',sid)),facts:profile.facts.slice(0,this.limits.retrievalCount),body_overview_context:profile.health_profile.overview,
             instructions: this.profile(r.owner).facts.filter(
-              (f) => f.field === "instruction" && f.evidence.some((e) => e.source_id === doc.source_id),
+              (f) => f.field === "instruction" && f.evidence.some((e) => e.source_id === analysisSourceId),
             ),
           };
         }),
@@ -948,8 +977,9 @@ export class DomainStore {
     });
   }
   stageCandidates(run, args, read) {
-    keys(args, ["candidates", "base_profile_revision", "operation_key", "record_dialogue", "record_source_refs"],["candidates", "base_profile_revision", "operation_key"]);
+    keys(args, ["candidates", "base_profile_revision", "operation_key", "record_dialogue", "record_source_refs", "document_source_refs", "comparisons", "overview"],["candidates", "base_profile_revision", "operation_key"]);
     check(["entry", "document"].includes(run.workflow), "INVALID_AGENT_OUTPUT", 422);
+    if((run.overview_refresh||run.record_edit||run.legacy_record_adoption||Object.hasOwn(args,'document_source_refs'))&&!args.overview)fail(422,'INVALID_AGENT_OUTPUT','本次自动整理必须包含身体概述。',{path:'overview',rule:'Provide a native overview object with summary and regions (use [] if no region is supported). Keep exact source references and the user edit unchanged. This automatic workflow cannot finish without its overview.'});
     return this.receipt(run.owner, `stage:${run.id}`, args.operation_key, args, () => {
       check(
         args.base_profile_revision === run.base_profile_revision &&
@@ -971,30 +1001,49 @@ export class DomainStore {
         check(run.read_sources?.includes(sid),'INVALID_AGENT_OUTPUT',422);
         return read(run,sid);
       };
+      if(run.overview_refresh&&(args.candidates.length||args.record_source_refs?.length||args.document_source_refs?.length||args.comparisons?.length||args.record_dialogue))fail(422,'INVALID_AGENT_OUTPUT','本次仅更新近况概览。',{path:'candidates',rule:'For overview_refresh provide candidates=[] and overview only; omit record/dialogue references and comparisons. Current resolved facts are read-only context.'});
       const naturalRecordSummary=run.workflow==='entry'&&run.record_thread_id&&typeof args.record_dialogue?.summary==='string'&&args.record_dialogue.summary.trim().length>0;
       const warnings=[];
       let candidateInputs=args.candidates;
-      if(Object.hasOwn(args,'record_source_refs')){
-        check(naturalRecordSummary&&args.candidates.length===0&&Array.isArray(args.record_source_refs)&&args.record_source_refs.length<=100,'INVALID_AGENT_OUTPUT',422);
+      const candidateIndexes=[];
+      if(Object.hasOwn(args,'document_source_refs')){
+        check(run.workflow==='document'&&args.candidates.length===0&&(!args.record_source_refs||Array.isArray(args.record_source_refs)&&args.record_source_refs.length===0)&&Array.isArray(args.document_source_refs)&&args.document_source_refs.length<=100,'INVALID_AGENT_OUTPUT',422);
+        const seen=new Set();
+        candidateInputs=args.document_source_refs.map((ref,index)=>{
+          const candidate=materializeSentenceCandidate(ref,readCandidateSource,`document_source_refs[${index}]`);
+          const refKey=canonical([ref.source_id,ref.sentence_index]);check(!seen.has(refKey),'INVALID_AGENT_OUTPUT',422);seen.add(refKey);
+          candidateIndexes.push(index);
+          return candidate;
+        });
+      }
+      // Empty optional selections carry no source claims and are equivalent to
+      // omission, including schema-driven document tool calls.
+      if(Object.hasOwn(args,'record_source_refs')&&!(Array.isArray(args.record_source_refs)&&args.record_source_refs.length===0)){
+        if(!(naturalRecordSummary&&args.candidates.length===0&&Array.isArray(args.record_source_refs)&&args.record_source_refs.length<=100))fail(422,'INVALID_AGENT_OUTPUT','原句索引只用于自然记录整理。',{
+          path:'record_source_refs',rule:'For a document or explicit candidates use candidates and omit record_source_refs (an empty array is allowed). Nonempty record_source_refs requires a natural record summary and an empty candidates array; never mix the two extraction forms.',
+        });
         const seenRefs=new Set();
         candidateInputs=args.record_source_refs.flatMap((ref,index)=>{
-          keys(ref,['source_id','sentence_index']);
+          keys(ref,['source_id','sentence_index','health_observations'],['source_id','sentence_index']);
           check(typeof ref.source_id==='string'&&Number.isSafeInteger(ref.sentence_index)&&ref.sentence_index>=0,'INVALID_AGENT_OUTPUT',422);
           const source=readCandidateSource(ref.source_id),span=sentenceSpans(source)[ref.sentence_index],annotation=sentenceAnnotations(source)[ref.sentence_index];
           if(!span)fail(422,'INVALID_AGENT_OUTPUT','原句编号不在已读取来源中。',{path:`record_source_refs[${index}].sentence_index`,rule:'Copy source_id and sentence_index from indexed_sentences returned by the read/context tool; indexes are zero-based. Do not invent indexes or source IDs.'});
-          const refKey=canonical(ref);check(!seenRefs.has(refKey),'INVALID_AGENT_OUTPUT',422);seenRefs.add(refKey);
+          const refKey=canonical({source_id:ref.source_id,sentence_index:ref.sentence_index});check(!seenRefs.has(refKey),'INVALID_AGENT_OUTPUT',422);seenRefs.add(refKey);
           if(annotation.unsupported||annotation.ambiguous){
             warnings.push({code:'SOURCE_ONLY_SENTENCE',source_id:ref.source_id,sentence_index:ref.sentence_index,reason:annotation.unsupported?'missing_information':'mixed_temporal_scope'});
             return [];
           }
-          return [{field:'reported_text',value:span.quote,assertion:annotation.assertion,temporal_scope:annotation.temporal_scope,effective_time:annotation.effective_time,evidence:[span],proposal_kind:'new'}];
+          candidateIndexes.push(index);
+          return [{...(ref.health_observations!==undefined?{health_observations:ref.health_observations}:{}),field:'reported_text',value:span.quote,assertion:annotation.assertion,temporal_scope:annotation.temporal_scope,effective_time:annotation.effective_time,evidence:[span],proposal_kind:'new'}];
         });
       }
       const proposals = candidateInputs.map((input, i) => {
         const c=structuredClone(input);
+        if(run.record_edit)check(c.evidence?.every(e=>e.source_id===run.source_ids[0]),'INVALID_AGENT_OUTPUT',422);
+        if(args.overview&&Array.isArray(c.health_observations))c.health_observations=normalizeOptionalObservations(c.health_observations,c.value);
         const naturalRecord=naturalRecordSummary&&c.field==='reported_text'&&c.proposal_kind==='new';
         for (const field of ["fact_id", "episode_id", "expected_version"]){
-          if(naturalRecord&&c[field]===null)delete c[field];
+          if(c[field]===null&&(naturalRecord||(field==='episode_id'&&c.proposal_kind==='new')))delete c[field];
           if (Object.hasOwn(c, field))
             fail(422, "INVALID_AGENT_OUTPUT", "新增候选不得自行指定事实标识、版本或事件。", {
               path: `candidates[${i}].${field}`,
@@ -1018,7 +1067,7 @@ export class DomainStore {
           c.temporal_scope=annotations[0].temporal_scope;
           c.effective_time=structuredClone(annotations[0].effective_time);
         }
-        return {...validateCandidate(c,readCandidateSource),id:id('candidate')};
+        return {...validateCandidate(c,readCandidateSource),id:id('candidate'),candidate_index:candidateIndexes[i]??i};
       });
       const spans = new Set();
       for (const proposal of proposals)
@@ -1032,6 +1081,7 @@ export class DomainStore {
           check(!spans.has(span), "INVALID_AGENT_OUTPUT", 422);
           spans.add(span);
         }
+      const comparisons=attachComparisons(this,run,proposals,args.comparisons,{legacyFallback:!args.overview});
       const change = this.insert(run.owner, "fact_change", {
         run_id: run.id,
         source_ids: run.source_ids,
@@ -1041,9 +1091,11 @@ export class DomainStore {
         status: "pending",
         kind: "new",
         proposals,
-        conflicts: [],
+        comparisons,
+        conflicts: comparisons.filter(c=>c.requires_resolution),
         created_at: this.now(),
         document_id: run.document_id,
+        ...(args.overview?{overview:validateOverview(args.overview,run.read_sources||[])}:{}),
       });
       const summaryId=run.record_thread_id?stageRecordSummary(this,run,change,args.record_dialogue):null;
       run.fact_change_id = change.id;
@@ -1061,7 +1113,7 @@ export class DomainStore {
         const change = this.get(uid, "fact_change", changeId),
           u = this.user(uid),
           c = this.requireConsent(uid);
-        keys(body,['accepted_change_ids','expected_profile_revision','record_summary_id','confirmation_message'],['accepted_change_ids','expected_profile_revision']);
+        keys(body,['accepted_change_ids','expected_profile_revision','record_summary_id','confirmation_message','resolutions'],['accepted_change_ids','expected_profile_revision']);
         checkRecordConfirmation(this,uid,change,body);
         check(change.status === "pending", "REVISION_CONFLICT", 409);
         check(change.epoch === u.epoch && change.consent_version === c.version, "SCOPE_REVOKED", 403);
@@ -1079,18 +1131,16 @@ export class DomainStore {
           const run = this.get(uid, "run", change.run_id);
           check(run.status === "needs_review", "SCOPE_REVOKED", 409);
         }
-        const selected = change.proposals.filter((p) => body.accepted_change_ids.includes(p.id));
+        const selected = resolveProposals(this,uid,change,body);
         for (const sid of change.source_ids) this.get(uid, "source", sid);
-        for (const p of selected) {
-          const clean = { ...p };
-          delete clean.id;
+        for (const {proposal:p,clean} of selected) {
           validateCandidate(clean, (sid) => this.get(uid, "source", sid));
           let previous = null;
-          if (p.fact_id) {
-            previous = this.profile(uid).facts.find((f) => f.fact_id === p.fact_id);
-            check(previous && previous.revision === p.expected_version, "REVISION_CONFLICT", 409);
+          if (clean.fact_id) {
+            previous = this.profile(uid).facts.find((f) => f.fact_id === clean.fact_id);
+            check(previous && previous.revision === clean.expected_version, "REVISION_CONFLICT", 409);
           }
-          const factId = p.fact_id || id("fact");
+          const factId = clean.fact_id || id("fact");
           this.insert(uid, "fact_revision", {
             ...clean,
             episode_id:
@@ -1100,22 +1150,27 @@ export class DomainStore {
             fact_id: factId,
             revision: (previous?.revision || 0) + 1,
             supersedes_revision: previous?.revision || null,
-            review_status: p.proposal_kind === "retraction" ? "retracted" : "confirmed",
+            review_status: clean.proposal_kind === "retraction" ? "retracted" : "confirmed",
             confirmed_at: this.now(),
             change_id: change.id,
           });
+          p.proposal_status="confirmed";p.confirmed_fact_id=factId;p.confirmed_revision=(previous?.revision||0)+1;
         }
         if (selected.length) this.db.prepare("UPDATE users SET revision=revision+1 WHERE id=?").run(uid);
         const revision = this.user(uid).revision;
-        change.status = selected.length ? "confirmed" : "rejected";
-        change.accepted_change_ids = body.accepted_change_ids;
+        refreshPendingComparisons(this,uid,change,new Set(selected.map(({proposal})=>proposal.confirmed_fact_id)));
+        const remaining=change.proposals.filter(reviewable);
+        change.status = remaining.length ? 'pending' : change.proposals.some(p=>p.proposal_status==='confirmed'||p.proposal_status==='kept_existing') ? 'confirmed' : 'rejected';
+        change.accepted_change_ids = change.proposals.filter(p=>p.proposal_status==='confirmed').map(p=>p.id);
+        change.review_state=remaining.length?(change.accepted_change_ids.length?'partially_confirmed':'deferred'):'complete';
+        change.resolutions=change.proposals.flatMap(p=>p.resolutions||[]);
         change.confirmed_at = this.now();
         this.save("fact_change", change);
         if (selected.length) this.invalidateProfileDependents(uid);
         if (change.run_id) {
           const r = this.get(uid, "run", change.run_id);
-          r.status = "completed";
-          r.phase = "confirmed";
+          r.status = remaining.length ? "needs_review" : "completed";
+          r.phase = remaining.length ? "review" : "confirmed";
           this.save("run", r);
           this.finishDispatch(r);
         }
@@ -1124,6 +1179,8 @@ export class DomainStore {
           change_id: change.id,
           profile_revision: revision,
           accepted_change_ids: body.accepted_change_ids,
+          committed_change_ids: selected.map(({proposal})=>proposal.id),
+          resolutions: structuredClone(body.resolutions||[]),
           recorded_at: this.now(),
         });
         const operation = this.insert(uid, "operation", {
@@ -1137,7 +1194,7 @@ export class DomainStore {
         let continuation = null;
         if (change.document_id && selected.length) {
           const doc = this.get(uid, "document", change.document_id);
-          const r = this.newRun(uid, "care_plan", [doc.source_id], {
+          const r = this.newRun(uid, "care_plan", [...new Set([this.documentSource(uid,doc.id),doc.source_id,...change.source_ids])], {
             document_id: doc.id,
             parent_run_id: change.run_id,
           });
@@ -1148,8 +1205,10 @@ export class DomainStore {
           profile_revision: revision,
           commit_receipt: operation.id,
           operation_id: operation.id,
+          change_status:change.status, remaining_change_ids:remaining.map(p=>p.id),
           ...(continuation ? { continuation_run_id: continuation } : {}),
         };
+        const overviewRun=queueOverviewRefresh(this,uid,change,operation.id);if(overviewRun)outcome.overview_refresh_run_id=overviewRun;
         finishRecordConfirmation(this,uid,change,body,outcome);return outcome;
       }),
     );
@@ -1198,12 +1257,14 @@ export class DomainStore {
           recorded_at: this.now(),
         });
         const outcome = { profile_revision: user.revision, commit_receipt: operation.id, operation_id: operation.id };
+        const overviewRun=queueOverviewRefresh(this,uid,change,operation.id);if(overviewRun)outcome.overview_refresh_run_id=overviewRun;
         finishRecordConfirmation(this,uid,change,{accepted_change_ids:[]},outcome);
         return outcome;
       }),
     );
   }
   continuationParent(uid,previous,errorCode) {
+    if(previous.overview_refresh)return null;
     const field=previous.workflow==='visit'?'continuation_run_id':previous.workflow==='entry'?'continuation_record_run_id':null;
     if(!field)return null;
     const lineage=[previous],seen=new Set([previous.id]);
@@ -1235,14 +1296,15 @@ export class DomainStore {
           user = this.user(uid),
           consent = this.requireConsent(uid);
         check(body.expected_profile_revision === user.revision, "REVISION_CONFLICT", 409);
+        const legacyEntry=old.workflow==='entry'&&!old.record_thread_id&&!old.conversation_id&&!old.document_id&&old.source_ids.every(sid=>this.get(uid,'source',sid).kind==='self_report')&&this.all('entry',uid).find(e=>e.source_id===old.source_ids[0]);
         check(
-          old.status === "needs_review" && !old.deleted && old.fact_change_id,
+          (old.status === "needs_review" || legacyEntry&&old.status==='completed') && !old.deleted && old.fact_change_id,
           "RUN_NOT_REANALYSABLE",
           409,
         );
         check(old.epoch === user.epoch && old.consent_version === consent.version, "SCOPE_REVOKED", 403);
         const change = this.get(uid, "fact_change", old.fact_change_id);
-        check(change.status === "pending", "REVISION_CONFLICT", 409);
+        check(change.status === "pending" || legacyEntry&&change.status==='confirmed', "REVISION_CONFLICT", 409);
         for (const sid of old.source_ids) this.get(uid, "source", sid);
         this.checkQueueAdmission(uid);
         const continuation=this.continuationParent(uid,old,'RUN_NOT_REANALYSABLE');
@@ -1252,26 +1314,36 @@ export class DomainStore {
         old.scope_epoch++;
         this.save("run", old);
         this.finishDispatch(old);
-        const recordThread=checkRecordRetry(this,uid,old);
+        let recordThread=checkRecordRetry(this,uid,old);
+        if(legacyEntry){
+          check(!this.all('record_thread',uid).some(t=>t.episode_id===legacyEntry.episode_id||t.source_ids.includes(old.source_ids[0])),'REVISION_CONFLICT',409);
+          const episode=this.get(uid,'episode',legacyEntry.episode_id);
+          recordThread=this.insert(uid,'record_thread',{episode_id:episode.id,source_ids:[old.source_ids[0]],version:0,status:'analyzing',created_at:this.now(),updated_at:this.now(),latest_run_id:null,latest_change_id:null,latest_summary_id:null});
+          old.record_thread_id=recordThread.id;this.save('run',old);
+        }
         const run = this.newRun(uid, old.workflow, old.source_ids, {
-          ...(old.record_thread_id?{record_thread_id:old.record_thread_id}:{}),
+          ...(recordThread?{record_thread_id:recordThread.id}:{}),
+          ...(old.record_edit?{record_edit:true}:{}),
+          ...((legacyEntry||old.legacy_record_adoption)?{legacy_record_adoption:true}:{}),
           ...((continuation?.conversation_id||old.conversation_id)?{conversation_id:continuation?.conversation_id||old.conversation_id}:{}),
           document_id: old.document_id,
           parent_run_id: old.id,
         });
         updateRecordRetry(this,recordThread,run);
-        change.status = "expired";
-        change.terminal_reason = "reanalysed";
-        change.expired_at = this.now();
-        change.superseded_by_run_id = run.id;
-        this.save("fact_change", change);
+        if(change.status==='pending'){
+          change.status = "expired";
+          change.terminal_reason = "reanalysed";
+          change.expired_at = this.now();
+          change.superseded_by_run_id = run.id;
+          this.save("fact_change", change);
+        }
         const operation = this.insert(uid, "operation", {
           kind: "reanalyse",
           status: "committed",
           run_id: run.id,
           previous_run_id: old.id,
           source_id: old.source_ids[0],
-          expired_fact_change_id: change.id,
+          expired_fact_change_id: change.status==='expired'?change.id:null,
           saved: true,
           recorded_at: this.now(),
         });
@@ -1281,8 +1353,9 @@ export class DomainStore {
           run_id: run.id,
           source_id: old.source_ids[0],
           operation_id: operation.id,
-          expired_fact_change_id: change.id,
+          expired_fact_change_id: change.status==='expired'?change.id:null,
           saved: true,
+          ...(recordThread?{record_thread_id:recordThread.id,record_version:recordThread.version}:{}),
         };
       }),
     );
@@ -1312,7 +1385,64 @@ export class DomainStore {
     // instruction/source dependencies; previously stale tasks are never revived.
     this.invalidate(uid, (item) => item.kind === "visit_preparation" || !validDependencies(item), "stale");
   }
+  original(uid,documentId) {
+    const doc=this.get(uid,'document',documentId);this.get(uid,'source',doc.source_id);
+    const row=this.db.prepare('SELECT bytes FROM originals WHERE source_id=? AND owner=?').get(doc.source_id,uid);
+    check(row,'NOT_FOUND',404);return{bytes:Buffer.from(row.bytes),media_type:doc.media_type,name:doc.name};
+  }
+  documentSource(uid,documentId) {
+    const doc=this.get(uid,'document',documentId);
+    const transcript=this.all('document_transcript',uid).filter(x=>x.document_id===doc.id&&x.status!=='unreadable').at(-1);
+    return transcript?.transcript_source_id||doc.source_id;
+  }
+  documentView(uid,documentId) {
+    const doc=this.get(uid,'document',documentId),runs=this.all('run',uid).filter(r=>r.document_id===doc.id&&!r.deleted);
+    const extraction=runs.filter(r=>r.workflow==='transcription').at(-1),analysis=runs.filter(r=>r.workflow==='document').at(-1);
+    const byId=new Map(runs.map(run=>[run.id,run]));
+    // Confirmation can start another care run; retries then descend from that
+    // run. Only the current analysis and this owner's document lineage count.
+    const care=analysis&&runs.filter(run=>{
+      const seen=new Set();let ancestor=run;
+      while(ancestor?.workflow==='care_plan'&&!seen.has(ancestor.id)){
+        if(ancestor.parent_run_id===analysis.id)return true;
+        seen.add(ancestor.id);ancestor=byId.get(ancestor.parent_run_id);
+      }
+      return false;
+    }).at(-1);
+    const transcript=this.all('document_transcript',uid).filter(x=>x.document_id===doc.id).at(-1)||null;
+    let extraction_status=doc.extraction_status;
+    if(extraction){extraction_status=extraction.execution_error?'failed':extraction.status==='running'?'transcribing':extraction.status==='queued'?'queued':['failed','blocked','interrupted','cancelled'].includes(extraction.status)?extraction.status:transcript?.status==='unreadable'?'unreadable':transcript?'extracted':'verifying';}
+    return{...doc,extraction_status,transcript,analysis_source_id:this.documentSource(uid,doc.id),transcription_run_id:extraction?.id||null,analysis_run_id:analysis?.id||null,analysis_status:analysis?.execution_error?'failed':analysis?.status||null,care_run_id:care?.id||null,original_url:this.db.prepare('SELECT 1 FROM originals WHERE source_id=? AND owner=?').get(doc.source_id,uid)?'/api/documents/'+doc.id+'/original':null};
+  }
+  stageTranscription(run,args,read) {
+    keys(args,['kind','payload','dependencies','operation_key']);check(args.kind==='transcription','INVALID_AGENT_OUTPUT',422);
+    return this.receipt(run.owner,`result:${run.id}`,args.operation_key,args,()=>{
+      check(Buffer.byteLength(JSON.stringify(args))<=this.limits.outputBytes,'INVALID_AGENT_OUTPUT',422);
+      const source=read(run,run.source_ids[0]),p=args.payload;keys(p,['status','text','uncertainties','source_id','source_text_version']);
+      check(p.source_id===source.id&&p.source_text_version===source.text_version&&source.input_kind==='image','INVALID_AGENT_OUTPUT',422);
+      check(['readable','partial','unreadable'].includes(p.status)&&typeof p.text==='string'&&Buffer.byteLength(p.text)<=this.limits.textBytes&&!p.text.includes('\0'),'INVALID_AGENT_OUTPUT',422);
+      check(Array.isArray(p.uncertainties)&&p.uncertainties.length<=100&&p.uncertainties.every(x=>typeof x==='string'&&x.trim()&&x.length<=2000),'INVALID_AGENT_OUTPUT',422);
+      check(p.status==='unreadable'?!p.text.trim()&&p.uncertainties.length>0:!!p.text.trim(),'INVALID_AGENT_OUTPUT',422);
+      check(p.status!=='partial'||p.uncertainties.length>0,'INVALID_AGENT_OUTPUT',422);
+      check(Array.isArray(args.dependencies)&&args.dependencies.length===1&&args.dependencies[0].source_id===source.id&&args.dependencies[0].source_text_version===source.text_version&&Object.keys(args.dependencies[0]).length===2,'INVALID_AGENT_OUTPUT',422);
+      check(this.all('tool_receipt',run.owner).some(x=>x.run_id===run.id&&x.tool==='healththread_read_source'),'TOOL_SEQUENCE_REQUIRED',422);
+      const result=this.insert(run.owner,'result',{run_id:run.id,kind:'transcription',schema_version:1,payload:structuredClone(p),dependencies:args.dependencies,source_ids:run.source_ids,status:'staged',validity:'current',created_at:this.now()});
+      run.result_id=result.id;run.result_ref=result.id;run.status='completed';run.phase='verifying';this.save('run',run);this.finishDispatch(run);
+      return{result_id:result.id,status:'completed'};
+    });
+  }
+  finalizeTranscription(run) {
+    if(run.workflow!=='transcription'||run.transcription_finalized)return;
+    const result=this.get(run.owner,'result',run.result_id),p=result.payload,doc=this.get(run.owner,'document',run.document_id);
+    check(doc.source_id===p.source_id,'INVALID_AGENT_OUTPUT',422);
+    let source=null;
+    if(p.status!=='unreadable')source=this.insert(run.owner,'source',{kind:'medical_document',text:p.text,text_version:1,content_hash:hash(p.text),recorded_at:this.now(),pages:[],input_kind:'image_transcript',derived_source_ids:[doc.source_id],transcription_status:p.status,uncertainties:p.uncertainties,transcription_run_id:run.id});
+    this.insert(run.owner,'document_transcript',{document_id:doc.id,source_id:doc.source_id,source_ids:[doc.source_id,...(source?[source.id]:[])],transcript_source_id:source?.id||null,status:p.status,text:p.text,uncertainties:p.uncertainties,run_id:run.id,provenance:{kind:'model_transcription',runtime:run.runtime},recorded_at:this.now()});
+    if(source){const analysis=this.newRun(run.owner,'document',[source.id,...run.source_ids],{document_id:doc.id,parent_run_id:run.id});this.queueRun(analysis,run.operation_id);run.continuation_run_id=analysis.id;}
+    result.status='completed';this.save('result',result);run.transcription_finalized=true;run.phase=p.status==='unreadable'?'unreadable':'transcribed';
+  }
   stageResult(run, args, read) {
+    if(run.workflow==='transcription')return this.stageTranscription(run,args,read);
     keys(args, ["kind", "payload", "dependencies", "operation_key"]);
     return this.receipt(run.owner, `result:${run.id}`, args.operation_key, args, () => {
       check(Buffer.byteLength(JSON.stringify(args)) <= this.limits.outputBytes, "INVALID_AGENT_OUTPUT", 422);
@@ -1337,39 +1467,49 @@ export class DomainStore {
         "TOOL_SEQUENCE_REQUIRED",
         422,
       );
-      const factRef = (ref) => {
+      const factRef = (ref, path = "fact_refs") => {
         keys(ref, ["fact_id", "revision"]);
         const f = facts.find((f) => f.fact_id === ref.fact_id && f.revision === ref.revision);
-        check(
-          f && run.read_facts?.some((r) => r.fact_id === ref.fact_id && r.revision === ref.revision),
-          "INVALID_AGENT_OUTPUT",
-          422,
-        );
+        if (!f || !run.read_facts?.some((r) => r.fact_id === ref.fact_id && r.revision === ref.revision))
+          fail(422, "INVALID_AGENT_OUTPUT", "引用事实不是本次已读取的当前版本。", {
+            path,
+            rule: "Use an exact current fact_id/revision returned by healththread_retrieve_context or healththread_get_confirmed_instructions in this run. Historical feedback snapshots do not grant current fact references; cite their original source evidence instead. Do not invent or increment revisions.",
+          });
         return f;
       };
-      for (const dep of args.dependencies) {
-        if (dep.fact_id) factRef(dep);
+      for (const [dependencyIndex, dep] of args.dependencies.entries()) {
+        const path = `dependencies[${dependencyIndex}]`;
+        if (dep.fact_id) factRef(dep, path);
         else {
           keys(dep, ["source_id", "source_text_version"]);
-          check(
-            run.read_sources?.includes(dep.source_id) &&
-              read(run, dep.source_id).text_version === dep.source_text_version,
-            "INVALID_AGENT_OUTPUT",
-            422,
-          );
+          if (!run.read_sources?.includes(dep.source_id))
+            fail(422, "INVALID_AGENT_OUTPUT", "引用来源尚未在本次授权范围内读取。", {
+              path: `${path}.source_id`,
+              rule: "Cite a source already returned by healththread_read_source, healththread_retrieve_context or healththread_get_confirmed_instructions in this run. Copy the returned source_id and text_version; do not cite sources outside this run.",
+            });
+          if (read(run, dep.source_id).text_version !== dep.source_text_version)
+            fail(422, "INVALID_AGENT_OUTPUT", "引用来源版本与已读取原文不一致。", {
+              path: `${path}.source_text_version`,
+              rule: "Use the exact text_version returned by healththread_read_source or healththread_retrieve_context for this source. Preserve the original quote and locator from that version.",
+            });
         }
       }
       const hasFact = (ref) =>
         args.dependencies.some((d) => d.fact_id === ref.fact_id && d.revision === ref.revision);
       const payload = structuredClone(args.payload);
+      if(payload.automatic_record)payload.automatic_record=validateAutomaticRecord(this,run,payload.automatic_record,read);
       if (["visit_preparation", "assistant_reply"].includes(args.kind)) {
         const chat = args.kind === "assistant_reply", v2=payload.format_version===2;
+        if (chat && v2) {
+          if (!Object.hasOwn(payload, "speech")) payload.speech = "";
+          if (!Object.hasOwn(payload, "unknowns")) payload.unknowns = [];
+        }
         check(payload.format_version===undefined||v2,"INVALID_AGENT_OUTPUT",422);
         if (chat) check(["greeting", "clarify", "prepare", "records", "scope", "offer_visit", "confirm_visit", ...(v2?["offer_record","confirm_record","offer_both","confirm_both"]:[])].includes(payload.intent), "INVALID_AGENT_OUTPUT", 422);
         if(chat && payload.intent.startsWith('confirm_'))this.validateVisitConfirmation(run,payload);
         keys(
           payload,
-          ["speech", "questions", "unknowns", "claims", ...(chat ? ["intent"] : []), ...(v2?["format_version",...(chat?["reply","confirmation_quote","confirmation_offer_id","confirmation_has_new_details"]:[])]:[])],
+          ["speech", "questions", "unknowns", "claims", ...(chat ? ["intent"] : []), ...(v2?["format_version",...(chat?["reply","confirmation_quote","confirmation_offer_id","confirmation_has_new_details","automatic_record"]:[])]:[])],
           ["speech", "questions", "unknowns", "claims"],
         );
         check(
@@ -1407,24 +1547,34 @@ export class DomainStore {
             "INVALID_AGENT_OUTPUT",
             422,
           );
-          const quotes = claim.fact_refs.map((ref) => {
-            check(hasFact(ref), "INVALID_AGENT_OUTPUT", 422);
-            return factRef(ref).value;
+          const matching_support={fact_refs:[],evidence:[]},mismatching_support={fact_refs:[],evidence:[]};
+          const matches=quote=>v2?quote.trim()===claim.text.trim():quote===claim.text;
+          const support=(kind,index,quote)=>{(matches(quote)?matching_support:mismatching_support)[kind].push(index);return quote;};
+          const quotes = claim.fact_refs.map((ref, refIndex) => {
+            const path = `payload.claims[${claimIndex}].fact_refs[${refIndex}]`;
+            if (!hasFact(ref)) fail(422, "INVALID_AGENT_OUTPUT", "引用事实缺少对应依赖。", {
+              path, rule: "Add this exact fact_id/revision to dependencies, using only current facts read in this run.",
+            });
+            return support('fact_refs',refIndex,factRef(ref, path).value);
           });
           if (claim.evidence.length) {
-            for (const { evidence: e } of validateEvidence(claim.evidence, (sid) => read(run, sid))) {
+            for (const [evidenceIndex,{ evidence: e }] of validateEvidence(claim.evidence, (sid) => read(run, sid)).entries()) {
               if(!args.dependencies.some(d=>d.source_id===e.source_id&&d.source_text_version===e.source_text_version))
                 fail(422,'INVALID_AGENT_OUTPUT','引用来源缺少对应依赖。',{
                   path:'dependencies',missing_dependencies:[{source_id:e.source_id,source_text_version:e.source_text_version}],
                   rule:'Add this exact source dependency. Every evidence source_id/source_text_version must have a matching dependencies entry, including the primary concern source. Preserve validated claims and evidence.',
                 });
-              quotes.push(e.quote);
+              quotes.push(support('evidence',evidenceIndex,e.quote));
             }
           }
-          if(!(quotes.length > 0 && quotes.every((quote) => v2 ? quote.trim() === claim.text.trim() : quote === claim.text)))
+          if(!(quotes.length > 0 && quotes.every(matches)))
             fail(422,'INVALID_AGENT_OUTPUT','证据摘要与所引原文不一致，请仅修正摘要文本。',{
               path:'payload.claims',claim_index:claimIndex,reason:'CLAIM_TEXT_EVIDENCE_MISMATCH',
-              rule:'Every claim.text must match each supporting evidence.quote or fact value; v2 permits only leading/trailing whitespace differences. Copy the supporting wording exactly, preserving negation, uncertainty and internal whitespace. Do not rewrite evidence quotes, locators or dependencies. Natural synthesis belongs in speech/reply, not claim.text.',
+              matching_support,mismatching_support,
+              rule:(matching_support.fact_refs.length||matching_support.evidence.length
+                ?'Preserve claim.text and its matching_support. Remove unrelated mismatching_support references from this claim, or put distinct supported original statements in separate claims. A physician instruction does not prove patient adherence. '
+                :'Copy the supporting wording exactly, preserving negation, uncertainty and internal whitespace. ')+
+                'Every claim.text must match each supporting evidence.quote or fact value; v2 permits only leading/trailing whitespace differences. Never rewrite evidence quotes or locators. If references change, include each exact authorized source_id/source_text_version or fact_id/revision in dependencies. Natural synthesis belongs in speech/reply, not claim.text.',
             });
           supported.push(claim.text);
         }
@@ -1436,11 +1586,21 @@ export class DomainStore {
           payload.triage = { status: "not_configured" };
         }
       } else {
-        keys(payload, ["tasks", "explanation"], ["tasks"]);
+        keys(payload, ["tasks", "explanation", "guidance"], ["tasks"]);
+        if(payload.guidance!==undefined){
+          check(Array.isArray(payload.guidance)&&payload.guidance.length<=30,"INVALID_AGENT_OUTPUT",422);
+          for(const advice of payload.guidance){
+            keys(advice,["text","source_kind","source_refs","category"]);
+            check(advice.source_kind==="model_guidance"&&["precaution","recovery"].includes(advice.category)&&typeof advice.text==="string"&&advice.text.trim().length>0&&advice.text.length<=4000&&Array.isArray(advice.source_refs)&&advice.source_refs.length>0,"INVALID_AGENT_OUTPUT",422);
+            check(!/[0-9一二三四五六七八九十]+\s*(?:mg|ml|毫克|毫升|片|粒)/i.test(advice.text)&&!/(?:停药|加量|减量|自行服用)/.test(advice.text),"INVALID_AGENT_OUTPUT",422);
+            for(const ref of advice.source_refs){keys(ref,["source_id","source_text_version"]);check(run.read_sources?.includes(ref.source_id)&&read(run,ref.source_id).text_version===ref.source_text_version,"INVALID_AGENT_OUTPUT",422);}
+          }
+        }
         check(Array.isArray(payload.tasks) && payload.tasks.length <= 100, "INVALID_AGENT_OUTPUT", 422);
         const seen = new Set();
-        for (const task of payload.tasks) {
-          keys(task, ["text", "instruction_refs", "schedule"]);
+        const allowedInstructions=facts.filter(f=>f.field==='instruction'&&f.evidence.some(e=>run.source_ids.includes(e.source_id))&&run.read_facts?.some(r=>r.fact_id===f.fact_id&&r.revision===f.revision));
+        for (const [taskIndex,task] of payload.tasks.entries()) {
+          keys(task, ["text", "instruction_refs", "schedule", "explanation", "questions"],["text", "instruction_refs", "schedule"]);
           check(
             typeof task.text === "string" &&
               Array.isArray(task.instruction_refs) &&
@@ -1448,14 +1608,14 @@ export class DomainStore {
             "INVALID_AGENT_OUTPUT",
             422,
           );
-          const instructions = task.instruction_refs.map((ref) => {
+          const instructions = task.instruction_refs.map((ref,refIndex) => {
             check(hasFact(ref), "INVALID_AGENT_OUTPUT", 422);
             const f = factRef(ref);
-            check(
-              f.field === "instruction" && f.evidence.some((e) => run.source_ids.includes(e.source_id)),
-              "INVALID_AGENT_OUTPUT",
-              422,
-            );
+            if(!allowedInstructions.some(i=>i.fact_id===f.fact_id&&i.revision===f.revision))fail(422,'INVALID_AGENT_OUTPUT','任务只能引用本次文档返回的医嘱。',{
+              path:`payload.tasks[${taskIndex}].instruction_refs[${refIndex}]`,
+              allowed_instruction_refs:allowedInstructions.map(i=>({fact_id:i.fact_id,revision:i.revision})),
+              rule:'Build tasks only from the instructions returned by healththread_get_confirmed_instructions for this document. Older facts are context, not additional task authority; remove those tasks. Preserve valid current-document tasks and exact schedules. Source-attributed guidance may use already-authorized context without changing physician instructions.',
+            });
             return f;
           });
           check(
@@ -1463,6 +1623,7 @@ export class DomainStore {
             "INVALID_AGENT_OUTPUT",
             422,
           );
+          validateCareExplanation(task,instructions);
           seen.add(task.text);
           for (const instruction of instructions) {
             validateSourceTime(
@@ -1503,7 +1664,7 @@ export class DomainStore {
         ...(run.conversation_id ? {conversation_id:run.conversation_id} : {}),
         schema_version: 1,
         payload,
-        dependencies: args.dependencies,
+        dependencies: [...args.dependencies,...(payload.guidance||[]).flatMap(g=>g.source_refs)],
         status: "current",
         validity: "current",
         run_id: run.id,
@@ -1511,17 +1672,29 @@ export class DomainStore {
         created_at: this.now(),
       });
       if (args.kind === "care_plan")
-        for (const task of payload.tasks)
+        for (const task of [...payload.tasks,...(payload.guidance||[]).map(g=>({...g,instruction_refs:[],schedule:null}))]) {
+          const signature=refs=>canonical(refs.map(ref=>({fact_id:ref.fact_id,revision:ref.revision})).sort((a,b)=>a.fact_id.localeCompare(b.fact_id)||a.revision-b.revision));
+          const existing=this.all('care_task',run.owner).find(t=>t.document_id===run.document_id&&t.validity==='current'&&t.text===task.text);
+          if(existing){
+            if(signature(existing.instruction_refs)!==signature(task.instruction_refs)){
+              existing.instruction_refs=structuredClone(task.instruction_refs);existing.dependencies=structuredClone(task.instruction_refs);existing.version++;
+              this.save('care_task',existing);
+            }
+            continue;
+          }
           this.insert(run.owner, "care_task", {
             ...task,
+            ...(task.explanation?{explanation_provenance:{kind:"model_paraphrase",instruction_refs:task.instruction_refs,run_id:run.id}}:{}),
             document_id: run.document_id,
             result_id: result.id,
-            dependencies: args.dependencies,
+            source_kind:task.source_kind||"physician_instruction",
+            dependencies: structuredClone(task.source_refs||task.instruction_refs),
             source_ids: run.source_ids,
             status: "open",
             validity: "current",
             version: 1,
           });
+        }
       run.result_id = result.id;
       run.result_ref = result.id;
       run.status = "completed";
@@ -1537,15 +1710,31 @@ export class DomainStore {
         this.checkExpectedEpoch(uid, expectedEpoch);
         const previous = this.get(uid, "run", runId);
         this.requireConsent(uid);
-        check(["failed", "blocked", "interrupted"].includes(previous.status), "RUN_NOT_RETRYABLE", 409);
-        check(!previous.deleted && !previous.fact_change_id && !previous.result_id, "RUN_NOT_RETRYABLE", 409);
+        const cancelledOverviewCheckpoint=previous.overview_refresh&&previous.status==='cancelled'&&previous.fact_change_id&&this.get(uid,'fact_change',previous.fact_change_id).overview;
+        const automaticCheckpoint=(!!previous.execution_error||cancelledOverviewCheckpoint)&&!previous.automatic_finalized&&(
+          (previous.result_id&&this.get(uid,'result',previous.result_id).payload?.automatic_record)||
+          (previous.fact_change_id&&this.get(uid,'fact_change',previous.fact_change_id).overview)||
+          (previous.workflow==='transcription'&&previous.result_id&&!previous.transcription_finalized));
+        const unreadable=previous.workflow==='transcription'&&previous.transcription_finalized&&this.get(uid,'result',previous.result_id).payload.status==='unreadable';
+        check(["failed", "blocked", "interrupted"].includes(previous.status)||automaticCheckpoint||unreadable||(previous.overview_refresh&&previous.status==="cancelled"), "RUN_NOT_RETRYABLE", 409);
+        check(!previous.deleted && (automaticCheckpoint||unreadable||(!previous.fact_change_id&&!previous.result_id)), "RUN_NOT_RETRYABLE", 409);
+        if(automaticCheckpoint){
+          if(previous.fact_change_id){const change=this.get(uid,'fact_change',previous.fact_change_id);change.status='expired';change.terminal_reason='automatic_retry';this.save('fact_change',change);}
+          if(previous.result_id){const result=this.get(uid,'result',previous.result_id);result.status='stale';result.validity='stale';this.save('result',result);}
+          previous.status='cancelled';previous.scope_epoch++;this.save('run',previous);
+        }
         for (const sid of previous.source_ids) this.get(uid, "source", sid);
         check(previous.source_ids.length > 0, "RUN_NOT_RETRYABLE", 409);
         this.checkQueueAdmission(uid);
+        if(previous.overview_refresh)check(this.all('run',uid).filter(r=>r.overview_refresh).at(-1)?.id===previous.id,'RUN_NOT_RETRYABLE',409);
         const recordThread=checkRecordRetry(this,uid,previous);
         const continuation=this.continuationParent(uid,previous,'RUN_NOT_RETRYABLE');
-        const run = this.newRun(uid, previous.workflow, previous.source_ids, {
+        const retrySources=previous.workflow==='care_plan'&&previous.document_id?[...new Set([this.documentSource(uid,previous.document_id),...previous.source_ids])]:previous.source_ids;
+        const run = this.newRun(uid, previous.workflow, retrySources, {
           ...(previous.record_thread_id?{record_thread_id:previous.record_thread_id}:{}),
+          ...(previous.record_edit?{record_edit:true}:{}),
+          ...(previous.overview_refresh?{overview_refresh:true,overview_change_id:previous.overview_change_id}:{}),
+          ...(previous.legacy_record_adoption?{legacy_record_adoption:true}:{}),
           ...((continuation?.conversation_id||previous.conversation_id)?{conversation_id:continuation?.conversation_id||previous.conversation_id}:{}),
           ...(previous.visit_offer_run_id?{visit_offer_run_id:previous.visit_offer_run_id}:{}),
           document_id: previous.document_id,
@@ -1571,7 +1760,7 @@ export class DomainStore {
     return this.transaction(() => {
       this.checkExpectedEpoch(uid, expectedEpoch);
       const r = this.get(uid, "run", runId);
-      if (active.includes(r.status) || (r.workflow==='chat' && r.status==='completed' && !r.runtime)) {
+      if (active.includes(r.status) || (['chat','transcription'].includes(r.workflow) && r.status==='completed' && !r.runtime)) {
         r.status = "cancelled";
         r.phase = "cancelled";
         r.scope_epoch++;
@@ -1609,6 +1798,8 @@ export class DomainStore {
         check(agh&&agh.provider==='agnes-ai'&&typeof agh.session_id==='string'&&agh.session_id.length>0&&typeof agh.model==='string'&&Number.isSafeInteger(agh.last_seq)&&agh.last_seq>=0&&Array.isArray(agh.tool_receipt_ids)&&agh.tool_receipt_ids.length===r.tool_receipts.length&&r.tool_receipts.every((id,index)=>agh.tool_receipt_ids[index]===id),'INVALID_AGENT_OUTPUT',422);
       }
       r.runtime = metadata;
+      this.finalizeTranscription(r);
+      finalizeAutomaticRecords(this,r);
       this.enqueueVisitContinuation(r);
       this.save("run", r);
       return r;
@@ -1617,6 +1808,44 @@ export class DomainStore {
   careTasks(uid) {
     this.user(uid);
     return { tasks: this.all("care_task", uid) };
+  }
+  updateEpisode(uid,episodeId,body,expectedEpoch) {
+    return this.transaction(()=>{
+      this.checkExpectedEpoch(uid,expectedEpoch);keys(body,['status','expected_version']);
+      const episode=this.get(uid,'episode',episodeId);
+      check(['active','improved','resolved'].includes(body.status));
+      let state=this.all('episode_state',uid).find(s=>s.episode_id===episodeId);
+      check(body.expected_version===(state?.version||1),'REVISION_CONFLICT',409);
+      const data={episode_id:episodeId,source_id:episode.source_id,status:body.status,version:(state?.version||1)+1,updated_at:this.now()};
+      state=state?this.save('episode_state',{...state,...data}):this.insert(uid,'episode_state',data);
+      return {...episode,...state,id:episodeId};
+    });
+  }
+  feedbackTask(uid,taskId,body,key,expectedEpoch) {
+    return this.transaction(()=>this.receipt(uid,`feedback:${taskId}`,key,body,()=>{
+      this.checkExpectedEpoch(uid,expectedEpoch);this.requireConsent(uid);keys(body,['text','expected_version']);
+      const task=this.get(uid,'care_task',taskId);check(task.version===body.expected_version,'REVISION_CONFLICT',409);
+      const text=this.text(body.text);this.checkQueueAdmission(uid);
+      const instructions=task.instruction_refs.map(ref=>{
+        const instruction=this.all('fact_revision',uid).find(f=>f.fact_id===ref.fact_id&&f.revision===ref.revision);
+        check(instruction&&instruction.field==='instruction','STALE_DEPENDENCY',409);
+        for(const e of instruction.evidence)this.get(uid,'source',e.source_id);
+        return instruction;
+      });
+      const guidanceSources=(task.source_refs||[]).map(ref=>{
+        const source=this.get(uid,'source',ref.source_id);check(source.text_version===ref.source_text_version,'STALE_DEPENDENCY',409);return source;
+      });
+      const linked=[...new Set([...instructions.flatMap(f=>f.evidence.map(e=>e.source_id)),...guidanceSources.map(source=>source.id)])];
+      check(linked.length<this.limits.retrievalCount,'PAYLOAD_TOO_LARGE',413);
+      check(Buffer.byteLength(text)+linked.reduce((n,sid)=>n+Buffer.byteLength(this.get(uid,'source',sid).text),0)<=this.limits.textBytes*2,'PAYLOAD_TOO_LARGE',413);
+      const source=this.insert(uid,'source',{kind:'self_report',text,text_version:1,content_hash:hash(text),recorded_at:this.now(),pages:[],input_kind:'care_feedback',derived_source_ids:linked});
+      const conversationId=id('chat');
+      const feedback=this.insert(uid,'care_feedback',{task_id:task.id,task_version:task.version,task_validity:task.validity,source_id:source.id,source_ids:[source.id,...linked],instruction_refs:structuredClone(task.instruction_refs),instruction_snapshots:structuredClone(instructions),task_snapshot:{text:task.text,source_kind:task.source_kind||'physician_instruction',category:task.category||null,version:task.version,validity:task.validity},guidance_source_refs:structuredClone(task.source_refs||[]),guidance_source_snapshots:structuredClone(guidanceSources),conversation_id:conversationId,recorded_at:this.now()});
+      const run=this.newRun(uid,'chat',[source.id,...linked],{conversation_id:conversationId,care_feedback_id:feedback.id});
+      const operation=this.insert(uid,'operation',{kind:'care_feedback',status:'committed',task_id:task.id,feedback_id:feedback.id,source_id:source.id,source_ids:[source.id,...linked],run_id:run.id,recorded_at:this.now(),saved:true});
+      this.queueRun(run,operation.id);
+      return {run_id:run.id,source_id:source.id,conversation_id:conversationId,feedback_id:feedback.id,task_id:task.id,task_validity:task.validity,operation_id:operation.id,saved:true};
+    }));
   }
   updateTask(uid, taskId, body, expectedEpoch) {
     return this.transaction(() => {
@@ -1677,6 +1906,7 @@ export class DomainStore {
               quote: text,
             },
           ],
+          ...(body.kind==='correction'?{health_observations:correctionObservations(fact,text)}:{}),
           proposal_kind: body.kind,
           fact_id: factId,
           expected_version: fact.revision,
@@ -1720,6 +1950,8 @@ export class DomainStore {
       entries: "entry",
       documents: "document",
       episodes: "episode",
+      episode_states: "episode_state",
+      care_feedback: "care_feedback",
       fact_revisions: "fact_revision",
       fact_changes: "fact_change",
       results: "result",
@@ -1728,6 +1960,7 @@ export class DomainStore {
       consents: "consent",
       audit: "audit",
       operations: "operation",
+      health_overviews:"health_overview",document_transcripts:"document_transcript",
       record_threads:"record_thread",record_summaries:"record_summary",record_confirmations:"record_confirmation",
     }))
       out[name] = this.all(type, uid);
@@ -1736,7 +1969,7 @@ export class DomainStore {
       .all(uid)
       .map((x) => ({
         source_id: x.source_id,
-        media_type: "application/pdf",
+        media_type: this.all("document",uid).find(doc=>doc.source_id===x.source_id)?.media_type || (this.get(uid,"source",x.source_id).input_kind==='pdf'?'application/pdf':'application/octet-stream'),
         base64: Buffer.from(x.bytes).toString("base64"),
       }));
     return out;
@@ -1778,12 +2011,14 @@ export class DomainStore {
             .map((f) => f.fact_id),
         );
         const types = [
-          "record_thread","record_summary","record_confirmation",
+          "record_thread","record_summary","record_confirmation","health_overview","document_transcript",
           "runtime_binding",
           "fact_revision",
           "fact_change",
           "result",
           "care_task",
+          "care_feedback",
+          "episode_state",
           "entry",
           "document",
           "episode",
@@ -1799,12 +2034,15 @@ export class DomainStore {
             const dependent =
               related(obj) ||
               removedFacts.has(obj.fact_id) ||
+              obj.comparisons?.some(c=>removedFacts.has(c.fact_id)) ||
               obj.dependencies?.some((d) => removedFacts.has(d.fact_id) || sourceIds.includes(d.source_id)) ||
               obj.proposals?.some(
                 (p) =>
                   removedFacts.has(p.fact_id) || p.evidence?.some((e) => sourceIds.includes(e.source_id)),
               ) ||
               removed.has(obj.result_id) ||
+              removed.has(obj.task_id) ||
+              removed.has(obj.episode_id) ||
               removed.has(obj.record_thread_id) ||
               removed.has(obj.fact_change_id);
             if (dependent) {

@@ -11,7 +11,16 @@ test('real runtime requires agnes-ai provider and correlated server receipts',as
  const agent={mode:'real',async run({run,tools}){const receipts=[];receipts.push(tools.healththread_read_source({source_id:run.source_ids[0]}).receipt.id);receipts.push(tools.healththread_retrieve_context({}).receipt.id);receipts.push(tools.healththread_stage_candidates({candidates:[],base_profile_revision:1,operation_key:key}).receipt.id);return {agh:{provider:'agnes-ai',model:'agnes',session_id:'sdk-test-session',last_seq:4,tool_receipt_ids:receipts}};}};
  const f=setup(t,agent);const a=f.store.accept(f.uid,'entry',{text:'真实适配器契约测试，非真实模型。'},key);await f.jobs.drain();assert.equal(f.store.get(f.uid,'run',a.run_id).runtime?.agh.provider,'agnes-ai');
 });
-test('readiness check shares deadline and cannot occupy worker forever',{timeout:200},async t=>{const f=setup(t,{mode:'fixture',isReady:()=>new Promise(()=>{}),run:()=>assert.fail('not ready')},{deadlineMs:20});const a=f.store.accept(f.uid,'entry',{text:'等待依赖。'},key);await f.jobs.drain();assert.equal(f.store.get(f.uid,'run',a.run_id).error.code,'DEADLINE_EXCEEDED');});
+test('readiness check shares deadline and cannot occupy worker forever',{timeout:5000},async t=>{
+ let entered;const ready=new Promise(resolve=>entered=resolve);
+ const f=setup(t,{mode:'fixture',isReady:()=>{entered();return new Promise(()=>{});},run:()=>assert.fail('not ready')},{deadlineMs:20});
+ const a=f.store.accept(f.uid,'entry',{text:'等待依赖。'},key);
+ // Advance only the worker deadline after readiness is actually entered;
+ // account setup and parallel CPU load must not consume the test's deadline.
+ t.mock.timers.enable({apis:['setTimeout']});const drained=f.jobs.drain();await ready;
+ t.mock.timers.tick(20);await drained;
+ assert.equal(f.store.get(f.uid,'run',a.run_id).error.code,'DEADLINE_EXCEEDED');assert.equal(f.jobs.running.size,0);
+});
 test('readiness failure does not invoke provider and blocked input can be retried after configuration',async t=>{
  const f=setup(t,null);const accepted=f.store.accept(f.uid,'entry',{text:'保留以便重试。'},key);await f.jobs.drain();f.jobs.agent={mode:'fixture',async run({run,tools}){tools.healththread_read_source({source_id:run.source_ids[0]});tools.healththread_retrieve_context({});tools.healththread_stage_candidates({candidates:[],base_profile_revision:1,operation_key:key});}};
  const retry=f.store.retry(f.uid,accepted.run_id,'retry-operation-key-0001');await f.jobs.drain();assert.equal(f.store.get(f.uid,'run',retry.run_id).status,'needs_review');assert.equal(f.store.timeline(f.uid).entries.length,1);

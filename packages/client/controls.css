@@ -1,0 +1,39 @@
+/* Shared control vocabulary for the desktop and mobile pages. */
+:root{--control-primary:#2d7048;--control-hover:#195b37;--control-outline:#c8d8cc;--control-soft:#edf5ee;--control-danger:#a64039;--control-radius:12px}
+:is(#app,#overlays) button,:is(#app,#overlays) summary{min-height:44px;min-width:44px;box-sizing:border-box}
+:is(#app,#overlays) :is(.btn,.button,.text-button,.source-link,.source,.health-tabs button,.task-filters button){border-radius:var(--control-radius);line-height:1.4;white-space:normal;overflow-wrap:anywhere;gap:8px;text-decoration:none}
+:is(#app,#overlays) :is(.btn,.button){padding:10px 16px;font-weight:500;min-height:48px}
+:is(#app,#overlays) :is(.btn-secondary,.btn-quiet,.btn-text,.button.secondary,.button.quiet,.text-button){background:#fff;color:var(--control-primary);border:1px solid var(--control-outline)}
+:is(#app,#overlays) :is(.btn-primary,.button:not(.secondary):not(.quiet):not(.danger),[data-action="send"]){background:var(--control-primary);border:1px solid var(--control-primary);color:#fff}
+:is(#app,#overlays) :is(.btn-danger,.button.danger){background:var(--control-danger);border:1px solid var(--control-danger);color:#fff}
+:is(#app,#overlays) :is(.btn-danger-outline,.delete-conversation-button,.session-delete){color:var(--control-danger);background:#fff;border:1px solid #e4c6c3}
+:is(#app,#overlays) button:disabled{opacity:1;background:#e9eeeb;border-color:#dde4df;color:#728078;cursor:not-allowed;box-shadow:none}
+:is(#app,#overlays) :is(button,a,summary,input,textarea,select):focus-visible{outline:3px solid #77a986;outline-offset:3px}
+:is(#app,#overlays) :is(.icon-button,.mic-button,.drawer-head>button,.session-delete){width:44px;height:44px;min-width:44px;min-height:44px;padding:10px;border-radius:var(--control-radius);display:inline-flex;align-items:center;justify-content:center;flex:none}
+:is(#app,#overlays) :is(.icon-button,.mic-button,.drawer-head>button){background:#fff;color:var(--control-primary);border:1px solid var(--control-outline)}
+:is(#app,#overlays) :is(.icon-button,.mic-button,.drawer-head>button,.session-delete) :is(svg,img){display:block;width:22px;height:22px;flex:none}
+:is(#app,#overlays) .drawer-head>button{font-size:26px;line-height:1}
+:is(#app,#overlays) :is(.source,.source-link){padding:10px 0;color:var(--control-primary);text-align:left}
+:is(#app,#overlays) :is(.task-filters,.document-actions,.drawer-actions,.card-actions,.button-row){display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+:is(#app,#overlays) .task-filters button{padding:8px 14px;background:#fff;border:1px solid var(--control-outline);color:var(--control-primary)}
+:is(#app,#overlays) :is(.task-filters button.active,.task-filters button.selected,.health-tabs button[aria-pressed="true"]){background:var(--control-soft);border-color:var(--control-primary);color:var(--control-hover)}
+:is(#app,#overlays) :is(.status,.badge,.region-status){display:inline-flex;align-items:center;font-size:13px;line-height:1.5;min-height:0;min-width:0;padding:4px 10px;border:0;border-radius:6px;font-weight:400;white-space:normal}
+:is(#app,#overlays) :is(.status-confirmed,.badge.patient_report,.badge.document_report,.region-status){background:var(--control-soft);color:#365e42}
+.record-metadata{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 20px;color:#66776c}
+.record-save-status{font-size:13px;color:#526c5b;margin:8px 0!important;line-height:1.6}
+:is(#app,#overlays) .chat-bubble .btn{min-width:0;width:auto;margin-top:8px}
+:is(#app,#overlays) .document-actions{margin-top:12px}
+:is(#app,#overlays) .document-actions:empty{display:none}
+:is(#app,#overlays) .document-actions :is(.button,.btn){margin-top:0}
+:is(#app,#overlays) .record-summary p{white-space:pre-wrap;overflow-wrap:anywhere}
+:is(#app,#overlays) summary{cursor:pointer;display:flex;align-items:center;color:var(--control-primary);font-size:14px;padding:8px 0}
+:is(#app,#overlays) summary::before{content:'＋';font-size:18px;margin-right:8px}
+:is(#app,#overlays) details[open]>summary::before{content:'−'}
+@media(hover:hover){:is(#app,#overlays) :is(.btn-secondary,.btn-quiet,.button.secondary,.text-button,.icon-button,.task-filters button):hover:not(:disabled){background:var(--control-soft);border-color:#8aae94}:is(#app,#overlays) :is(.btn-primary,.button:not(.secondary):not(.quiet):not(.danger),[data-action="send"]):hover:not(:disabled){background:var(--control-hover)}}
+@media(max-width:600px){:is(#app,#overlays) :is(.drawer-actions,.document-actions){align-items:stretch}:is(#app,#overlays) .drawer-actions>.button{flex:1 1 100%}:is(#app,#overlays) .info-row{flex-wrap:wrap;gap:10px}:is(#app,#overlays) .info-row>span{min-width:0}:is(#app,#overlays) .info-row>.btn{flex:1 1 100%}:is(#app,#overlays) .sticky-actions{gap:8px;flex-wrap:wrap}:is(#app,#overlays) .sticky-actions .button{padding:10px 8px;font-size:14px}.record-metadata{margin:12px 0 16px}}
+:is(#app,#overlays) label.switch{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+:is(#app,#overlays) :is(.btn-primary,.button:not(.secondary):not(.quiet):not(.danger),[data-action="send"]) img{filter:brightness(0) invert(1)}
+:is(#app,#overlays) :is(.btn-primary,.button,[data-action="send"]):disabled img{filter:grayscale(1);opacity:.65}
+#app .chat-composer textarea{min-height:44px}
+#app input[type="file"][hidden]{display:none}
+.document-source blockquote{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}

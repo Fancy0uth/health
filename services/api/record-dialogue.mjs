@@ -1,18 +1,21 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {check,fail} from './domain-errors.mjs';
 import {keys} from './source-validation.mjs';
+import {reviewable} from './health-profile.mjs';
 const id=prefix=>prefix+'_'+randomUUID();
 export const RECORD_MISSING_FIELDS=Object.freeze(['症状表现','开始时间','身体部位','频率','持续时间','程度','影响','用药','过敏']);
 export const isRecordConfirmation=text=>typeof text==='string'&&/^(确认|确认记录|确认本次记录|确认以上记录)[。！!]?$/u.test(text.trim());
 
 export function acceptRecordTurn(store,uid,input,key,epoch){
   return store.transaction(()=>store.receipt(uid,'accept:record_turn',key,input,()=>{
-    keys(input,['text','record_thread_id','expected_version','existing_source_id'],[]);
+    keys(input,['text','record_thread_id','expected_version','existing_source_id','record_edit'],[]);
     store.checkExpectedEpoch(uid,epoch);store.requireConsent(uid);
+    check(input.record_edit===undefined||input.record_edit===true,'INVALID_INPUT');
+    check(!input.record_edit||input.record_thread_id,'INVALID_INPUT');
     let thread=input.record_thread_id?store.get(uid,'record_thread',input.record_thread_id):null;
     if(thread){
       check(input.expected_version===thread.version,'REVISION_CONFLICT',409);
-      check(!['confirmed','partially_confirmed'].includes(thread.status),'RECORD_ALREADY_CONFIRMED',409);
+
       const previous=thread.latest_run_id&&store.internalRun(thread.latest_run_id);
       check(!previous||!['queued','running'].includes(previous.status),'RUN_BUSY',409);
     }
@@ -51,7 +54,7 @@ export function acceptRecordTurn(store,uid,input,key,epoch){
       if(old.status==='pending'){old.status='expired';old.terminal_reason='record_updated';old.expired_at=store.now();store.save('fact_change',old);const previous=store.internalRun(old.run_id);previous.status='cancelled';previous.phase='record_updated';previous.scope_epoch++;store.save('run',previous);store.finishDispatch(previous);}
     }
     thread.source_ids=[...priorIds,source.id];thread.version++;thread.status='analyzing';thread.updated_at=store.now();thread.latest_summary_id=null;thread.latest_change_id=null;
-    const run=store.newRun(uid,'entry',[source.id,...priorIds],{record_thread_id:thread.id});thread.latest_run_id=run.id;store.save('record_thread',thread);
+    const run=store.newRun(uid,'entry',[source.id,...priorIds],{record_thread_id:thread.id,...(input.record_edit?{record_edit:true}:{})});if(input.record_edit)thread.edit_pending=true;thread.latest_run_id=run.id;store.save('record_thread',thread);
     const operation=store.insert(uid,'operation',{kind:'record_turn',status:'committed',record_thread_id:thread.id,source_id:source.id,entry_id:entry.id,run_id:run.id,recorded_at:store.now(),saved:true});
     store.queueRun(run,operation.id);
     return {source_id:source.id,entry_id:entry.id,record_thread_id:thread.id,record_version:thread.version,run_id:run.id,operation_id:operation.id,saved:true};
@@ -78,6 +81,9 @@ export function stageRecordSummary(store,run,change,dialogue){
   });
   check(Array.isArray(dialogue.missing_fields)&&dialogue.missing_fields.length<=RECORD_MISSING_FIELDS.length&&new Set(dialogue.missing_fields).size===dialogue.missing_fields.length&&dialogue.missing_fields.every(field=>RECORD_MISSING_FIELDS.includes(field)),'INVALID_AGENT_OUTPUT',422);
   const thread=store.get(run.owner,'record_thread',run.record_thread_id);check(thread.latest_run_id===run.id,'REVISION_CONFLICT',409);
+  // The patient's whole-record replacement is authoritative prose. A model
+  // synthesis belongs in overview and cannot rewrite the explicit correction.
+  if(run.record_edit)dialogue={...dialogue,summary:store.get(run.owner,'source',run.source_ids[0]).text};
   thread.version++;thread.latest_change_id=change.id;thread.status=change.proposals.length?'awaiting_confirmation':'needs_details';thread.updated_at=store.now();
   const summary=store.insert(run.owner,'record_summary',{record_thread_id:thread.id,run_id:run.id,fact_change_id:change.id,version:thread.version,source_ids:[...thread.source_ids],turn_source_id:run.source_ids[0],proposals:structuredClone(change.proposals),...(dialogue.summary?{summary:dialogue.summary}:{}),questions:[...dialogue.questions],missing_fields:[...dialogue.missing_fields],profile_revision:run.base_profile_revision,created_at:store.now()});
   thread.latest_summary_id=summary.id;store.save('record_thread',thread);return summary.id;
@@ -88,18 +94,18 @@ export function checkRecordConfirmation(store,uid,change,body){
   check(isRecordConfirmation(body.confirmation_message),'CONFIRMATION_REQUIRED',400);
   const summary=store.get(uid,'record_summary',body.record_summary_id),thread=store.get(uid,'record_thread',summary.record_thread_id);
   check(summary.fact_change_id===change.id&&thread.latest_summary_id===summary.id&&thread.latest_change_id===change.id,'REVISION_CONFLICT',409);
-  const ids=summary.proposals.map(p=>p.id);check(ids.length>0&&ids.length===body.accepted_change_ids?.length&&ids.every(id=>body.accepted_change_ids.includes(id)),'REVISION_CONFLICT',409);
+  const ids=change.proposals.filter(reviewable).map(p=>p.id);check(ids.length>0&&ids.length===body.accepted_change_ids?.length&&ids.every(id=>body.accepted_change_ids.includes(id)),'REVISION_CONFLICT',409);
 }
 
 export function finishRecordConfirmation(store,uid,change,body,outcome){
   const run=change.run_id&&store.internalRun(change.run_id);if(!run?.record_thread_id)return;
   const thread=store.get(uid,'record_thread',run.record_thread_id);check(thread.latest_change_id===change.id,'REVISION_CONFLICT',409);
-  const selected=body.accepted_change_ids.length;thread.status=selected?(selected===change.proposals.length?'confirmed':'partially_confirmed'):'rejected';thread.version++;thread.updated_at=store.now();store.save('record_thread',thread);
+  const selected=change.accepted_change_ids?.length||0;const remaining=change.status==='pending'&&change.proposals.some(reviewable);thread.status=remaining?(selected?'partially_confirmed':'awaiting_confirmation'):change.status==='confirmed'?'confirmed':'rejected';thread.version++;thread.updated_at=store.now();store.save('record_thread',thread);
   store.insert(uid,'record_confirmation',{record_thread_id:thread.id,record_summary_id:thread.latest_summary_id,source_ids:[...thread.source_ids],message:body.confirmation_message?.trim()||null,accepted_change_ids:[...body.accepted_change_ids],outcome:structuredClone(outcome),created_at:store.now()});
 }
 
 export function recordThreads(store,uid){
-  store.user(uid);return store.all('record_thread',uid).map(thread=>({...thread,summaries:store.all('record_summary',uid).filter(s=>s.record_thread_id===thread.id).sort((a,b)=>a.created_at.localeCompare(b.created_at)),confirmations:store.all('record_confirmation',uid).filter(c=>c.record_thread_id===thread.id).sort((a,b)=>a.created_at.localeCompare(b.created_at))}));
+  store.user(uid);return store.all('record_thread',uid).map(thread=>({...thread,...(thread.edit_pending?{edit_recovery:(()=>{const run=store.internalRun(thread.latest_run_id),source=store.get(uid,'source',run.source_ids[0]);return {state:!run.execution_error&&['queued','running','needs_review'].includes(run.status)?'pending':['failed','blocked','interrupted'].includes(run.status)||run.execution_error?'failed':'stopped',run_id:run.id,retryable:['failed','blocked','interrupted'].includes(run.status)||!!run.execution_error,source_id:source.id,text:source.text,...(run.error?.code||run.execution_error?.code?{error_code:run.error?.code||run.execution_error?.code}:{})};})()}:{}),summaries:store.all('record_summary',uid).filter(s=>s.record_thread_id===thread.id).sort((a,b)=>a.created_at.localeCompare(b.created_at)),confirmations:store.all('record_confirmation',uid).filter(c=>c.record_thread_id===thread.id).sort((a,b)=>a.created_at.localeCompare(b.created_at))}));
 }
 
 export function checkRecordRetry(store,uid,previous){

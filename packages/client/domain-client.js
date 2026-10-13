@@ -263,6 +263,7 @@ export class DomainClient {
     return this.execute(op,ticket);
   }
   async fileMetadata(file) {return {name:file.name,type:file.type,size:file.size,sha256:await fingerprint(await file.arrayBuffer())};}
+  editRecordThread(id,text,version) {return this.submit('record-edit:'+id,'/api/record-threads/'+encodeURIComponent(id),{text,expected_version:version},'PATCH');}
   createRecordTurn(text,recordThreadId,version,sourceId) {return this.submit('record-turn:'+(recordThreadId||sourceId||'new'),'/api/record-turns',{...(sourceId?{existing_source_id:sourceId,...(text?{text}:{})}:{text}),...(recordThreadId?{record_thread_id:recordThreadId,expected_version:version}:{})});}
   createEntry(text) {return this.submit('entry','/api/entries',{text,input_kind:'self_report'});}
   async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set([...this.state.timeline.entries.map(entry=>entry.source_id),...this.state.results.filter(result=>result.kind==='assistant_reply').flatMap(result=>result.source_ids||[]),...Object.values(this.state.runs).filter(run=>run.workflow==='chat').flatMap(run=>run.source_ids||[])]);return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
@@ -280,6 +281,8 @@ export class DomainClient {
   async mutate(path,method,body,{allowScopeChange=false}={}) {
     const ticket=this.ticket();await this.verifySession(ticket);const value=await this.raw(path,{method,body,headers:{'X-CSRF-Token':ticket.csrf,...this.epochHeaders(ticket.scopeEpoch)}});this.check(ticket);const me=await this.verifySession(ticket,{scope:!allowScopeChange});if(allowScopeChange)this.observeServerScope(me);this.broadcast('refresh');return value;
   }
+  async updateEpisode(id,status,version) {const value=await this.mutate('/api/episodes/'+encodeURIComponent(id),'PATCH',{status,expected_version:version});await this.refresh();return value;}
+  feedbackTask(id,text,version) {return this.submit('feedback:'+id,'/api/care-tasks/'+encodeURIComponent(id)+'/feedback',{text,expected_version:version});}
   async updateTask(id,status,version) {const value=await this.mutate('/api/care-tasks/'+encodeURIComponent(id),'PATCH',{status,expected_version:version});await this.refresh();return value;}
   async setConsent(granted) {
     const consents=await this.read('/api/consents');const version=consents.consents.find(c=>c.purpose==='analysis')?.version;

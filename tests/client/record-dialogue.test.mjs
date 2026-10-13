@@ -7,8 +7,8 @@ import {sentenceSpans,literalSourceTime,classifySourceMarkers} from '../../servi
 const agent={mode:'fixture',async run({run,tools}){
   const current=await tools.healththread_read_source({source_id:run.source_ids[0]});
   const context=await tools.healththread_retrieve_context({source_ids:run.source_ids.slice(1)});
-  const sources=[current.source,...context.sources];
-  return tools.healththread_stage_candidates({base_profile_revision:context.snapshot_revision,operation_key:'record-dialogue:'+run.id,candidates:sources.flatMap(source=>sentenceSpans(source).map(span=>({field:'reported_text',value:span.quote,assertion:classifySourceMarkers(span.quote).assertion,temporal_scope:classifySourceMarkers(span.quote).temporal_scope,effective_time:literalSourceTime(span.quote,source.id),evidence:[span],proposal_kind:'new'}))),record_dialogue:{questions:['这些身体感受对日常活动有什么影响？'],missing_fields:['影响','用药','过敏']}});
+  const sources=[current.source,...(run.record_edit?[]:context.sources)].filter((source,index,all)=>all.findIndex(s=>s.id===source.id)===index);
+  return tools.healththread_stage_candidates({base_profile_revision:context.snapshot_revision,operation_key:'record-dialogue:'+run.id,candidates:sources.flatMap(source=>sentenceSpans(source).map(span=>({field:'reported_text',value:span.quote,assertion:classifySourceMarkers(span.quote).assertion,temporal_scope:classifySourceMarkers(span.quote).temporal_scope,effective_time:literalSourceTime(span.quote,source.id),evidence:[span],proposal_kind:'new'}))),record_dialogue:{questions:['这些身体感受对日常活动有什么影响？'],missing_fields:['影响','用药','过敏'],...(run.record_edit?{summary:current.source.text}:{})},...(run.record_edit?{overview:{summary:current.source.text,regions:[]}}:{})});
 }};
 async function setup(t,selected=agent){
   const app=createApp({dbPath:':memory:',demoAccounts:[{username:'record',password:'record-password'},{username:'peer',password:'peer-password'}],agent:selected});await app.listen(0);const base=`http://127.0.0.1:${app.server.address().port}`;let cookie='';
@@ -71,12 +71,12 @@ test('analysis consent withdrawal rejects confirmation of the previously display
   const {bridge,client}=await setup(t);const a=await bridge.recordTurn('目前夜间咳嗽。');await bridge.wait(a.run_id);const session=bridge.snapshot().sessions.find(s=>s.id===a.record_thread_id),review=session.messages.at(-1).record_review;
   await bridge.setConsent(false);await assert.rejects(bridge.confirmRecord(session.id,'确认',review));assert.equal(client.state.profile.facts.length,0);
 });
-test('an incorrect pending record can be amended and only its new summary can be confirmed',async t=>{
+test('an incorrect pending record is replaced automatically while its old review stays unconfirmable',async t=>{
   const {bridge,client}=await setup(t);const first=await bridge.recordTurn('最初写错：目前头痛。');await bridge.wait(first.run_id);const old=await bridge.review(first.source_id);
   assert.equal(typeof bridge.editRecord,'function');
   const revised=await bridge.editRecord(first.source_id,'更正：目前没有头痛。');await bridge.wait(revised.run_id);
   await assert.rejects(bridge.confirm(first.source_id,old.proposals.map(p=>p.id),old.review_revision,old.id));
-  const next=await bridge.review(first.source_id);assert.notEqual(next.id,old.id);await bridge.confirm(first.source_id,[next.proposals.find(p=>p.value.includes('目前没有头痛')).id],next.review_revision,next.id);
+  await assert.rejects(bridge.review(first.source_id),e=>e.code==='NO_PENDING_CANDIDATES');const saved=await client.pollRun(revised.run_id);assert.equal(saved.status,'completed');assert.equal(saved.record_save_status,'saved');assert.equal((await client.factChange(old.id)).status,'expired');const current=bridge.snapshot().records.find(r=>r.id===first.source_id);assert.equal(current.summary,'更正：目前没有头痛。');
   assert.equal(client.state.profile.facts.length,1);assert.match(client.state.profile.facts[0].value,/目前没有头痛/);assert.equal((await client.source(first.source_id)).text,'最初写错：目前头痛。');
 });
 test('a legacy unconfirmed entry can be amended without leaving its old candidates confirmable',async t=>{

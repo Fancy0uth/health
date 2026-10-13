@@ -341,3 +341,52 @@ test('card edits can correct or clear remaining questions and preserve them when
  await bridge.saveCardEdit(state.cardResultId,'继续修改表达。',[],1);await peer.refresh();assert.deepEqual(peer.snapshot().cardUnknowns,['最近没有做过检查。']);
  await bridge.saveCardEdit(state.cardResultId,'最终表达。',[],2,[]);await peer.refresh();assert.deepEqual(peer.snapshot().cardUnknowns,[]);assert.doesNotMatch(peer.copyText(),/用药情况待补充|最近没有做过检查/);
 });
+test('native health profile supports old data without inventing structured observations',async t=>{
+  const {bridge,client}=await setup(t);delete client.state.profile.health_profile;
+  assert.equal(bridge.snapshot().healthProfile,null);
+  client.state.profile.health_profile={observations:[{dimension:'symptom',value:'合成感受'}],current_problems:[],events:[],background:[],unknowns:[],conflicts:[]};
+  assert.deepEqual(bridge.snapshot().healthProfile,client.state.profile.health_profile);
+});
+test('native reconciliation forwards explicit choices with exact viewed revisions',async t=>{
+  const {bridge,client}=await setup(t);const receipt=await bridge.createEntry('本次合成记录。');await bridge.wait(receipt.run_id);const review=await bridge.review(receipt.source_id);
+  let payload;client.confirm=async(id,ids,revision,extra)=>{payload={id,ids,revision,extra};return {};};
+  const resolutions=[{candidate_id:review.proposals[0].id,fact_id:'old',revision:2,action:'defer'}];
+  await bridge.confirm(receipt.source_id,[review.proposals[0].id],review.review_revision,review.id,resolutions);
+  assert.deepEqual(payload.extra,{resolutions});
+});
+test('care feedback reopens as canonical conversation and never auto-confirms a health fact',async t=>{
+ const {bridge,client,app}=await setup(t);const document=await bridge.createDocument({text:'医嘱：明日复诊。',name:'合成随访'});await bridge.wait(document.run_id);const review=await bridge.review(document.source_id);const confirmed=await bridge.confirm(document.source_id,review.proposals.map(p=>p.id));await bridge.wait(confirmed.continuation_run_id);
+ const task=bridge.snapshot().tasks[0],before=client.state.profile.facts.length;
+ const feedback=await bridge.feedbackTask(task.id,'我已记录今天的感受，还有问题想补充。',task.version);await bridge.wait(feedback.run_id);
+ assert.equal(client.state.profile.facts.length,before);assert.equal(bridge.snapshot().tasks[0].text,'医嘱：明日复诊。');
+ const peer=new NativeBridge(client);await peer.refresh();const chat=peer.snapshot().sessions.find(s=>s.conversation_id===feedback.conversation_id);assert.ok(chat);assert.equal(chat.messages[0].text,'我已记录今天的感受，还有问题想补充。');assert.equal(chat.messages[0].source_id,feedback.source_id);assert.equal(chat.messages[1].role,'assistant');
+ const exported=await client.exportData();assert.ok(exported.care_feedback.some(f=>f.source_id===feedback.source_id&&f.instruction_refs[0].revision===task.instruction_refs[0].revision));assert.equal(client.state.tasks.tasks[0].status,'open');
+});
+test('native event state updates use captured version and preserve fact history',async t=>{
+ const {bridge,client}=await setup(t);const entry=await bridge.createEntry('今天头痛。');await bridge.wait(entry.run_id);const review=await bridge.review(entry.source_id);await bridge.confirm(entry.source_id,review.proposals.map(p=>p.id));const event=bridge.snapshot().healthProfile.events[0],fact=client.state.profile.facts[0];
+ await bridge.updateEpisode(event.id,'improved',event.version);assert.equal(bridge.snapshot().healthProfile.events[0].status,'improved');assert.deepEqual(client.state.profile.facts[0],fact);await assert.rejects(bridge.updateEpisode(event.id,'resolved',event.version),e=>e.status===409);
+ const correction=await bridge.correctFact(fact.fact_id,fact.revision,'更正：今天没有头痛。');assert.ok(correction.source_id);assert.equal(client.state.profile.facts[0].value,fact.value);const pending=await bridge.review(correction.source_id);assert.ok(pending.proposals.length);
+});
+test('accepted document remains processing until its actual candidate checkpoint arrives',async t=>{
+ let release,entered;const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>entered=resolve);
+ const delayed={mode:'fixture',async run(input){entered();await gate;return agent.run(input)}};
+ const {bridge}=await setup(t,delayed);const receipt=await bridge.createDocument({text:'医嘱：明日复诊。',name:'实际上传.txt'});await started;
+ try{await bridge.refresh();const state=bridge.snapshot();assert.equal(state.medical.analysis,'running');assert.equal(state.medical.proposals.length,0);assert.equal(state.uploadState,'processing');}finally{release();}
+ await bridge.wait(receipt.run_id);assert.equal(bridge.snapshot().uploadState,'parsed');assert.ok(bridge.snapshot().medical.proposals.length);
+});
+test('care plan retry preserves its source and rejects non-care or superseded attempts',async t=>{
+ let failCare=true;const flaky={mode:'fixture',async run(input){if(input.run.workflow==='care_plan'&&failCare){failCare=false;throw Object.assign(new Error('synthetic failure'),{code:'DEPENDENCY_UNAVAILABLE'});}return agent.run(input)}};
+ const {bridge,client,app}=await setup(t,flaky);const doc=await bridge.createDocument({text:'医嘱：明日复诊。',name:'合成医嘱'});await bridge.wait(doc.run_id);const review=await bridge.review(doc.source_id);const confirmation=await bridge.confirm(doc.source_id,review.proposals.map(p=>p.id));await app.jobs.drain();await bridge.refresh();assert.equal(typeof bridge.retryCarePlan,'function');assert.equal(client.state.runs[confirmation.continuation_run_id].status,'failed');
+ await assert.rejects(bridge.retryCarePlan(doc.run_id),e=>e.code==='RUN_NOT_RETRYABLE');const receipt=await bridge.retryCarePlan(confirmation.continuation_run_id);assert.equal(receipt.source_id,doc.source_id);await bridge.wait(receipt.run_id);assert.equal(bridge.snapshot().tasks.length,1);await assert.rejects(bridge.retryCarePlan(confirmation.continuation_run_id),e=>e.code==='RUN_NOT_RETRYABLE');assert.equal((await client.exportData()).sources.length,1);
+});
+test('failed latest chat hydrates a same-source retry but older failure cannot retry after a new turn',async t=>{
+ let failNext=true;const flaky={mode:'fixture',async run(input){if(input.run.workflow==='chat'&&failNext){failNext=false;throw Object.assign(new Error('fixture failure'),{code:'DEPENDENCY_UNAVAILABLE'});}return agent.run(input)}};
+ const {bridge,client,requests}=await setup(t,flaky);await assert.rejects(bridge.requestAgent('/api/health-assistant',{question:'失败的合成问题。'}));const failed=Object.values(client.state.runs).find(r=>r.workflow==='chat');
+ const peer=new NativeBridge(client);await peer.refresh();const restored=peer.snapshot().sessions.find(s=>s.conversation_id===failed.conversation_id);assert.equal(restored.messages.at(-1).chat_retry_run_id,failed.id);
+ await peer.retryChatRun(failed.id);assert.equal((await client.exportData()).sources.length,1);assert.equal(requests.filter(r=>r.path==='/api/health-assistant'&&r.method==='POST').length,1);assert.equal(peer.snapshot().sessions.find(s=>s.conversation_id===failed.conversation_id).messages.at(-1).chat_retry_run_id,undefined);
+ await assert.rejects(peer.retryChatRun(failed.id),e=>e.code==='RUN_NOT_RETRYABLE');
+});
+test('canonical failed chat retry is unavailable once a later turn exists or is running',async t=>{
+ const {bridge,client}=await setup(t);client.state.runs={old:{id:'old',workflow:'chat',status:'failed',conversation_id:'conversation',source_ids:['first'],created_at:'2026-10-13T01:00:00Z'},next:{id:'next',workflow:'chat',status:'running',conversation_id:'conversation',source_ids:['second'],created_at:'2026-10-13T02:00:00Z'}};bridge.sources.set('first',{id:'first',text:'旧问题'});bridge.sources.set('second',{id:'second',text:'新问题'});
+ const session=bridge.snapshot().sessions.find(s=>s.conversation_id==='conversation');assert.ok(session);assert.ok(session.messages.every(m=>!m.chat_retry_run_id));client.state.runs.next.status='completed';assert.ok(bridge.snapshot().sessions.find(s=>s.conversation_id==='conversation').messages.every(m=>!m.chat_retry_run_id));
+});

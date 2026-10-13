@@ -131,6 +131,8 @@ test("old bad checkpoint confirmation is atomic; saved source reanalysis can rem
       candidates: [],
       base_profile_revision: 1,
       operation_key: key(),
+      record_dialogue:{summary:text,questions:[],missing_fields:[]},
+      overview:{summary:text,regions:[]},
     });
     assert.equal(f.s.get(f.uid, "fact_change", next.fact_change_id).proposals.length, 0);
     assert.equal(f.s.profile(f.uid).facts.length, 0);

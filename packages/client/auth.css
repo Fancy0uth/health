@@ -5,14 +5,16 @@
 .ht-auth-intro h1{font-size:38px;line-height:1.45;letter-spacing:1px;font-weight:500;margin:0 0 20px}
 .ht-auth-intro p{font-size:15px;line-height:1.9;color:#5e736a;margin:0}
 .ht-auth-card{background:#fff;border:1px solid #dfe7e0;border-radius:24px;padding:36px;box-shadow:0 16px 48px #173d2810}
-.ht-auth-eyebrow{font-size:13px;color:#087f75;letter-spacing:2px}
+.ht-auth-eyebrow{font-size:13px;color:#2d7048;letter-spacing:2px}
 .ht-auth-card h2{font-size:24px;line-height:1.4;font-weight:500;margin:10px 0}
 .ht-auth-description{font-size:14px;color:#5e736a;margin:0 0 28px}
 .ht-auth-card label{display:block;font-size:14px;line-height:1.5;margin:20px 0 0}
 .ht-auth-card input{display:block;width:100%;height:48px;border:1px solid #dfe7e0;border-radius:12px;background:#fbfdfb;color:#17271d;padding:0 14px;margin-top:8px;font:inherit}
-.ht-auth-card input:focus-visible{outline:3px solid #35c8b450;outline-offset:2px;border-color:#087f75}
-.ht-auth-card button{height:48px;width:100%;border:0;border-radius:12px;background:#087f75;color:#fff;font:inherit;cursor:pointer}
-.ht-auth-card button:disabled{opacity:.6;cursor:wait}
+.ht-auth-card input:focus-visible{outline:3px solid #77a98680;outline-offset:2px;border-color:#2d7048}
+.ht-auth-card button{height:48px;width:100%;border:0;border-radius:12px;background:#2d7048;color:#fff;font:inherit;cursor:pointer}
+.ht-auth-card button:disabled{opacity:1;background:#e9eeeb;color:#728078;cursor:wait}
+.ht-auth-card button:focus-visible{outline:3px solid #77a986;outline-offset:3px}
+.ht-auth-card button:hover:not(:disabled){background:#195b37}
 .ht-auth-status{min-height:22px;font-size:13px;line-height:1.6;color:#a94a43;margin:14px 0;overflow-wrap:anywhere}
 .ht-auth-footnote{font-size:12px;line-height:1.7;text-align:center;color:#5e736a;margin:18px 0 0}
 .ht-auth-mobile{padding:24px 20px}

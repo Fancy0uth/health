@@ -33,10 +33,10 @@ test('record candidate metadata may carry a natural summary without replacing ev
 });
 test('runtime action instructions distinguish asking for confirmation from execution consent',async()=>{
  const skill=await readFile(new URL('../../agents/runtime/skills/health-assistant/SKILL.md',import.meta.url),'utf8');
- // Keep the observed real-model failure as a semantic example in the shipped skill.
- assert.ok(skill.includes('对，就是这些情况。现在想保存记录并生成就诊沟通卡，你再确认一下。'));
- assert.match(skill,/没有.*pending_action_offer.*offer_/);
- assert.match(skill,/拒绝.*旧提议.*失效/);
+ // Revised workflow auto-saves records; permission remains specific to cards.
+ assert.match(skill,/自动整理自述|健康自述无需保存同意/);
+ assert.match(skill,/pending_action_offer.*明确允许.*confirm_visit/);
+ assert.match(skill,/无需 offer_record 或 confirm_record/);
  assert.match(schema.$defs.chat_payload.properties.intent.description,/asking.*permission.*offer_/i);
  assert.match(schema.$defs.chat_payload.properties.confirmation_offer_id.description,/Never invent.*empty/i);
 });
@@ -80,4 +80,14 @@ test('natural records accept bounded source sentence selections without model-ma
  assert.equal(validate({...args,record_dialogue:{questions:[],missing_fields:[]}}),false);
  assert.equal(validate({...args,record_source_refs:Array.from({length:101},(_,sentence_index)=>({source_id:'authorized-concern',sentence_index}))}),false);
  for(const ref of [{source_id:'source',sentence_index:-1},{source_id:'source',sentence_index:0.5},{source_id:'source'},{source_id:'source',sentence_index:0,quote:'伪造'}])assert.equal(validate({...args,record_source_refs:[ref]}),false);
+});
+test('automatic new candidate contract excludes server identities and stage payload must be native object',()=>{
+ const candidate={field:'symptom',value:'腹胀',assertion:'affirmed',temporal_scope:'unknown',effective_time:{raw:null,precision:'unknown',start:null,end:null,timezone:null,anchor_source_id:'source-a'},evidence:[{source_id:'source-a',source_text_version:1,locator:{page:null,start:0,end:2},quote:'腹胀'}],proposal_kind:'new'};
+ const args=chat({format_version:2,reply:'已记下。',automatic_record:{action:'save',summary:'腹胀',candidates:[candidate],overview:{summary:'腹胀',regions:[{id:'abdomen',label:'腹部',summary:'腹胀',status:'reported',source_ids:['source-a']}]}}});assert.equal(validate(args),true,JSON.stringify(validate.errors));
+ assert.equal(validate({...args,payload:JSON.stringify(args.payload)}),false);
+ for(const field of ['fact_id','expected_version','episode_id']){const invalid=structuredClone(args);invalid.payload.automatic_record.candidates[0][field]=field==='expected_version'?1:field==='episode_id'?null:'candidate_auto_1';assert.equal(validate(invalid),false,field+' is server-owned and must be omitted');}
+});
+test('document stage keeps native array and outer metadata, and post-visit does not instruct care-only calls',async()=>{
+ const document=JSON.parse(await readFile(new URL('../../contracts/schemas/healththread_stage_candidates.json',import.meta.url)));const check=new Ajv({strict:false}).compile(document);const args={candidates:[],base_profile_revision:1,operation_key:'document-contract-001',overview:{summary:'资料概述',regions:[]}};assert.equal(check(args),true);assert.equal(check({...args,candidates:JSON.stringify({candidates:[],base_profile_revision:1,operation_key:args.operation_key})}),false);assert.equal(check({candidates:[]}),false);
+ const skill=await readFile(new URL('../../agents/runtime/skills/post-visit/SKILL.md',import.meta.url),'utf8');assert.match(skill,/document 只使用 read_source → retrieve_context → stage_candidates/);assert.doesNotMatch(skill,/care_plan 必须保留|先 get_confirmed_instructions|停止等待人工确认|不增加建议/);assert.match(skill,/禁止调用仅 care_plan 可用的 healththread_get_confirmed_instructions/);assert.match(skill,/不能 JSON.stringify/);
 });

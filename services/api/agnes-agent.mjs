@@ -1,17 +1,17 @@
 import {createHash} from 'node:crypto';
 import {runtimeError} from '../../agents/runtime/boundary.mjs';
 const canonical=v=>JSON.stringify(v&&typeof v==='object'?Array.isArray(v)?v.map(x=>JSON.parse(canonical(x))):Object.fromEntries(Object.keys(v).sort().map(k=>[k,JSON.parse(canonical(v[k]))])):v);
-const workflowSkills={entry:'health-record',visit:'visit-preparation',chat:'health-assistant',document:'post-visit',care_plan:'post-visit'};
+const workflowSkills={entry:'health-record',visit:'visit-preparation',chat:'health-assistant',document:'post-visit',transcription:'document-transcription',care_plan:'care-followup'};
 export class AgnesAgent {
  constructor({runtime,store}){this.runtime=runtime;this.store=store;this.mode=runtime?.readiness.fixture?'fixture':'real';this.sessions=new Map();}
  async isReady({signal}={}){signal?.throwIfAborted();if(!this.runtime||!this.store)throw runtimeError('AGENT_NOT_CONFIGURED');return this.runtime.isReady();}
  async run({run,tools,signal}){
-  await this.isReady({signal});const skill=workflowSkills[run.workflow];if(!skill)throw runtimeError('UNKNOWN_WORKFLOW');
+  await this.isReady({signal});if(run.workflow==='transcription'&&!this.runtime.readiness.image_input)throw runtimeError('IMAGE_MODEL_UNSUPPORTED');const skill=workflowSkills[run.workflow];if(!skill)throw runtimeError('UNKNOWN_WORKFLOW');
   const {store}=this;const key=store.reserveRuntime(run.id);let runtime,phase='runtime_open',session,iterator,reader,removePermission;const events=[],turns=[];let seen=0,wake;
   const abort=()=>{runtime?.bindings.revoke(key);try{store.revokeRuntime(run.id,key);}catch{}void session?.cancel().catch(()=>{});};
   signal?.addEventListener('abort',abort,{once:true});
   try{
-   runtime=await this.runtime.openRun();signal?.throwIfAborted();
+   runtime=await this.runtime.openRun({workflow:store.internalRun(run.id).workflow});signal?.throwIfAborted();
   runtime.bindings.reserve(key,{runId:run.id,signal,tools,check:()=>store.checkRuntime(run.id,key,{unbound:!session}),repair:reason=>store.recordRuntimeRepair(run.id,key,reason)});
    phase='session_new';session=await runtime.client.session.new({cwd:runtime.workspace,preset:'healththread',sessionKey:key});
    store.bindRuntimeSession(run.id,key,session.id);this.sessions.set(key,session);signal?.throwIfAborted();
@@ -22,18 +22,26 @@ export class AgnesAgent {
    phase='model_selection';
    for(const slot of ['primary','escalation','fast','compaction','verifier'])await session.setModel({slot,route:runtime.selected.route,model:runtime.selected.model});
    iterator=session.events()[Symbol.asyncIterator]();reader=(async()=>{for(;;){const item=await iterator.next();if(item.done)break;events.push(item.value);seen=item.value.seq;wake?.();}})();
-   const prompt=`$${skill}\n执行 HealthThread ${run.workflow==='care_plan'?'care_plan 独立已确认医嘱接续':run.workflow+' 提取/沟通'}工作流。业务输入标识（内容必须通过工具读取）：${JSON.stringify({source_id:run.source_ids[0],record_thread_id:run.record_thread_id,selected_source_ids:run.source_ids.slice(1),document_id:run.document_id,base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。完成暂存后停止，不自行确认，不声称聊天文字已保存。`;
+   const prompt=run.overview_refresh?`$${skill}\n本轮仅重新综合身体近况概览。按 healththread_read_source → healththread_retrieve_context → healththread_stage_candidates 执行。读取已核对的当前事实与 overview_resolution_context，按人的处理结果排除已拒绝/替换的旧候选；未解决分歧保持不确定。只提交 candidates=[] 和原生 overview、base_profile_revision、operation_key；不选原句候选、不提交 record_dialogue/comparisons、不创建新记录或医嘱。综合所有仍有来源支持的部位，每个身体部位 ID 只能出现一次，概述保留各项独立的变化/否认范围。业务输入：${JSON.stringify({source_id:run.source_ids[0],base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。暂存后停止等待核验。`:run.workflow==='transcription'?`$${skill}\n请对附带原始图像做忠实文字转录。先调用 healththread_read_source(source_id)，再调用 healththread_stage_result(kind=transcription)。不要分析病情、生成医嘱或猜测文字。业务输入：${JSON.stringify({source_id:run.source_ids[0],source_text_version:1,document_id:run.document_id,operation_key:'stage:'+run.id})}。完成暂存后停止。`:`$${skill}\n执行 HealthThread ${run.workflow==='care_plan'?'care_plan 独立已确认医嘱接续；先调用 healththread_get_confirmed_instructions(document_id)，再用 healththread_stage_result(kind=care_plan) 暂存，不重新提取候选':run.workflow==='document'?'document 文档提取；只按 healththread_read_source → healththread_retrieve_context → healththread_stage_candidates 的顺序执行；优先提交 document_source_refs 精简原句引用，由你分类并综合 overview，本轮不执行 care_plan':run.workflow+' 提取/沟通'}工作流。业务输入标识（内容必须通过工具读取）：${JSON.stringify({source_id:run.source_ids[0],record_thread_id:run.record_thread_id,selected_source_ids:run.source_ids.slice(1),document_id:run.document_id,base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。${run.workflow==='chat'?'chat 必须提供 automatic_record action=save|skip，普通自述无需征求保存同意。':['entry','document'].includes(run.workflow)?'必须提供原生 overview 对象。':''}先通过工具暂存，服务端在完整模型验证后自动保存。完成暂存后停止，不提前声称成功。`;
    let turn;
    for(let attempt=0;attempt<3;attempt++){
-    phase='prompt';turn=await session.prompt(attempt===0?prompt:`$${skill}\n上一轮未获得必需的 stage 工具回执。请使用已读证据完成本次暂存；不能将聊天 JSON 当作产物。`,{signal});
+    const initialInput=run.workflow==='transcription'?[{type:'text',text:prompt},{type:'image',data:store.original(run.owner,run.document_id).bytes.toString('base64'),mimeType:store.original(run.owner,run.document_id).media_type}]:prompt;
+    phase='prompt';turn=await session.prompt(attempt===0?initialInput:`$${skill}\n上一轮未获得必需的 stage 工具回执。请使用已读证据完成本次暂存；不能将聊天 JSON 当作产物。`,{signal});
     signal?.throwIfAborted();
     turns.push({reason:turn.reason,stop_reason:turn.stopReason,last_seq:turn.lastSeq});
     const staged=runtime.bindings.lookup(key);
+    // Core rejects malformed native arguments before tool_call hooks. Its
+    // context hook is cached within a turn, so refresh only for this bounded,
+    // already charged rejection. Preserve the same session and original ledger.
+    if(turn.reason==='blocked'&&staged.schemaRepair?.pending&&!staged.invocations.some(i=>i.name.includes('_stage_'))){
+     staged.schemaRepair.pending=false;
+     continue;
+    }
     if(turn.reason==='blocked'&&staged.repairs>0&&staged.repairs<=2&&staged.invocations.some(i=>i.name.includes('_stage_'))){
      // A saved, validated checkpoint may exhaust both repairs. Finishing its
      // SDK turn adds no business repair: all tools are disabled before prompting.
      if(staged.repairs<2)runtime.bindings.reject(key,'finalization');runtime.bindings.finalize(key);phase='finalization';
-     turn=await session.prompt(`$${skill}\n本次有效业务产物已通过工具暂存。仅用一句文字确认已暂存、待用户核对；禁止调用任何工具、修改产物或重复提取。`,{signal});
+     turn=await session.prompt(`$${skill}\n本次有效业务产物已通过工具暂存。仅用一句文字确认已暂存、等待运行核验；禁止调用任何工具、修改产物或重复提取。`,{signal});
      turns.push({reason:turn.reason,stop_reason:turn.stopReason,last_seq:turn.lastSeq});
     }
     if(turn.reason!=='completed'||turn.stopReason!=='end_turn')throw Object.assign(runtimeError('AGH_TURN_INCOMPLETE'),{turn:{reason:turn.reason,stopReason:turn.stopReason,lastSeq:turn.lastSeq}});
@@ -58,7 +66,7 @@ export class AgnesAgent {
     const correlation={receipt_id:persisted.id,operation_id:persisted.operation_id,tool:persisted.tool,tool_use_id:invocation.toolUseId,call_seq:call.seq,result_seq:result.seq,...(original?{replay_of_tool_use_id:original.tool_use_id}:{})};
     correlations.push(correlation);if(!original)effects.set(persisted.id,correlation);
    }
-   const expected=run.workflow==='care_plan'?['healththread_get_confirmed_instructions','healththread_stage_result']:['healththread_read_source','healththread_retrieve_context',['visit','chat'].includes(run.workflow)?'healththread_stage_result':'healththread_stage_candidates'];
+   const expected=run.workflow==='transcription'?['healththread_read_source','healththread_stage_result']:run.workflow==='care_plan'?['healththread_get_confirmed_instructions','healththread_stage_result']:['healththread_read_source','healththread_retrieve_context',['visit','chat'].includes(run.workflow)?'healththread_stage_result':'healththread_stage_candidates'];
    const actual=correlations.map(i=>i.tool);let cursor=0;for(const name of actual)if(name===expected[cursor])cursor++;
    if(cursor!==expected.length)throw runtimeError('MISSING_STAGED_OUTPUT');
    store.recordRuntimeEvidence(run.id,key,{session_id:session.id,last_seq:turn.lastSeq,reason:turn.reason,stop_reason:turn.stopReason,route:runtime.selected.route,model:runtime.selected.model,correlations,turns,repair_attempts:entry.repairs,fixture:runtime.readiness.fixture});

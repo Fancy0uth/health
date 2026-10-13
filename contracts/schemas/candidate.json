@@ -171,6 +171,14 @@
             "string",
             "null"
           ]
+        },
+        "health_observations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/health_observation"
+          },
+          "minItems": 0,
+          "maxItems": 50
         }
       },
       "required": [
@@ -183,6 +191,50 @@
         "proposal_kind"
       ],
       "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
+    },
+    "health_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "enum": [
+            "body_site",
+            "symptom",
+            "onset",
+            "course",
+            "self_rating",
+            "impact",
+            "context",
+            "associated",
+            "measurement",
+            "background"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100
+        },
+        "observed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "dimension",
+        "value"
+      ],
+      "description": "Extractive metadata supported by this candidate sentence only. value, unit and observed_at must be exact supported snippets, preserving negation and uncertainty. No inferred scores, units, dates or diagnoses. Missing unit/time is omitted or null; recorded time is not event time."
     }
   }
 }

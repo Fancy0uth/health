@@ -6,7 +6,8 @@ import {randomUUID,timingSafeEqual,createHash} from 'node:crypto';
 import {DomainStore} from './domain-store.mjs';
 import {DispatchQueue} from './domain-jobs.mjs';
 import {check,fail,errorBody,LIMITS} from './domain-errors.mjs';
-import {extractPdf,pdfAvailable} from './pdf.mjs';
+import {pdfAvailable} from './pdf.mjs';
+import {extractDocument} from './document-extraction.mjs';
 const defaultRoot=fileURLToPath(new URL('../../',import.meta.url));
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.json':'application/json; charset=utf-8','.ico':'image/x-icon'};
 function json(res,status,data,headers={}){if(status>=200&&status<300&&res.healththreadEpoch)headers={...headers,...res.healththreadEpoch()};res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers});res.end(JSON.stringify(data));}
@@ -18,12 +19,12 @@ function origin(req){let value;try{value=new URL(req.headers.origin);}catch{fail
 const tokenFrom=req=>req.headers.cookie?.split(';').map(x=>x.trim()).find(x=>x.startsWith('ht_session='))?.slice('ht_session='.length);
 const pick=(value,fields)=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value,key)).map(key=>[key,value[key]]));
 const publicOperation=value=>{const {owner,...out}=value;return out;};
-function publicRun(store,uid,run){return{...pick(run,['id','workflow','record_thread_id','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','continuation_run_id','continuation_record_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
-const publicDocument=value=>pick(value,['id','source_id','name','media_type','byte_size','content_hash','extraction_status','pages']);
+function publicRun(store,uid,run){return{...pick(run,['id','workflow','record_thread_id','record_save_status','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','continuation_run_id','continuation_record_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
+const publicDocument=value=>pick(value,['id','source_id','name','media_type','byte_size','content_hash','extraction_status','pages','transcript','analysis_source_id','transcription_run_id','analysis_run_id','analysis_status','care_run_id','original_url']);
 function listQuery(url,run){const allowed=run?['limit','before','source_id','status']:['limit','before'];check([...url.searchParams.keys()].every(k=>allowed.includes(k))&&new Set(url.searchParams.keys()).size===[...url.searchParams.keys()].length);return Object.fromEntries(url.searchParams);}
 export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/healththread-domain.sqlite'),agent=null,agentFactory=null,demoAccounts=[],limits={},modelConfiguration=null,modelConfigOwnerUsername=null,launchCredentials=null,instanceId=null}={}){
  const configured={...LIMITS,...limits};const store=new DomainStore({dbPath,demoAccounts,limits:configured});agent=agentFactory?agentFactory(store):agent;const jobs=new DispatchQueue(store,agent,{limits:configured});const attempts=new Map();
- const capabilities=()=>({api_version:1,analysis:{status:agent&&['fixture','real'].includes(agent.mode)?'enabled':'not_configured',mode:agent?.mode||null},pdf_text:{status:pdfAvailable()?'enabled':'not_configured'},voice:{status:'unsupported'},audio:{status:'unsupported'},ocr:{status:'unsupported'},department:{status:'not_configured',decision:'D01'},triage:{status:'not_configured',decision:'D02'},limits:{text_bytes:configured.textBytes,upload_bytes:configured.uploadBytes,pdf_pages:configured.pdfPages}});
+ const capabilities=()=>({api_version:1,analysis:{status:agent&&['fixture','real'].includes(agent.mode)?'enabled':'not_configured',mode:agent?.mode||null},pdf_text:{status:pdfAvailable()?'enabled':'not_configured'},voice:{status:'unsupported'},audio:{status:'unsupported'},ocr:{status:agent?.mode==='real'&&agent?.runtime?.readiness.image_input?'enabled':agent?.mode==='fixture'?'fixture':agent?.mode==='real'?'model_unsupported':'not_configured',provider:agent?.mode==='real'?'agnes-ai':null,media_types:['image/png','image/jpeg']},department:{status:'not_configured',decision:'D01'},triage:{status:'not_configured',decision:'D02'},limits:{text_bytes:configured.textBytes,upload_bytes:configured.uploadBytes,pdf_pages:configured.pdfPages}});
  const server=http.createServer(async(req,res)=>{const requestId=randomUUID();try{
   const url=new URL(req.url,'http://localhost'),path=decodeURIComponent(url.pathname);const method=req.method;
   if(path.startsWith('/api/')){
@@ -54,18 +55,25 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    if(path==='/api/profile'&&method==='GET')return json(res,200,store.profile(uid));
    if(path==='/api/timeline'&&method==='GET')return json(res,200,store.timeline(uid));
    if(path==='/api/runs'&&method==='GET'){const page=store.listOwned(uid,'run',listQuery(url,true));return json(res,200,{runs:page.items.map(run=>publicRun(store,uid,run)),next_cursor:page.next_cursor});}
-   if(path==='/api/documents'&&method==='GET'){const page=store.listOwned(uid,'document',listQuery(url,false));return json(res,200,{documents:page.items.map(publicDocument),next_cursor:page.next_cursor});}
+   if(path==='/api/documents'&&method==='GET'){const page=store.listOwned(uid,'document',listQuery(url,false));return json(res,200,{documents:page.items.map(doc=>publicDocument(store.documentView(uid,doc.id))),next_cursor:page.next_cursor});}
+   const documentMatch=path.match(/^\/api\/documents\/([^/]+)(\/original)?$/);
+   if(documentMatch&&method==='GET'){
+    if(!documentMatch[2])return json(res,200,publicDocument(store.documentView(uid,documentMatch[1])));
+    const original=store.original(uid,documentMatch[1]);res.writeHead(200,{'Content-Type':original.media_type,'Content-Length':original.bytes.length,'Content-Disposition':'inline; filename="medical-document'+({ 'image/png':'.png','image/jpeg':'.jpg','application/pdf':'.pdf','text/plain':'.txt'}[original.media_type]||'')+'"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"});return res.end(original.bytes);
+   }
    if(path==='/api/care-tasks'&&method==='GET')return json(res,200,store.careTasks(uid));
    if(path==='/api/consents'&&method==='GET')return json(res,200,{consents:[store.consent(uid)]});
    if(path==='/api/consents'&&method==='PATCH'){const result=store.setConsent(uid,await jsonBody(req,configured),expectedEpoch);for(const [rid]of jobs.running)if(store.internalRun(rid).owner===uid)jobs.cancel(rid);return json(res,200,result);}
    if(path==='/api/export'&&method==='GET')return json(res,200,store.exportData(uid),{'Content-Disposition':'attachment; filename="healththread-export.json"'});
    const key=req.headers['idempotency-key'];
+   const recordEdit=path.match(/^\/api\/record-threads\/([^/]+)$/);
+   if(recordEdit&&method==='PATCH'){const accepted=store.editRecord(uid,recordEdit[1],await jsonBody(req,configured),key,expectedEpoch);jobs.kick();return json(res,202,accepted);}
    if(path==='/api/record-turns'&&method==='POST'){const body=await jsonBody(req,configured);ensureConfigIdle();const accepted=store.acceptRecordTurn(uid,body,key,expectedEpoch);jobs.kick();return json(res,202,accepted);}
    if(['/api/entries','/api/documents','/api/visit-preparations','/api/health-record','/api/medical-document','/api/health-assistant'].includes(path)&&method==='POST'){
     const workflow=['/api/documents','/api/medical-document'].includes(path)?'document':path==='/api/health-assistant'?'chat':path==='/api/visit-preparations'?'visit':'entry';let input,document=null;
     store.requireConsent(uid);
     if(workflow==='document'&&req.headers['content-type']?.startsWith('multipart/form-data')){
-     const bytes=await readBytes(req,configured.uploadBytes+65536);let form;try{form=await new Request('http://localhost/upload',{method:'POST',headers:{'Content-Type':req.headers['content-type']},body:bytes}).formData();}catch{fail(400,'INVALID_MULTIPART');}check([...form.keys()].length===1&&form.has('file'),'INVALID_MULTIPART');const file=form.get('file');check(file&&typeof file.arrayBuffer==='function'&&file.type==='application/pdf','UNSUPPORTED_DOCUMENT',415);document=await extractPdf(Buffer.from(await file.arrayBuffer()),configured);input={text:document.text,name:file.name};
+     const bytes=await readBytes(req,configured.uploadBytes+65536);let form;try{form=await new Request('http://localhost/upload',{method:'POST',headers:{'Content-Type':req.headers['content-type']},body:bytes}).formData();}catch{fail(400,'INVALID_MULTIPART');}check([...form.keys()].length===1&&form.has('file'),'INVALID_MULTIPART');const file=form.get('file');check(file&&typeof file.arrayBuffer==='function','UNSUPPORTED_DOCUMENT',415);document=await extractDocument(Buffer.from(await file.arrayBuffer()),file.type,configured);input={text:document.text,name:file.name};
     }else input=await jsonBody(req,configured);
     if(path==='/api/health-assistant')input={question:input.question,selected_source_ids:input.selected_source_ids||[]};
     if(input.input_kind!==undefined)check(input.input_kind==='self_report'||(workflow==='document'&&input.input_kind==='pasted_document'));
@@ -79,6 +87,8 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    match=path.match(/^\/api\/runs\/([^/]+)\/retry$/);if(match&&method==='POST'){const result=store.retry(uid,match[1],key,expectedEpoch);jobs.kick();return json(res,202,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/reanalyse$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);ensureConfigIdle();const result=store.reanalyse(uid,match[1],body,key,expectedEpoch);jobs.cancel(match[1]);jobs.kick();return json(res,202,result);}
    match=path.match(/^\/api\/facts\/([^/]+)\/change-requests$/);if(match&&method==='POST')return json(res,202,store.changeRequest(uid,match[1],await jsonBody(req,configured),key,expectedEpoch));
+   match=path.match(/^\/api\/episodes\/([^/]+)$/);if(match&&method==='PATCH')return json(res,200,store.updateEpisode(uid,match[1],await jsonBody(req,configured),expectedEpoch));
+   match=path.match(/^\/api\/care-tasks\/([^/]+)\/feedback$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);ensureConfigIdle();const result=store.feedbackTask(uid,match[1],body,key,expectedEpoch);jobs.kick();return json(res,202,result);}
    match=path.match(/^\/api\/care-tasks\/([^/]+)$/);if(match&&method==='PATCH')return json(res,200,store.updateTask(uid,match[1],await jsonBody(req,configured),expectedEpoch));
    match=path.match(/^\/api\/data\/(all|[^/]+)$/);if(match&&method==='DELETE'){const result=store.deleteData(uid,match[1],key,expectedEpoch);for(const [rid]of jobs.running)if(store.internalRun(rid).owner===uid)jobs.cancel(rid);return json(res,202,result);}
    fail(404,'NOT_FOUND');
