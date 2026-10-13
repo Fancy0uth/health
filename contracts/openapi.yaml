@@ -2503,6 +2503,105 @@
           }
         }
       }
+    },
+    "/api/results/{id}/edit": {
+      "post": {
+        "summary": "Edit patient-facing visit wording with optimistic revision control",
+        "operationId": "post_results_id_edit",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "default": {
+            "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisitEdit"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4031,6 +4130,9 @@
             "required": [
               "status"
             ]
+          },
+          "format_version": {
+            "const": 2
           }
         },
         "required": [
@@ -4105,6 +4207,9 @@
           },
           "conversation_id": {
             "type": "string"
+          },
+          "user_edit": {
+            "$ref": "#/components/schemas/VisitUserEdit"
           }
         },
         "required": [
@@ -4834,7 +4939,10 @@
             "minimum": 0
           },
           "deadline": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 0
           },
           "read_sources": {
@@ -4853,6 +4961,14 @@
             "type": "string"
           },
           "record_thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "queue_expires_at": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "started_at": {
             "type": "string",
             "minLength": 1
           }
@@ -5758,6 +5874,82 @@
           "summaries",
           "confirmations"
         ]
+      },
+      "VisitEdit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "speech",
+          "questions",
+          "expected_edit_revision"
+        ],
+        "properties": {
+          "speech": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "unknowns": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "expected_edit_revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "VisitUserEdit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "speech",
+          "questions",
+          "revision",
+          "edited_at"
+        ],
+        "properties": {
+          "speech": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "unknowns": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "edited_at": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     "parameters": {

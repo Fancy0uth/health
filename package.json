@@ -24,6 +24,8 @@
     "setup": "node scripts/setup-local.mjs && npm run setup:agh && npm run build:agh-runtime",
     "setup:agh": "node --env-file-if-exists=.env scripts/setup-agh.mjs",
     "configure:agh": "node --env-file-if-exists=.env scripts/configure-agh.mjs",
-    "verify:chat": "node --env-file-if-exists=.env scripts/verify-chat.mjs"
+    "verify:chat": "node --env-file-if-exists=.env scripts/verify-chat.mjs",
+    "start:judge": "node scripts/launch-judge.mjs",
+    "package:judge": "node scripts/package-judge.mjs"
   }
 }

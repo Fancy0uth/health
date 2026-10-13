@@ -214,3 +214,130 @@ test('an existing stale card can be edited and reopened without clearing provena
  await bridge.saveCardEdit(before.cardResultId,'患者重新修改的表达。',['补充询问的问题？'],0);
  const peer=new NativeBridge(client);await peer.refresh();assert.equal(peer.snapshot().cardDraft,'患者重新修改的表达。');assert.deepEqual(peer.snapshot().questions,['补充询问的问题？']);assert.equal(peer.snapshot().cardSourceDeleted,true);assert.equal(peer.snapshot().cardEditRevision,1);assert.equal(client.state.profile.facts.length,0);assert.match(peer.copyText(),/已过期/);
 });
+
+const conversationalCardAgent=(visit)=>({mode:'fixture',async run(input){
+  if(input.run.workflow==='visit')return visit(input);
+  const {source,sentence_spans}=await input.tools.healththread_read_source({source_id:input.run.source_ids[0]});await input.tools.healththread_retrieve_context({});
+  return input.tools.healththread_stage_result({kind:'assistant_reply',operation_key:input.run.id,dependencies:[{source_id:source.id,source_text_version:1}],payload:{intent:source.text==='同意生成。'?'confirm_visit':'offer_visit',speech:source.text,questions:[],unknowns:[],claims:[{text:source.text,evidence:sentence_spans,fact_refs:[]}]}});
+}});
+test('confirmed chat projects pending and completed cards across a clean client reload without duplicate generation',async t=>{
+  let started,release;const running=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>release=resolve);
+  const selected=conversationalCardAgent(async input=>{started();await gate;return conversationVisitAgent.run(input);});
+  const {bridge,client,transport,requests}=await setup(t,selected);t.after(()=>release());
+  const offer=await bridge.requestAgent('/api/health-assistant',{question:'请整理健康报告。'});assert.match(offer.answer,/确认/);assert.equal(offer.action,null);
+  let progress,progressReady;const progressReceived=new Promise(resolve=>progressReady=resolve);const pending=bridge.requestAgent('/api/health-assistant',{question:'同意生成。',messages:[{role:'user',source_id:offer.source_id}]},{onProgress:message=>{progress=message;progressReady();}});
+  await running;await progressReceived;await bridge.refresh();assert.match(progress.text,/正在生成/);
+  let session=bridge.snapshot().sessions[0];assert.match(session.messages.at(-1).text,/正在生成/);assert.equal(session.messages.at(-1).action,null);
+  const peerClient=new DomainClient({fetchImpl:transport,storage:new MemoryStorage(),channel:null,pollMs:1});t.after(()=>peerClient.dispose());await peerClient.initialize();const peer=new NativeBridge(peerClient);await peer.refresh();
+  assert.match(peer.snapshot().sessions[0].messages.at(-1).text,/正在生成/);
+  release();const reply=await pending;assert.equal(reply.action,'card');assert.ok(reply.visit_result_id);assert.match(reply.answer,/已生成/);
+  await peer.refresh();session=peer.snapshot().sessions[0];assert.equal(session.messages.length,4);assert.equal(session.messages.at(-1).visit_result_id,reply.visit_result_id);assert.equal(session.messages.at(-1).action,'card');
+  assert.equal(Object.values(client.state.runs).filter(run=>run.workflow==='visit').length,1);assert.equal(requests.filter(request=>request.path==='/api/visit-preparations'&&request.method==='POST').length,0);
+  client.state.runs={};await bridge.refresh();assert.equal(bridge.snapshot().sessions[0].messages.at(-1).visit_result_id,reply.visit_result_id);
+});
+test('child card failure survives reload as a conversation retry prompt without marking the confirmed chat failed',async t=>{
+  const selected=conversationalCardAgent(async()=>{throw Object.assign(new Error('provider internal details'),{code:'DEPENDENCY_UNAVAILABLE'});});
+  const {bridge,client}=await setup(t,selected);const offer=await bridge.requestAgent('/api/health-assistant',{question:'请整理健康报告。'});
+  const reply=await bridge.requestAgent('/api/health-assistant',{question:'同意生成。',messages:[{role:'user',source_id:offer.source_id}]});
+  assert.equal(reply.action,null);assert.equal(reply.visit_result_id,undefined);assert.match(reply.answer,/未完成/);assert.match(reply.answer,/重试生成沟通卡/);assert.doesNotMatch(reply.answer,/provider internal/);
+  const peer=new NativeBridge(client);await peer.refresh();const last=peer.snapshot().sessions[0].messages.at(-1);assert.match(last.text,/未完成/);assert.equal(last.error,undefined);assert.equal(peer.snapshot().cardVersion,0);
+});
+test('opening a historical card uses its exact saved content for reading copying and regeneration',async t=>{
+  const {bridge}=await setup(t,conversationVisitAgent);
+  const first=await bridge.requestAgent('/api/visit-preparations',{current_concern:'第一份就诊说明。'});const firstId=bridge.snapshot().cardResultId;
+  await bridge.requestAgent('/api/visit-preparations',{current_concern:'第二份就诊说明。'});assert.notEqual(bridge.snapshot().cardResultId,firstId);
+  bridge.saveOverlay({...bridge.snapshot(),selectedCardResultId:firstId});assert.equal(bridge.snapshot().cardDraft,first.speech);assert.match(bridge.copyText(),/第一份/);assert.doesNotMatch(bridge.copyText(),/第二份/);
+  await bridge.regenerateVisit();assert.notEqual(bridge.snapshot().cardResultId,firstId);assert.match(bridge.snapshot().cardDraft,/第一份/);
+});
+test('accepted follow-up stays visible during polling before the source cache catches up',async t=>{
+  let release,polled;const gate=new Promise(resolve=>release=resolve),seen=new Promise(resolve=>polled=resolve);
+  const delayed={mode:'fixture',async run(input){if(input.tools.healththread_read_source({source_id:input.run.source_ids[0]}).source.text==='第二轮尚在生成。')await gate;return agent.run(input);}};
+  const {bridge,client}=await setup(t,delayed);const first=await bridge.requestAgent('/api/health-assistant',{question:'第一轮已完成。'});
+  const reloaded=new NativeBridge(client);await reloaded.refresh();const state=reloaded.snapshot(),session=state.sessions[0];state.activeSessionId=session.id;session.messages.push({role:'user',text:'第二轮尚在生成。'});reloaded.saveOverlay(state);
+  const unsubscribe=client.subscribe(event=>{if(event.type==='run'&&event.run.id!==first.run_id&&event.run.status==='running')polled(reloaded.snapshot());});
+  const pending=reloaded.requestAgent('/api/health-assistant',{question:'第二轮尚在生成。',messages:[{role:'user',source_id:first.source_id}]});
+  let during;
+  try{during=await seen;}finally{release();await pending;unsubscribe();}
+  assert.equal(during.sessions.find(item=>item.id===session.id).messages.at(-1).text,'第二轮尚在生成。');
+});
+test('reload during historical-card regeneration selects that new result after server completion',async t=>{
+  let hold=false,started,release;const running=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>release=resolve);
+  const delayed={...conversationVisitAgent,async run(input){if(hold&&input.run.workflow==='visit'){started();await gate;}return conversationVisitAgent.run(input);}};
+  const {bridge,client,app}=await setup(t,delayed);
+  await bridge.requestAgent('/api/visit-preparations',{current_concern:'历史卡片内容。'});const original=bridge.snapshot().cardResultId;
+  await bridge.requestAgent('/api/visit-preparations',{current_concern:'另一个历史卡片。'});const other=bridge.snapshot().cardResultId;
+  bridge.saveOverlay({...bridge.snapshot(),selectedCardResultId:original});hold=true;
+  const pending=bridge.regenerateVisit();await running;
+  // Simulate a closed page: its waiter can no longer update the selected card.
+  const peer=new NativeBridge(client);await peer.refresh();const during=peer.snapshot();
+  try{assert.equal(during.cardRegenerationPending,true);assert.equal(during.cardResultId,original);}finally{release();await pending;}
+  await app.jobs.drain();
+  // Restore the accepted pending draft, as a reloaded browser would have it.
+  peer.saveOverlay(during);await peer.refresh();const restored=peer.snapshot();
+  assert.notEqual(restored.cardResultId,original);assert.equal(restored.cardRegenerationPending,false);
+  assert.equal(restored.selectedCardResultId,restored.cardResultId);assert.equal(restored.cardRegeneration,null);
+  peer.saveOverlay({...during,selectedCardResultId:other});await peer.refresh();assert.equal(peer.snapshot().cardResultId,other,'completion preserves a historical card intentionally opened after regeneration began');
+});
+
+test('a pending first chat survives a clean reload without becoming a health record',async t=>{
+ let release;const gate=new Promise(resolve=>release=resolve);const delayed={...agent,async run(input){await gate;return agent.run(input);}};
+ const {client,bridge}=await setup(t,delayed);t.after(()=>release());
+ const accepted=await client.createChat('有点不舒服。');
+ try{const peer=new NativeBridge(client);await peer.refresh();const session=peer.snapshot().sessions.find(s=>s.conversation_id===client.state.runs[accepted.run_id]?.conversation_id);
+ assert.ok(session);assert.equal(session.messages[0].text,'有点不舒服。');assert.equal(session.messages[0].source_id,accepted.source_id);}
+ finally{release();await bridge.wait(accepted.run_id);}
+});
+
+test('v2 both action preserves independent completed card and pending record across a clean reload',async t=>{
+ let release,started;const gate=new Promise(resolve=>release=resolve),running=new Promise(resolve=>started=resolve);
+ const selected={mode:'fixture',async run(input){
+  if(input.run.workflow==='visit')return conversationVisitAgent.run(input);
+  if(input.run.workflow==='entry'){started();await gate;const stage=input.tools.healththread_stage_candidates;return agent.run({...input,tools:{...input.tools,healththread_stage_candidates:args=>stage({...args,record_dialogue:{summary:'你描述了饭后腹胀。',questions:[],missing_fields:[]}})}});}
+  const {source}=await input.tools.healththread_read_source({source_id:input.run.source_ids[0]});const context=await input.tools.healththread_retrieve_context({});
+  const confirming=source.text==='两个都帮我准备好。';
+  return input.tools.healththread_stage_result({kind:'assistant_reply',operation_key:input.run.id,dependencies:[{source_id:source.id,source_text_version:1}],payload:{format_version:2,speech:'',intent:confirming?'confirm_both':'offer_both',reply:confirming?'好，我来整理。':'饭后腹胀。要保存记录并整理沟通卡吗？',questions:[],unknowns:[],claims:[],...(confirming?{confirmation_offer_id:context.pending_offer.run_id,confirmation_quote:source.text,confirmation_has_new_details:false}:{})}});
+ }};
+ const {bridge,client,transport,requests}=await setup(t,selected);t.after(()=>release());
+ const offer=await bridge.requestAgent('/api/health-assistant',{question:'饭后腹胀。'});assert.equal(offer.answer,'饭后腹胀。要保存记录并整理沟通卡吗？');assert.equal(bridge.snapshot().records.length,0);
+ const pending=bridge.requestAgent('/api/health-assistant',{question:'两个都帮我准备好。',messages:[{role:'user',source_id:offer.source_id}]});await running;
+ const peerClient=new DomainClient({fetchImpl:transport,storage:new MemoryStorage(),channel:null,pollMs:1});t.after(()=>peerClient.dispose());await peerClient.initialize();const peer=new NativeBridge(peerClient);
+ try{
+  await bridge.refresh();const parent=Object.values(client.state.runs).find(run=>run.continuation_record_run_id);assert.ok(parent);await bridge.wait(parent.continuation_run_id,{requireRuntime:true});await peer.refresh();
+  const session=peer.snapshot().sessions.find(s=>s.conversation_id===parent.conversation_id&&!s.record_thread_id);const message=session.messages.at(-1);
+  assert.equal(message.record_status,'saving');assert.equal(message.visit_status,'completed');assert.ok(message.visit_result_id);assert.equal(message.record_source_id,undefined);assert.equal(peerClient.state.profile.facts.length,0);
+ }finally{release();await pending;}
+ await peer.refresh();const message=peer.snapshot().sessions.find(s=>s.conversation_id&&!s.record_thread_id).messages.at(-1);assert.equal(message.record_status,'needs_review');assert.equal(message.visit_status,'completed');assert.ok(message.visit_result_id);assert.ok(message.record_source_id);assert.ok(peer.snapshot().records.some(record=>record.id===message.record_source_id));
+ assert.equal(Object.values(client.state.runs).filter(run=>run.workflow==='entry').length,1);assert.equal(Object.values(client.state.runs).filter(run=>run.workflow==='visit').length,1);assert.equal(requests.filter(r=>['/api/health-record','/api/visit-preparations'].includes(r.path)&&r.method==='POST').length,0);
+});
+
+test('retrying a failed chat reuses its source and keeps the successful reply last after reload',async t=>{
+ let attempts=0;const flaky={...agent,async run(input){if(++attempts===1)throw Object.assign(new Error('fixture failure'),{code:'DEPENDENCY_UNAVAILABLE'});return agent.run(input);}};
+ const {bridge,client,requests}=await setup(t,flaky);await assert.rejects(bridge.requestAgent('/api/health-assistant',{question:'对，就是这些情况。'}));
+ const failed=Object.values(client.state.runs).find(run=>run.workflow==='chat');
+ const reply=await bridge.requestAgent('/api/health-assistant',{question:'对，就是这些情况。',retry_source_id:failed.source_ids[0]});
+ assert.equal(reply.source_id,failed.source_ids[0]);assert.equal(requests.filter(r=>r.path==='/api/health-assistant'&&r.method==='POST').length,1);assert.equal(requests.filter(r=>r.path.endsWith('/retry')&&r.method==='POST').length,1);
+ const peer=new NativeBridge(client);await peer.refresh();const session=peer.snapshot().sessions.find(s=>s.conversation_id===failed.conversation_id);
+ assert.equal(session.messages.length,2);assert.equal(session.messages.at(-1).run_id,reply.run_id);assert.equal(session.messages.at(-1).text,reply.answer);
+});
+test('a historical failed turn appears before a later successful turn on clean reload',async t=>{
+ let attempts=0;const flaky={...agent,async run(input){if(++attempts===1)throw Object.assign(new Error('fixture failure'),{code:'DEPENDENCY_UNAVAILABLE'});return agent.run(input);}};
+ const {bridge,client}=await setup(t,flaky);await assert.rejects(bridge.requestAgent('/api/health-assistant',{question:'第一次问题。'}));const failed=Object.values(client.state.runs).find(run=>run.workflow==='chat');
+ const reply=await bridge.requestAgent('/api/health-assistant',{question:'后来再问一次。',messages:[{role:'user',source_id:failed.source_ids[0]}]});
+ const peer=new NativeBridge(client);await peer.refresh();const session=peer.snapshot().sessions.find(s=>s.conversation_id===failed.conversation_id);
+ assert.equal(session.messages[0].text,'第一次问题。');assert.equal(session.messages.at(-1).run_id,reply.run_id);assert.equal(session.messages.at(-1).text,reply.answer);
+});
+
+test('direct authorized card retry updates the existing confirmation after reload without a new chat',async t=>{
+ let attempts=0;const selected=conversationalCardAgent(async input=>{if(++attempts===1)throw Object.assign(new Error('temporary'),{code:'DEPENDENCY_UNAVAILABLE'});return conversationVisitAgent.run(input);});
+ const {bridge,client,requests}=await setup(t,selected);const offer=await bridge.requestAgent('/api/health-assistant',{question:'准备沟通卡。'});const failed=await bridge.requestAgent('/api/health-assistant',{question:'同意生成。',messages:[{role:'user',source_id:offer.source_id}]});assert.ok(failed.visit_retry_run_id);
+ const parent=structuredClone(client.state.runs[failed.run_id]);const receipt=await bridge.retryAssistantAction(failed.visit_retry_run_id);assert.ok(receipt.run_id);assert.equal(requests.filter(r=>r.path==='/api/health-assistant'&&r.method==='POST').length,2);
+ const refresh=client.refresh.bind(client);client.refresh=async()=>{const state=await refresh();state.runs[parent.id]=parent;return state;};
+ const peer=new NativeBridge(client);await peer.refresh();client.refresh=refresh;const message=peer.snapshot().sessions.find(s=>s.conversation_id===parent.conversation_id).messages.at(-1);assert.equal(message.visit_status,'completed');assert.ok(message.visit_result_id);assert.equal(message.visit_retry_run_id,undefined);assert.equal(message.run_id,parent.id);
+});
+
+test('card edits can correct or clear remaining questions and preserve them when omitted',async t=>{
+ const {bridge,client}=await setup(t,conversationVisitAgent);await bridge.requestAgent('/api/visit-preparations',{current_concern:'就诊描述。'});let state=bridge.snapshot();assert.ok(state.cardUnknowns.length);
+ await bridge.saveCardEdit(state.cardResultId,'修改后的表达。',[],0,['最近没有做过检查。']);const peer=new NativeBridge(client);await peer.refresh();state=peer.snapshot();assert.deepEqual(state.cardUnknowns,['最近没有做过检查。']);assert.match(peer.copyText(),/最近没有做过检查/);
+ await bridge.saveCardEdit(state.cardResultId,'继续修改表达。',[],1);await peer.refresh();assert.deepEqual(peer.snapshot().cardUnknowns,['最近没有做过检查。']);
+ await bridge.saveCardEdit(state.cardResultId,'最终表达。',[],2,[]);await peer.refresh();assert.deepEqual(peer.snapshot().cardUnknowns,[]);assert.doesNotMatch(peer.copyText(),/用药情况待补充|最近没有做过检查/);
+});

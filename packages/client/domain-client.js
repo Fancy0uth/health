@@ -265,10 +265,10 @@ export class DomainClient {
   async fileMetadata(file) {return {name:file.name,type:file.type,size:file.size,sha256:await fingerprint(await file.arrayBuffer())};}
   createRecordTurn(text,recordThreadId,version,sourceId) {return this.submit('record-turn:'+(recordThreadId||sourceId||'new'),'/api/record-turns',{...(sourceId?{existing_source_id:sourceId,...(text?{text}:{})}:{text}),...(recordThreadId?{record_thread_id:recordThreadId,expected_version:version}:{})});}
   createEntry(text) {return this.submit('entry','/api/entries',{text,input_kind:'self_report'});}
-  async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
+  async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set([...this.state.timeline.entries.map(entry=>entry.source_id),...this.state.results.filter(result=>result.kind==='assistant_reply').flatMap(result=>result.source_ids||[]),...Object.values(this.state.runs).filter(run=>run.workflow==='chat').flatMap(run=>run.source_ids||[])]);return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
   async createDocument({text,name,file}={}) { const ticket=this.ticket();if(file) {const metadata=await this.fileMetadata(file);this.check(ticket);return this.submit('document','/api/documents',{file:metadata},'POST',file,ticket);}return this.submit('document','/api/documents',{text,name}); }
   async createVisit(currentConcern='',sourceIds=[],options={}) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('visit','/api/visit-preparations',{current_concern:currentConcern,selected_source_ids:sourceIds.filter(id=>allowed.has(id)),...(options.conversation_id?{conversation_id:options.conversation_id}:{}),...(options.previous_result_id?{previous_result_id:options.previous_result_id}:{})},'POST',null,ticket);}
-  editVisit(resultId,speech,questions,expectedRevision=0) {return this.submit('edit-visit:'+resultId,'/api/results/'+encodeURIComponent(resultId)+'/edit',{speech,questions,expected_edit_revision:expectedRevision});}
+  editVisit(resultId,speech,questions,expectedRevision=0,unknowns) {return this.submit('edit-visit:'+resultId,'/api/results/'+encodeURIComponent(resultId)+'/edit',{speech,questions,expected_edit_revision:expectedRevision,...(unknowns!==undefined?{unknowns}:{})});}
   factChange(id) {return this.read('/api/fact-changes/'+encodeURIComponent(id));}
   source(id) {return this.read('/api/sources/'+encodeURIComponent(id));}
   operation(id) {return this.read('/api/operations/'+encodeURIComponent(id));}
@@ -290,7 +290,7 @@ export class DomainClient {
   exportData() {return this.read('/api/export');}
   async cancelRun(id) {const value=await this.mutate('/api/runs/'+encodeURIComponent(id)+'/cancel','POST',{});this.state.runs[id]=value;this.emit();return value;}
   runSignature(run) {return JSON.stringify([run.status,run.phase,run.fact_change_id,run.result_id,run.result_ref,run.source_ids,run.error,run.execution_error,run.runtime,run.deleted]);}
-  async pollRun(id,{signal,deadlineMs=130000,refresh=true,force=false,requireRuntime=false}={}) {
+  async pollRun(id,{signal,deadlineMs=930000,refresh=true,force=false,requireRuntime=false}={}) {
     const ticket=this.ticket(),deadline=Date.now()+deadlineMs;
     const cached=this.settledRuns.get(id),known=this.state.runs[id];
     const finalized=run=>!requireRuntime||!['completed','needs_review'].includes(run.status)||!!(run.runtime||run.execution_error);

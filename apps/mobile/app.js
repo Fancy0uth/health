@@ -2,6 +2,8 @@ import {isRecordConfirmation} from '../../packages/client/record-dialogue.js';
 import {assertionLabel,scopeLabel} from '../../packages/client/presentation.js';
 import {nativeBridge} from '../../packages/client/native-bridge.js';
 const native=nativeBridge();
+const actionRetries=new Set();
+let cardErrorRunId=null;
 import { requestAgent } from '../../packages/client/api.js';
 import { flushData } from '../../packages/client/data.js';
 import { askAssistant, appendAssistantReply, executionLabel } from '../../packages/client/chat.js';
@@ -106,7 +108,7 @@ function back() {
   else go(route.page, route.page === 'timeline' && ['upload', 'medicalReview', 'parsing'].includes(route.view) ? 'medical' : '', '', true);
 }
 function notify(message) {
-  toastNode.textContent=message;
+  toastNode.textContent=/Failed to fetch|NetworkError|Load failed/i.test(String(message))?'网络连接暂时中断，请稍后重试。':message;
   if(native.client.pendingOperations().length){const recover=document.createElement('button');recover.className='button secondary';recover.dataset.action='recover-original';recover.textContent='恢复原请求';toastNode.append(recover);}
   toastNode.classList.add('visible');
   clearTimeout(notify.timer);
@@ -154,8 +156,8 @@ function navigation() {
   return `<nav class="bottom-navigation" aria-label="主导航"><div class="nav-track"><span class="nav-indicator" style="transform:translateX(${MAIN.indexOf(route.page) * 100}%)"></span>${MAIN.map((page, i) => `<button type="button" class="nav-item ${route.page === page ? 'selected' : ''}" data-action="nav" data-page="${page}" ${route.page === page ? 'aria-current="page"' : ''}>${icon(page)}<span>${['首页', '时间线', '沟通卡', '设置'][i]}</span></button>`).join('')}</div><div class="home-indicator" aria-hidden="true"></div></nav>`;
 }
 function composer() {
-  const ask = inputMode === 'ask';
-  return `<form id="composer" class="composer"><div class="input-modes" role="group" aria-label="输入用途"><button type="button" data-action="mode-ask" class="${ask ? 'active' : ''}" aria-pressed="${ask}">向助手提问</button><button type="button" data-action="mode-record" class="${ask ? '' : 'active'}" aria-pressed="${!ask}">记录身体感受</button></div><div class="input-controls"><label class="sr-only" for="message-input">${ask ? '向助手提问' : '记录身体感受'}</label><textarea id="message-input" name="message" rows="1" placeholder="想聊什么，或记录身体感受…">${escape(drafts[inputMode])}</textarea>${iconButton('mic', 'voice', voice ? '停止录音' : '语音输入', (window.SpeechRecognition || window.webkitSpeechRecognition) ? '' : 'disabled title="当前浏览器不支持语音转写"')}${iconButton('send', 'send', ask ? '发送问题' : '发送记录', busySession ? 'disabled' : '')}</div></form>`;
+  const ask = true;
+  return `<form id="composer" class="composer"><div class="input-controls"><label class="sr-only" for="message-input">${ask ? '向助手提问' : '记录身体感受'}</label><textarea id="message-input" name="message" rows="1" placeholder="想聊什么，或记录身体感受…">${escape(drafts[inputMode])}</textarea>${iconButton('mic', 'voice', voice ? '停止录音' : '语音输入', (window.SpeechRecognition || window.webkitSpeechRecognition) ? '' : 'disabled title="当前浏览器不支持语音转写"')}${iconButton('send', 'send', ask ? '发送问题' : '发送记录', busySession ? 'disabled' : '')}</div></form>`;
 }
 
 function content() {
@@ -192,16 +194,13 @@ function home() {
   const recent = store.sessions()[0];
   return `<h2 class="greeting">你好，${escape(native.client.state.user?.username||'')}</h2><p class="muted">今天想聊些什么？</p><section class="assistant-hero"><div class="assistant-heading">${mark(52)}<div><h2>AI 健康助手</h2><small>聊聊近况，也能整理就诊资料</small></div></div>${button('饭后腹胀，想准备就诊', 'suggest', 'secondary')}</section>${heading('最近对话', '<button class="text-button" type="button" data-action="conversations">查看全部</button>')}${recent ? actionRow(recent.title, sessionTime(recent), 'chat', 'conversation', `data-id="${escape(recent.id)}"`) : actionRow('还没有对话记录', '开始新对话', 'chat', 'new-chat')}${actionRow(store.pending() ? `${store.pending()} 项待核对` : '当前没有待核对事项', store.pending() ? '开始时间、症状描述' : '记录身体感受后可在这里核对', 'document', store.pending() ? 'review' : 'record-change')}`;
 }
+function actionRetryMarkup(message){return [['record_retry_run_id','重试整理记录'],['visit_retry_run_id','重试生成沟通卡']].filter(([field])=>message[field]).map(([field,label])=>`<button type="button" class="text-button" data-action="retry-chat-action" data-id="${escape(message[field])}" ${actionRetries.has(message[field])?'disabled':''}>${actionRetries.has(message[field])?'重试中…':label}</button>`).join('');}
 function messageMarkup(messages) {
-  return messages.map(m => `<article class="message ${m.role === 'user' ? 'user' : 'assistant'} ${m.error ? 'error' : ''}">${m.role === 'assistant' ? `<div class="assistant-label">${mark(24)}<span>健康助手</span></div>` : ''}<p>${lines(m.text)}</p>${m.run_id?`<small class="muted" title="${escape(m.run_id)}">${escape(executionLabel(native.client.state.runs[m.run_id]))}</small>`:''}${m.error ? button('重试回复', 'retry-chat', 'secondary') : m.action && m.action!=='visit' ? button(({ visit: '查看就诊准备', timeline: '查看健康时间线', review: '核对这条记录', home: '继续记录' })[m.action] || '继续', m.action === 'review' ? 'review' : 'message-' + m.action, 'secondary', `data-id="${escape(m.recordId || '')}"`) : ''}</article>`).join('');
-}
-function cardConversationAction(session) {
-  if(!session?.messages.some(m=>m.role==='assistant'&&!m.error)||!session.messages.some(m=>m.role==='user'))return '';
-  return `${button(cardBusy?'正在生成沟通卡…':'根据这段对话生成沟通卡','generate-card','secondary',`data-id="${escape(session.id)}" ${cardBusy||busySession===session.id?'disabled':''}`)}${cardError?notice('沟通卡未完成',cardError,'warning'):''}`;
+  return messages.map(m => `<article class="message ${m.role === 'user' ? 'user' : 'assistant'} ${m.error ? 'error' : ''}">${m.role === 'assistant' ? `<div class="assistant-label">${mark(24)}<span>健康助手</span></div>` : ''}<p>${lines(m.text)}</p>${m.run_id?`<small class="muted" title="${escape(m.run_id)}">${escape(executionLabel(native.client.state.runs[m.run_id]))}</small>`:''}${m.visit_result_id?`<button type="button" class="text-button" data-action="view-chat-card" data-id="${escape(m.visit_result_id)}">查看沟通卡</button>`:''}${m.record_source_id?`<button type="button" class="text-button" data-action="record-detail" data-id="${escape(m.record_source_id)}">查看记录</button>`:''}${actionRetryMarkup(m)}${m.error ? button('重试回复', 'retry-chat', 'secondary') : m.action && !['visit','card'].includes(m.action) ? button(({ visit: '查看就诊准备', timeline: '查看健康时间线', review: '核对这条记录', home: '继续记录' })[m.action] || '继续', m.action === 'review' ? 'review' : 'message-' + m.action, 'secondary', `data-id="${escape(m.recordId || '')}"`) : ''}</article>`).join('');
 }
 function chat() {
   const current = activeChat();
-  return `${window.HEALTHTHREAD_API_URL ? '' : '<p class="demo-label">演示回复 · 尚未接入 AI 服务</p>'}${current?.messages.length ? messageMarkup(current.messages) : empty('今天想聊点什么？', '描述不适、整理记录，或准备就诊。', button('饭后腹胀，想准备就诊', 'suggest', 'secondary'))}${cardConversationAction(current)}${busySession === current?.id ? `<article class="message assistant" role="status"><div class="assistant-label">${mark(24)}<span>健康助手</span></div><div class="loading-dots"><i></i><i></i><i></i></div><small>正在通过 AGH 生成回复…</small></article>` : ''}`;
+  return `${window.HEALTHTHREAD_API_URL ? '' : '<p class="demo-label">演示回复 · 尚未接入 AI 服务</p>'}${current?.messages.length ? messageMarkup(current.messages) : empty('今天想聊点什么？', '描述不适、整理记录，或准备就诊。', button('饭后腹胀，想准备就诊', 'suggest', 'secondary'))}${busySession === current?.id && current?.messages.at(-1)?.visit_status!=='generating' && current?.messages.at(-1)?.record_status!=='saving' ? `<article class="message assistant" role="status"><div class="assistant-label">${mark(24)}<span>健康助手</span></div><div class="loading-dots"><i></i><i></i><i></i></div><small>正在通过 AGH 生成回复…</small></article>` : ''}`;
 }
 function conversations() {
   const all = store.sessions();
@@ -212,7 +211,7 @@ function conversations() {
 function conversation() {
   const current = activeChat();
   if (!current) return empty('这段对话已删除', '已保存的健康记录仍可在时间线查看。', button('返回对话记录', 'conversations', 'secondary'));
-  return `<div class="section-heading"><h2>${escape(current.title)}</h2>${iconButton('trash', 'delete-conversation', '删除这段对话', `data-id="${escape(current.id)}"`)}</div><p class="muted small">${sessionTime(current)}</p>${messageMarkup(current.messages)}${button('继续对话', 'continue-chat', '', `data-id="${escape(current.id)}"`)}${cardConversationAction(current)}`;
+  return `<div class="section-heading"><h2>${escape(current.title)}</h2>${iconButton('trash', 'delete-conversation', '删除这段对话', `data-id="${escape(current.id)}"`)}</div><p class="muted small">${sessionTime(current)}</p>${messageMarkup(current.messages)}${button('继续对话', 'continue-chat', '', `data-id="${escape(current.id)}"`)}`;
 }
 function timelineTabs() {
   return `<div class="segmented" aria-label="时间线内容"><button type="button" data-action="health-tab" class="${route.view !== 'medical' ? 'selected' : ''}" aria-pressed="${route.view !== 'medical'}">健康记录</button><button type="button" data-action="medical-tab" class="${route.view === 'medical' ? 'selected' : ''}" aria-pressed="${route.view === 'medical'}">病历与事项</button></div>`;
@@ -287,16 +286,17 @@ function medicalReview() {
 function communicationCard() {
   if (!store.cardExists()) return empty('还没有沟通卡', '先在首页与 AI 聊聊本次情况，再根据完整对话生成。', button('去首页聊聊', 'start-card-chat'));
   const sourceIds=new Set();const cardRecords=(d().cardRecords||[]).filter(record=>{if(record.id&&sourceIds.has(record.id))return false;if(record.id)sourceIds.add(record.id);return true;});
-  return `<div class="section-heading"><h2 class="greeting">医生沟通卡</h2>${store.stale()?badge('stale'):badge('confirmed','已生成')}</div><p class="small muted">${escape(native.client.state.user?.username||'')} · ${dateLabel(d().cardGeneratedAt)}生成</p>${store.stale()?notice('来源已变化','请根据原来的对话重新生成，并检查内容。','warning'):''}${cardBusy?progress('正在重新生成沟通卡','完成后可继续编辑。'):''}${cardError?notice('操作未完成',cardError,'warning'):''}${section('一分钟表达稿',`<p>${lines(store.speech())}</p>`)}${section('想问医生',`<ol>${d().questions.map(q=>`<li>${escape(q)}</li>`).join('')}</ol>`)}${section('资料来源',cardRecords.map(r=>`<div class="card-source-record"><p>${escape(r.text)}</p>${source(r.id,r.source)}</div>`).join('')+(sourceIds.has(d().cardSourceId)?'':source(d().cardSourceId)))}${d().cardUnknowns?.length?section('还需补充',`<ul>${d().cardUnknowns.map(value=>`<li>${escape(value)}</li>`).join('')}</ul>`):''}${d().cardConversationId?button('继续原来的对话','continue-chat','secondary',`data-id="${escape(d().cardConversationId)}"`):''}${notice('可以按你的意思修改','修改沟通卡不会确认或改变健康事实。')}`;
+  if(d().cardSourceId&&!sourceIds.has(d().cardSourceId)){cardRecords.push({id:d().cardSourceId,source:'用户自述'});sourceIds.add(d().cardSourceId);}
+  return `<div class="section-heading"><h2 class="greeting">医生沟通卡</h2>${store.stale()?badge('stale'):badge('confirmed','已生成')}</div><p class="small muted">${escape(native.client.state.user?.username||'')} · ${dateLabel(d().cardGeneratedAt)}生成</p>${store.stale()?notice('来源已变化','请根据原来的对话重新生成，并检查内容。','warning'):''}${cardBusy||d().cardRegenerationPending?progress('正在重新生成沟通卡','完成后可继续编辑。'):''}${cardError||d().cardRegenerationError?notice('操作未完成',cardError||d().cardRegenerationError,'warning'):''}${section('一分钟表达稿',`<p>${lines(store.speech())}</p>`)}${section('想问医生',`<ol>${d().questions.map(q=>`<li>${escape(q)}</li>`).join('')}</ol>`)}${section('资料来源',(cardRecords.length?`<p class="small muted">根据 ${cardRecords.length} 份来源整理</p>`:'')+cardRecords.map((r,index)=>`<div class="card-source-record">${source(r.id,`来源 ${index+1} · ${r.source||'用户自述'}`)}</div>`).join(''))}${d().cardUnknowns?.length?section('还需补充',`<ul>${d().cardUnknowns.map(value=>`<li>${escape(value)}</li>`).join('')}</ul>`):''}${d().cardConversationId?button('继续原来的对话','continue-chat','secondary',`data-id="${escape(d().cardConversationId)}"`):''}${notice('可以按你的意思修改','修改沟通卡不会确认或改变健康事实。')}`;
 }
 function editCard() {
-  return `${cardError?notice('保存未完成',cardError,'warning'):''}${textarea('一分钟表达稿', 'speech', drafts.speech ?? store.speech(), 6,cardSaveBusy?'disabled':'')}${textarea('想问医生（每行一个问题）', 'questions', drafts.questions ?? d().questions.join('\n'), 4,cardSaveBusy?'disabled':'')}${notice('保留你的表达','修改后保存到当前账号；健康事实与原文保持独立。')}`;
+  return `${cardError?notice('保存未完成',cardError,'warning'):''}${textarea('一分钟表达稿', 'speech', drafts.speech ?? store.speech(), 6,cardSaveBusy?'disabled':'')}${textarea('想问医生（每行一个问题）', 'questions', drafts.questions ?? d().questions.join('\n'), 4,cardSaveBusy?'disabled':'')}${textarea('还需补充（每行一项）','unknowns',drafts.unknowns??(d().cardUnknowns||[]).join('\n'),4,cardSaveBusy?'disabled':'')}${notice('保留你的表达','修改后保存到当前账号；健康事实与原文保持独立。')}`;
 }
 function printCard() {
   return `<article class="print-sheet"><h2 class="print-title">医生沟通卡</h2><p class="small muted">${escape(native.client.state.user?.username||'')}</p><p>${lines(cardText())}</p></article>${button('复制内容', 'copy-card', 'secondary')}`;
 }
 function settings() {
-  return `<section class="profile"><span class="avatar">${escape((native.client.state.user?.username||'账号').slice(0,1))}</span><div><h2>${escape(native.client.state.user?.username||'账号')}</h2><small>个人健康资料</small></div></section>${actionRow('退出登录', '手机和电脑共享登录状态', 'shield', 'logout')}${heading('授权与隐私')}${actionRow('授权管理', '记录整理、病历解析与语音', 'shield', 'consent')}${heading('我的数据')}${actionRow('数据导出', '记录、对话与沟通卡', 'download', 'export')}${actionRow('删除数据', '查看范围并确认处理', 'trash', 'delete', 'class="danger-row"')}${actionRow('处理结果', '查看最近一次数据操作', 'document', 'result')}<label class="switch-row"><span class="row-copy"><strong>减少动态效果</strong><small>保留操作反馈，减少移动与波形</small></span><input type="checkbox" name="reduceMotion" role="switch" ${store.preferences.reduceMotion ? 'checked' : ''}/><span class="switch-track"></span></label><div class="settings-brand">${wordmark(156)}<small>HealthThread · 个人健康管家</small><a href="../index.html">查看网页端</a></div>`;
+  return `<section class="profile"><span class="avatar">${escape((native.client.state.user?.username||'账号').slice(0,1))}</span><div><h2>${escape(native.client.state.user?.username||'账号')}</h2><small>个人健康资料</small></div></section>${actionRow('退出登录', '手机和电脑共享登录状态', 'shield', 'logout')}${actionRow('Agnes 模型配置', '连接模型与更换 API Key', 'settings', 'model-config')}${heading('授权与隐私')}${actionRow('授权管理', '记录整理、病历解析与语音', 'shield', 'consent')}${heading('我的数据')}${actionRow('数据导出', '记录、对话与沟通卡', 'download', 'export')}${actionRow('删除数据', '查看范围并确认处理', 'trash', 'delete', 'class="danger-row"')}${actionRow('处理结果', '查看最近一次数据操作', 'document', 'result')}<label class="switch-row"><span class="row-copy"><strong>减少动态效果</strong><small>保留操作反馈，减少移动与波形</small></span><input type="checkbox" name="reduceMotion" role="switch" ${store.preferences.reduceMotion ? 'checked' : ''}/><span class="switch-track"></span></label><div class="settings-brand">${wordmark(156)}<small>HealthThread · 个人健康管家</small><a href="../index.html">查看网页端</a></div>`;
 }
 function consent() {
   const endpoint = window.HEALTHTHREAD_API_URL;
@@ -327,7 +327,7 @@ function footer() {
     case 'print': return button('系统分享 / 打印', 'share-card');
     case 'export': return button('生成导出文件', 'generate-export');
     case 'delete': return button('确认删除', 'confirm-delete', 'danger', deleteAcknowledged ? '' : 'disabled');
-    default: return button('编辑','edit-card','secondary',cardBusy?'disabled':'')+button(cardBusy?'正在生成…':'重新生成','regenerate-card','secondary',cardBusy?'disabled':'')+button('分享 / 打印','print','secondary',cardBusy?'disabled':'');
+    default: return button('编辑','edit-card','secondary',cardBusy||d().cardRegenerationPending?'disabled':'')+button(cardBusy||d().cardRegenerationPending?'正在生成…':'重新生成','regenerate-card','secondary',cardBusy||d().cardRegenerationPending?'disabled':'')+button('分享 / 打印','print','secondary',cardBusy||d().cardRegenerationPending?'disabled':'');
   }
 }
 
@@ -346,6 +346,7 @@ function renderSheet() {
     const evidence=!item?native.sources?.get(value):null;
     if(evidence)html=`${section('用户原文',`<blockquote>${escape(evidence.text)}</blockquote>`)}${fact('记录时间',evidence.recorded_at||evidence.created_at||'未记录')}<p class="muted small">此原文作为更正或资料来源保留。</p>`;
     else if (!item) html = notice('原始记录已不存在', '沟通卡保留了生成时的来源快照，请重新核对后生成。', 'warning');
+    else if(kind==='record')html=`${section('整理后的记录',`<p>${lines(item.summary||item.text)}</p>`)}${badge(item.status==='confirmed'?'confirmed':'pending',item.status==='confirmed'?'已核对':'待你核对')}${item.date?fact('事件日期',item.date):''}${source(item.id,item.source)}${item.status==='pending'?button('核对这条记录','review','',`data-id="${escape(item.id)}"`):''}${button('修改记录','correct','secondary',`data-id="${escape(item.id)}"`)}`;
     else html = `<p class="muted">${escape(item.source)} · 症状与事件日期</p>${section('用户原文', `<blockquote>“${escape(item.text)}”</blockquote>`)}${fact('记录时间', item.created)}${fact('事件日期', item.date || '未记录')}${fact('确认状态', `${item.status === 'confirmed' ? '已核对' : '待核对'} · v${item.version || 1}`)}${item.correction ? notice('用户已更正日期', `原因：${item.correction}。原文与旧版本保留。`) : ''}${kind === 'source' ? button('查看原始记录', 'sheet-record', 'secondary', `data-id="${escape(item.id)}"`) : button(item.record_kind==='visit_context'?'整理为记录':'核对这条记录', 'review', '', `data-id="${escape(item.id)}"`)}${button('修改记录', 'correct', 'secondary', `data-id="${escape(item.id)}"`)}`;
   } else if (kind === 'filters') {
     title = '筛选健康记录';
@@ -409,11 +410,11 @@ async function sendChat(retry = false) {
   go('home', 'chat', current.id, route.view === 'chat');
   scrollChat();
   try {
-    const response = await askAssistant(question, { messages: current.messages.map(({ role, text,source_id }) => ({ role, text,source_id })), records: d().records });
+    const response = await askAssistant(question, { retry_source_id:retry?current.messages.findLast(m=>m.role==='user')?.source_id:undefined, messages: current.messages.map(({ role, text,source_id }) => ({ role, text,source_id })), records: d().records, onProgress:()=>{if(request===requestSequence){store.reload();render();}} });
     const stillPresent = store.session(current.id);
     if (request !== requestSequence || !stillPresent) return;
     const userMessage=[...stillPresent.messages].reverse().find(m=>m.role==='user');if(userMessage)userMessage.source_id=response.source_id;
-    appendAssistantReply(d().sessions,current.id,{text:response.answer,action:response.action,demo:response.demo,run_id:response.run_id,runtime:response.runtime,execution_error:response.execution_error});
+    appendAssistantReply(d().sessions,current.id,{text:response.answer,action:response.action,demo:response.demo,run_id:response.run_id,runtime:response.runtime,execution_error:response.execution_error,visit_result_id:response.visit_result_id,visit_status:response.visit_status,visit_retry_run_id:response.visit_retry_run_id,record_retry_run_id:response.record_retry_run_id,record_status:response.record_status,record_change_id:response.record_change_id,record_source_id:response.record_source_id});
   } catch (error) {
     const stillPresent = store.session(current.id);
     if (request !== requestSequence || !stillPresent) return;
@@ -446,7 +447,7 @@ async function saveRecord(text = drafts.record,existingSourceId=null) {
   }catch(error){store.reload();notify(error.code==='REVISION_CONFLICT'?'记录或核对版本已变化，输入已保留。请阅读最新汇总后再提交。':error.message||'模型整理未完成，原文仍然保留。');}
   finally{busySession=null;render();}
 }
-function submitMessage(){const session=activeChat(),text=drafts[inputMode];return inputMode==='record'||session?.record_thread_id&&(!['confirmed','partially_confirmed'].includes(session.record_status)||isRecordConfirmation(text))?saveRecord(text):sendChat();}
+function submitMessage(){const session=activeChat(),text=drafts[inputMode];return session?.record_thread_id&&(!['confirmed','partially_confirmed'].includes(session.record_status)||isRecordConfirmation(text))?saveRecord(text):sendChat();}
 async function analyzeRecord(item) {
   if(!item)return;const sameNavigation=captureNavigation();const job=++jobSequence;jobController?.abort();jobController=new AbortController();
   try{if(!item.run_id)throw new Error('请读取已保存记录的运行状态。');await native.wait(item.run_id,{signal:jobController.signal});if(job!==jobSequence)return;store.reload();if(sameNavigation())await openReview(item.id);render();}
@@ -455,15 +456,26 @@ async function analyzeRecord(item) {
 function startCardChat() {
   inputMode='ask';d().activeSessionId=null;save();go('home');document.querySelector('#message-input')?.focus();
 }
+function reconcileCardCompletion(){
+  if(!cardErrorRunId)return;
+  const run=native.client.state.runs[cardErrorRunId];
+  if(run?.status==='completed'&&run.runtime&&!run.execution_error&&(native.client.state.results||[]).some(result=>result.id===run.result_id)){
+    cardError='';cardErrorRunId=null;
+    notify('沟通卡已更新，可以继续编辑。');
+  }
+}
 async function generateCard(sessionId,regenerate=false) {
-  if(cardBusy)return;
+  if(cardBusy||d().cardRegenerationPending)return;
   const session=store.session(sessionId);
   if(!regenerate&&!session)return startCardChat();
-  const sameNavigation=captureNavigation();cardBusy=true;cardError='';render();
+  const sameNavigation=captureNavigation();cardBusy=true;cardError='';cardErrorRunId=null;render();
   try {
     if(regenerate)await native.regenerateVisit();else await native.generateVisit(session.id);
-    store.reload();if(sameNavigation())go('card');
+    store.reload();if(sameNavigation())go('card');notify('沟通卡已更新，可以继续编辑。');
   } catch(error){
+    cardErrorRunId=error.run_id||null;
+    store.reload();
+    if(['POLL_TIMEOUT','REQUEST_TIMEOUT'].includes(error.code)&&d().cardRegenerationPending){cardError='';notify('沟通卡仍在整理，完成后会自动更新。');return;}
     cardError=({NO_VISIT_CONVERSATION:'请先在首页和助手聊聊本次就诊情况，再生成沟通卡。',NO_CARD:'还没有沟通卡，请先在首页整理本次就诊情况。',CONVERSATION_NOT_READY:'请等待本次对话回复完成，再生成沟通卡。',SOURCE_DELETED:'原来的对话或资料已删除，请在首页重新描述本次情况后生成。',NOT_FOUND:'原来的对话或资料已不存在，请在首页重新描述本次情况后生成。',CONSENT_REQUIRED:'请先在设置中授权健康记录整理，再生成沟通卡。'})[error.code]||'沟通卡暂时未生成成功，对话和已有卡片已保留。请重试。';
     notify(cardError);
   }
@@ -536,15 +548,18 @@ async function action(name, el) {
     case 'back': return back();
     case 'return-parent': return go(route.page, route.page === 'timeline' && ['upload', 'medicalReview', 'parsing'].includes(route.view) ? 'medical' : '');
     case 'new-chat': d().activeSessionId = null; drafts.ask = ''; inputMode = 'ask'; save(); return go('home', 'chat');
-    case 'mode-ask': case 'mode-record': inputMode = name === 'mode-ask' ? 'ask' : 'record'; render(); return document.querySelector('#message-input')?.focus();
+    case 'mode-ask': case 'mode-record': inputMode = 'ask'; render(); return document.querySelector('#message-input')?.focus();
+    case 'model-config': return location.assign('/setup/?return=mobile');
     case 'logout': return native.client.logout();
     case 'send': return submitMessage();
+    case 'retry-chat-action': {if(actionRetries.has(value))return;actionRetries.add(value);render();try{await native.retryAssistantAction(value);}catch(error){notify('这次整理仍未完成，原来的对话已保留。请稍后重试。');}finally{actionRetries.delete(value);store.reload();render();}return;}
     case 'retry-chat': return sendChat(true);
     case 'suggest': inputMode = 'ask'; drafts.ask = '饭后总腹胀，偶尔反酸，去医院前该准备什么？'; return sendChat();
     case 'start-card-chat': return startCardChat();
-    case 'message-visit': case 'prepare': return generateCard(value||activeChat()?.id);
+    case 'view-chat-card': d().selectedCardResultId=value;save();store.reload();return go('card');
+    case 'message-visit': case 'prepare': return startCardChat();
     case 'message-timeline': case 'health-tab': return go('timeline');
-    case 'message-home': case 'record-change': d().activeSessionId=null;save();inputMode='record';return go('home','chat');
+    case 'message-home': case 'record-change': d().activeSessionId=null;save();inputMode='ask';return go('home','chat');
     case 'conversations': return go('home', 'conversations');
     case 'clear-search': conversationQuery = ''; render(); return document.querySelector('[name="search"]')?.focus();
     case 'conversation': return go('home', 'conversation', value);
@@ -592,13 +607,13 @@ async function action(name, el) {
     case 'reference': return go('home', 'reference');
     case 'generate-card': return generateCard(value||activeChat()?.id);
     case 'regenerate-card': return generateCard(null,true);
-    case 'edit-card': cardError='';drafts.cardResultId=d().cardResultId;drafts.cardEditRevision=d().cardEditRevision??0;drafts.speech=store.speech();drafts.questions=d().questions.join('\n');return go('card','editCard');
+    case 'edit-card': cardError='';drafts.cardResultId=d().cardResultId;drafts.cardEditRevision=d().cardEditRevision??0;drafts.speech=store.speech();drafts.questions=d().questions.join('\n');drafts.unknowns=(d().cardUnknowns||[]).join('\n');return go('card','editCard');
     case 'save-card': {
       if(cardSaveBusy)return;
       if(drafts.cardResultId!==d().cardResultId)return notify('沟通卡版本已变化，请重新打开编辑后保存。');
       if(!drafts.speech?.trim())return notify('请填写表达稿后保存。');
       const sameNavigation=captureNavigation();cardSaveBusy=true;cardError='';render();
-      try{await native.saveCardEdit(drafts.cardResultId,drafts.speech.trim(),(drafts.questions||'').split('\n').map(q=>q.trim()).filter(Boolean),drafts.cardEditRevision);store.reload();if(sameNavigation())go('card');notify('沟通卡修改已保存。');}
+      try{await native.saveCardEdit(drafts.cardResultId,drafts.speech.trim(),(drafts.questions||'').split('\n').map(q=>q.trim()).filter(Boolean),drafts.cardEditRevision,(drafts.unknowns||'').split('\n').map(value=>value.trim()).filter(Boolean));store.reload();if(sameNavigation())go('card');notify('沟通卡修改已保存。');}
       catch(error){cardError=error.code==='REVISION_CONFLICT'?'这张卡已被更新。你的修改仍保留，请重新打开最新版本后再保存。':error.message||'保存失败，修改仍保留。';throw error;}
       finally{cardSaveBusy=false;render();}
       return;
@@ -653,7 +668,7 @@ document.addEventListener('input', event => {
   if (el.name === 'message') drafts[inputMode] = el.value;
   else if (el.name === 'search') { conversationQuery = el.value; render(); }
   else if (['currentConcern', 'impact', 'visitStartDate'].includes(el.name)) { d()[el.name] = el.value; save(); }
-  else if (['reviewDescription', 'reviewDate', 'editDate', 'editReason', 'editText', 'speech', 'questions', 'transcript', 'medicalText'].includes(el.name)) drafts[el.name] = el.value;
+  else if (['reviewDescription', 'reviewDate', 'editDate', 'editReason', 'editText', 'speech', 'questions', 'unknowns', 'transcript', 'medicalText'].includes(el.name)) drafts[el.name] = el.value;
 });
 document.addEventListener('change', event => {
   const el = event.target;
@@ -689,7 +704,7 @@ history.replaceState(history.state, '', location.hash || '#home');
 render();
 
 window.addEventListener('healththread:state', async () => {
-  store.reload();render();
+  store.reload();reconcileCardCompletion();render();
   const view=route.view,routeAtStart=routeKey(route),medical=view==='medicalReview';
   if(!['review','medicalReview'].includes(view)||confirmBusy)return;
   const item=medical?d().medical:activeRecord();if(capturedReview(item,medical))return;

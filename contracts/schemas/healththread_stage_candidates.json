@@ -51,12 +51,43 @@
               "过敏"
             ]
           }
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 20000,
+          "description": "Natural summary of supported current patient details, retaining uncertainty and corrections. Does not replace exact candidate evidence or assert medical verification.",
+          "minLength": 1
         }
       },
       "required": [
         "questions",
         "missing_fields"
       ]
+    },
+    "record_source_refs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 100,
+      "description": "Natural record only: select currently valid health sentences from authorized indexed_sentences. Send candidates:[] and a nonempty record_dialogue.summary. Server derives exact evidence and metadata; never mix with manual candidates.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sentence_index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "source_id",
+          "sentence_index"
+        ]
+      }
     }
   },
   "required": [
@@ -246,5 +277,29 @@
       ],
       "description": "All evidence quotes must exactly equal this candidate value; field/assertion/temporal_scope/effective_time are validated solely against that rendered value. Unrelated auxiliary evidence is rejected."
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "record_source_refs"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidates": {
+            "maxItems": 0
+          },
+          "record_dialogue": {
+            "required": [
+              "summary"
+            ]
+          }
+        },
+        "required": [
+          "record_dialogue"
+        ]
+      }
+    }
+  ]
 }

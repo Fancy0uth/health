@@ -50,5 +50,16 @@ test('retrying a failed chat preserves its durable conversation identity',t=>{
  store.failRun(first.run_id,'DEPENDENCY_UNAVAILABLE');
  const retry=store.retry(uid,first.run_id,'audit-chat-retry-001');
  assert.equal(store.get(uid,'run',retry.run_id).conversation_id,first.conversation_id);
- assert.equal(store.timeline(uid).entries.length,1);
+ assert.equal(store.timeline(uid).entries.length,0);
+ assert.equal(store.get(uid,'source',first.source_id).text,'头痛。');
+});
+
+test('ordinary symptom frequency questions do not reject a simple record, while treatment instructions remain rejected',t=>{
+ const {store,uid}=fixture(t);
+ const accepted=store.acceptRecordTurn(uid,{text:'我现在肚子有点不舒服'},'simple-abdomen-record');store.claimRun(accepted.run_id);
+ const tools=store.toolsFor(accepted.run_id),read=tools.healththread_read_source({source_id:accepted.source_id});const context=tools.healththread_retrieve_context({source_ids:[]});
+ const base={base_profile_revision:context.snapshot_revision,operation_key:'simple-abdomen-stage',candidates:[{field:'symptom',value:read.source.text,assertion:'affirmed',temporal_scope:'current',effective_time:literalSourceTime(read.source.text,read.source.id),evidence:read.sentence_spans,proposal_kind:'new'}]};
+ for(const q of ['请服两片药好吗？','可以先观察三天再就诊吗？','建议每天用药一次好吗？'])assert.throws(()=>tools.healththread_stage_candidates({...base,record_dialogue:{questions:[q],missing_fields:['频率']}}),e=>e.code==='INVALID_AGENT_OUTPUT'&&e.details?.path==='record_dialogue.questions');
+ const staged=tools.healththread_stage_candidates({...base,record_dialogue:{questions:['这种情况是偶尔一次，还是最近反复出现？','不舒服一天出现几次？','每次不适会持续一天还是几分钟？'],missing_fields:['频率','持续时间']}});
+ assert.ok(staged.fact_change_id);assert.equal(store.recordThreads(uid)[0].summaries.at(-1).questions.length,3);assert.equal(store.profile(uid).facts.length,0);
 });

@@ -154,9 +154,9 @@ test('correction provenance remains readable when its source is omitted from tim
   assert.match(p.root.innerHTML,/Immutable correction original/);assert.doesNotMatch(p.root.innerHTML,/原始记录已不可查看/);assert.doesNotMatch(p.root.innerHTML,/data-act="correct"|data-act="record"/);
 });
 
-test('home offers one conversation generation action regardless of how many replies prepare a visit',()=>{
+test('home keeps preparation replies conversational without a generation action',()=>{
   const p=page();p.data.sessions=[{id:'chat-one',title:'Chat',updatedAt:'2026-10-13',messages:[{role:'user',text:'question'},{role:'assistant',text:'reply',action:'visit'},{role:'user',text:'followup'},{role:'assistant',text:'another reply',action:'visit'}]}];p.data.activeSessionId='chat-one';p.run('render()');
-  assert.match(p.root.innerHTML,/<button[^>]*data-act="generate-card"[^>]*data-id="chat-one"/);assert.equal((p.root.innerHTML.match(/>生成医生沟通卡<\/button>/g)||[]).length,1);assert.doesNotMatch(p.root.innerHTML,/data-act="go-visit"/);
+  assert.doesNotMatch(p.root.innerHTML,/data-act="generate-card"/);assert.doesNotMatch(p.root.innerHTML,/data-act="go-visit"/);
 });
 test('empty card returns to home asking mode without a visit form',async()=>{
   const p=page();p.run("inputMode='record';open('card')");assert.match(p.root.innerHTML,/回到首页准备就诊/);await p.run("doAction('start-visit',{dataset:{}})");assert.equal(p.run('page'),'home');assert.equal(p.run('subview'),'');assert.equal(p.run('inputMode'),'ask');
@@ -167,7 +167,7 @@ test('regeneration uses the canonical saved card context and blocks duplicate cl
 });
 test('card save persists speech questions and captured revision through the shared API',async()=>{
   const p=page();Object.assign(p.data,{cardVersion:1,cardResultId:'card',cardDraft:'speech',cardRecords:[],questions:['question'],cardEditRevision:3});p.run("native.saveCardEdit=async(...args)=>{globalThis.savedCard=args}");await p.run("doAction('edit-card',{dataset:{}})");p.input({id:'card-draft',value:'new speech',dataset:{}});p.input({id:'card-questions',value:'new question',dataset:{}});await p.run("doAction('save-card',{dataset:{}})");
-  assert.equal(JSON.stringify(p.run('savedCard')),JSON.stringify(['card','new speech',['new question'],3]));
+  assert.equal(JSON.stringify(p.run('savedCard')),JSON.stringify(['card','new speech',['new question'],3,[]]));
 });
 test('failed durable save keeps the edited card text visible for reconciliation',async()=>{
   const p=page();Object.assign(p.data,{cardVersion:1,cardResultId:'card',cardDraft:'speech',cardRecords:[],questions:[],cardEditRevision:2});p.run("native.saveCardEdit=async()=>{throw Object.assign(new Error('conflict'),{code:'REVISION_CONFLICT'})}");await p.run("doAction('edit-card',{dataset:{}})");p.input({id:'card-draft',value:'keep my edit',dataset:{}});await p.run("doAction('save-card',{dataset:{}})");assert.equal(p.run('subview'),'editCard');assert.match(p.root.innerHTML,/keep my edit/);assert.match(p.root.innerHTML,/版本|其他|变化/);
@@ -186,4 +186,47 @@ test('generation failure remains visible in the originating conversation history
 });
 for(const [code,expected] of [['NO_VISIT_CONVERSATION',/请先在首页/],['CONVERSATION_NOT_READY',/等待.*回复/],['NO_CARD',/还没有沟通卡/],['CONSENT_REQUIRED',/设置.*授权/]])test(`card generation explains ${code} with actionable guidance`,async()=>{
   const p=page();p.data.activeSessionId='chat';p.run(`native.generateVisit=async()=>{throw Object.assign(new Error('failure'),{code:'${code}'})}`);await p.run("doAction('generate-card',{dataset:{id:'chat'}})");assert.match(p.run('cardError'),expected);assert.doesNotMatch(p.run('cardError'),new RegExp(code));
+});
+
+test('chat and history offer no generation button and show a small card link only for completed output',()=>{
+  const p=page();p.run("executionLabel=()=>''");p.data.sessions=[{id:'chat',title:'聊天',updatedAt:'2026-10-13',messages:[{role:'user',text:'你好'},{role:'assistant',text:'你好',action:'visit'}]}];p.data.activeSessionId='chat';p.run('render()');
+  assert.doesNotMatch(p.root.innerHTML,/data-act="generate-card"/);
+  p.run("selectedSessionId='chat';openSubview('conversations')");assert.doesNotMatch(p.root.innerHTML,/data-act="generate-card"/);
+  p.data.sessions[0].messages.push({role:'assistant',text:'沟通卡已生成。',action:'card',visit_result_id:'card-1'});p.run("open('home')");
+  assert.match(p.root.innerHTML,/查看沟通卡/);assert.match(p.root.innerHTML,/data-act="view-chat-card"[^>]*data-id="card-1"/);
+});
+test('restored regeneration stays busy and cannot submit a duplicate on desktop',async()=>{
+  const p=page();Object.assign(p.data,{cardVersion:1,cardDraft:'已保存卡片',cardRecords:[],questions:[],cardRegenerationPending:true});p.run("open('card');let submissions=0;native.regenerateVisit=async()=>{submissions++}");
+  assert.match(p.root.innerHTML,/<button[^>]*data-act="regenerate-card"[^>]*disabled/);assert.match(p.root.innerHTML,/正在生成医生沟通卡/);
+  await p.run("doAction('regenerate-card',{dataset:{}})");assert.equal(p.run('submissions'),0);
+});
+
+test('desktop main composer and record-new-change route always use natural chat',async()=>{
+ const p=page();assert.doesNotMatch(p.root.innerHTML,/data-act="mode-record"/);
+ await p.run("doAction('record-new-change',{dataset:{}})");
+ p.run("chatDraft='有点不舒服';sendChat=()=> 'chat';saveRecord=()=> 'record'");assert.equal(p.run('submitHomeInput()'),'chat');
+});
+
+test('desktop authorized child retries are quiet independent actions and cannot double submit',async()=>{
+ const p=page();p.data.sessions=[{id:'chat',messages:[{role:'assistant',text:'整理未完成',visit_retry_run_id:'visit',record_retry_run_id:'record'}]}];p.data.activeSessionId='chat';p.run('render()');assert.match(p.root.innerHTML,/重试整理记录/);assert.match(p.root.innerHTML,/重试生成沟通卡/);
+ p.run("let finishAction;let childCalls=0;native.retryAssistantAction=()=>{childCalls++;return new Promise(resolve=>finishAction=resolve)}");const pending=p.run("doAction('retry-chat-action',{dataset:{id:'record'}})");await p.run("doAction('retry-chat-action',{dataset:{id:'record'}})");assert.equal(p.run('childCalls'),1);p.run('finishAction()');await pending;assert.equal(p.run('page'),'home');
+});
+
+test('desktop card lists unique provenance links without repeating assembled or individual transcripts',()=>{
+ const p=page();Object.assign(p.data,{cardVersion:1,cardDraft:'自然就诊摘要',questions:[],cardSourceId:'assembled',cardRecords:[{id:'assembled',text:'完整拼接对话和生成指令',source:'用户自述'},{id:'turn',text:'单轮原话和工作流命令',source:'用户自述'},{id:'turn',text:'重复依赖'}]});p.run("open('card')");assert.match(p.root.innerHTML,/自然就诊摘要/);assert.doesNotMatch(p.root.innerHTML,/完整拼接对话|单轮原话|重复依赖/);assert.match(p.root.innerHTML,/2 份来源/);assert.equal((p.root.innerHTML.match(/data-act="source" data-id="turn"/g)||[]).length,1);
+});
+test('desktop network errors use a readable notification',()=>{const p=page();p.run("flash('Failed to fetch')");assert.doesNotMatch(p.root.innerHTML,/Failed to fetch/);assert.match(p.root.innerHTML,/连接|网络/);});
+
+test('desktop record details lead with the saved summary and keep full raw text behind source',async()=>{
+ const p=page();p.data.records=[{id:'saved',text:'完整原话和保存指令',summary:'这三天主要是饭后腹胀。',status:'pending',analysis:'complete'}];await p.run("doAction('record',{dataset:{id:'saved'}})");assert.match(p.root.innerHTML,/这三天主要是饭后腹胀/);assert.doesNotMatch(p.root.innerHTML,/完整原话和保存指令/);assert.match(p.root.innerHTML,/查看来源/);
+ await p.run("doAction('source',{dataset:{id:'saved'}})");assert.match(p.root.innerHTML,/完整原话和保存指令/);
+});
+
+test('desktop late card completion clears its error only after receipt verification',async()=>{
+ const p=page();p.run("cardError='沟通卡暂时未生成成功';cardErrorRunId='late';native.client.state.runs.late={id:'late',status:'completed',result_id:'card'};native.client.state.results=[{id:'card'}]");await p.sync();assert.match(p.run('cardError'),/未生成成功/);
+ p.run("native.client.state.runs.late.runtime={mode:'real'}");await p.sync();assert.equal(p.run('cardError'),'');
+});
+
+test('desktop card editor allows correcting and clearing remaining items',async()=>{
+ const p=page();Object.assign(p.data,{cardVersion:1,cardResultId:'card',cardDraft:'正文',questions:[],cardUnknowns:['矛盾的待补充项']});p.run("native.saveCardEdit=async(...args)=>{globalThis.savedCard=args}");await p.run("doAction('edit-card',{dataset:{}})");assert.match(p.root.innerHTML,/还需补充（每行一项）/);p.input({id:'card-unknowns',value:'',dataset:{}});await p.run("doAction('save-card',{dataset:{}})");assert.equal(JSON.stringify(p.run('savedCard[4]')),'[]');
 });

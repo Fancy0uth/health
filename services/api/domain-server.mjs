@@ -2,7 +2,7 @@ import http from 'node:http';
 import {readFile,realpath} from 'node:fs/promises';
 import {resolve,sep,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,timingSafeEqual,createHash} from 'node:crypto';
 import {DomainStore} from './domain-store.mjs';
 import {DispatchQueue} from './domain-jobs.mjs';
 import {check,fail,errorBody,LIMITS} from './domain-errors.mjs';
@@ -18,26 +18,36 @@ function origin(req){let value;try{value=new URL(req.headers.origin);}catch{fail
 const tokenFrom=req=>req.headers.cookie?.split(';').map(x=>x.trim()).find(x=>x.startsWith('ht_session='))?.slice('ht_session='.length);
 const pick=(value,fields)=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value,key)).map(key=>[key,value[key]]));
 const publicOperation=value=>{const {owner,...out}=value;return out;};
-function publicRun(store,uid,run){return{...pick(run,['id','workflow','record_thread_id','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
+function publicRun(store,uid,run){return{...pick(run,['id','workflow','record_thread_id','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','continuation_run_id','continuation_record_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
 const publicDocument=value=>pick(value,['id','source_id','name','media_type','byte_size','content_hash','extraction_status','pages']);
 function listQuery(url,run){const allowed=run?['limit','before','source_id','status']:['limit','before'];check([...url.searchParams.keys()].every(k=>allowed.includes(k))&&new Set(url.searchParams.keys()).size===[...url.searchParams.keys()].length);return Object.fromEntries(url.searchParams);}
-export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/healththread-domain.sqlite'),agent=null,agentFactory=null,demoAccounts=[],limits={}}={}){
+export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/healththread-domain.sqlite'),agent=null,agentFactory=null,demoAccounts=[],limits={},modelConfiguration=null,modelConfigOwnerUsername=null,launchCredentials=null,instanceId=null}={}){
  const configured={...LIMITS,...limits};const store=new DomainStore({dbPath,demoAccounts,limits:configured});agent=agentFactory?agentFactory(store):agent;const jobs=new DispatchQueue(store,agent,{limits:configured});const attempts=new Map();
  const capabilities=()=>({api_version:1,analysis:{status:agent&&['fixture','real'].includes(agent.mode)?'enabled':'not_configured',mode:agent?.mode||null},pdf_text:{status:pdfAvailable()?'enabled':'not_configured'},voice:{status:'unsupported'},audio:{status:'unsupported'},ocr:{status:'unsupported'},department:{status:'not_configured',decision:'D01'},triage:{status:'not_configured',decision:'D02'},limits:{text_bytes:configured.textBytes,upload_bytes:configured.uploadBytes,pdf_pages:configured.pdfPages}});
  const server=http.createServer(async(req,res)=>{const requestId=randomUUID();try{
   const url=new URL(req.url,'http://localhost'),path=decodeURIComponent(url.pathname);const method=req.method;
   if(path.startsWith('/api/')){
    if(!['GET','HEAD'].includes(method))origin(req);
-   if(path==='/api/health'&&method==='GET')return json(res,200,{ok:true,storage:'sqlite',dispatch:jobs.status(),capabilities:capabilities()});
+   if(path==='/api/health'&&method==='GET')return json(res,200,{ok:true,...(instanceId?{instance_id:instanceId}:{}),storage:'sqlite',dispatch:jobs.status(),capabilities:capabilities()});
    if(path==='/api/capabilities'&&method==='GET')return json(res,200,capabilities());
-   if(path==='/api/auth/login'&&method==='POST'){
-    const now=Date.now();for(const [k,v]of attempts)if(now-v.start>configured.loginWindowMs)attempts.delete(k);const address=req.socket.remoteAddress||'unknown';const record=attempts.get(address)||{start:now,count:0};check(record.count<configured.loginAttempts,'RATE_LIMITED',429);record.count++;attempts.set(address,record);const b=await jsonBody(req,configured);const result=store.login(b.username,b.password);const {token,...publicResult}=result;res.healththreadEpoch=()=>epochHeaders(store.user(result.user.id));return json(res,200,publicResult,{'Set-Cookie':`ht_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(configured.sessionTtlMs/1000)}${req.socket.encrypted?'; Secure':''}`});
+   if((path==='/api/auth/login'||path==='/api/auth/launch')&&method==='POST'){
+    const now=Date.now();for(const [k,v]of attempts)if(now-v.start>configured.loginWindowMs)attempts.delete(k);const address=req.socket.remoteAddress||'unknown';const record=attempts.get(address)||{start:now,count:0};check(record.count<configured.loginAttempts,'RATE_LIMITED',429);record.count++;attempts.set(address,record);const b=await jsonBody(req,configured);if(path==='/api/auth/launch'){check(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress),'ORIGIN_DENIED',403);check(launchCredentials&&typeof b.token==='string'&&timingSafeEqual(createHash('sha256').update(b.token).digest(),createHash('sha256').update(launchCredentials.token).digest()),'LAUNCH_DENIED',403);}const result=path==='/api/auth/launch'?store.login(launchCredentials.username,launchCredentials.password):store.login(b.username,b.password);const {token,...publicResult}=result;res.healththreadEpoch=()=>epochHeaders(store.user(result.user.id));return json(res,200,publicResult,{'Set-Cookie':`ht_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(configured.sessionTtlMs/1000)}${req.socket.encrypted?'; Secure':''}`});
    }
    const token=tokenFrom(req),session=store.session(token);if(session)res.healththreadEpoch=()=>epochHeaders(store.user(session.user.id));
    if(path==='/api/me'&&method==='GET')return json(res,200,session||{user:null,csrf_token:null,profile_revision:null,scope_epoch:null,all_clear_epoch:null});
    check(session,'AUTH_REQUIRED',401);const uid=session.user.id;
    if(!['GET','HEAD'].includes(method))check(req.headers['x-csrf-token']===session.csrf_token,'CSRF_DENIED',403);
    if(path==='/api/auth/logout'&&method==='POST'){store.logout(token);return json(res,200,{logged_out:true},{'Set-Cookie':'ht_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'});}
+   if(path==='/api/model-config'||path.startsWith('/api/model-config/')){
+    const canManage=!!modelConfiguration&&!!modelConfigOwnerUsername&&session.user.username===modelConfigOwnerUsername;
+    if(path==='/api/model-config'&&method==='GET')return json(res,200,{...(modelConfiguration?await modelConfiguration.getStatus():{configured:false,model:null,revision:0,runtime_status:'unavailable'}),can_manage:canManage});
+    check(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress),'ORIGIN_DENIED',403);check(canManage,'CONFIG_OWNER_REQUIRED',403);
+    if(path==='/api/model-config/test'&&method==='POST')return json(res,200,await modelConfiguration.test(uid,await jsonBody(req,configured)));
+    if(path==='/api/model-config/save'&&method==='POST'){const result=await modelConfiguration.save(uid,await jsonBody(req,configured),()=>jobs.running.size>0||store.all('dispatch').some(d=>d.state==='queued'));return json(res,200,{...result,can_manage:true});}
+    fail(404,'NOT_FOUND');
+   }
+   const ensureConfigIdle=()=>check(!modelConfiguration?.isSwitching,'CONFIG_BUSY',409);
+   if(!['GET','HEAD'].includes(method))ensureConfigIdle();
    const expectedEpoch=['GET','HEAD'].includes(method)?undefined:requestEpoch(req);
    if(path==='/api/state'&&method==='PUT')fail(405,'METHOD_NOT_ALLOWED','正式资料只能通过核对事务更新。');
    if(path==='/api/state'&&method==='GET'){const p=store.profile(uid);return json(res,200,{revision:p.profile_revision,state:{recordThreads:store.recordThreads(uid),records:store.timeline(uid).entries.map(e=>({id:e.source_id,text:e.source.text,date:null,status:'saved'})),facts:p.facts,pending_changes:p.pending_changes,sessions:[],consent:store.consent(uid),medical:null,cardRecords:store.all('result',uid),tasks:store.careTasks(uid).tasks}});}
@@ -50,7 +60,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    if(path==='/api/consents'&&method==='PATCH'){const result=store.setConsent(uid,await jsonBody(req,configured),expectedEpoch);for(const [rid]of jobs.running)if(store.internalRun(rid).owner===uid)jobs.cancel(rid);return json(res,200,result);}
    if(path==='/api/export'&&method==='GET')return json(res,200,store.exportData(uid),{'Content-Disposition':'attachment; filename="healththread-export.json"'});
    const key=req.headers['idempotency-key'];
-   if(path==='/api/record-turns'&&method==='POST'){const accepted=store.acceptRecordTurn(uid,await jsonBody(req,configured),key,expectedEpoch);jobs.kick();return json(res,202,accepted);}
+   if(path==='/api/record-turns'&&method==='POST'){const body=await jsonBody(req,configured);ensureConfigIdle();const accepted=store.acceptRecordTurn(uid,body,key,expectedEpoch);jobs.kick();return json(res,202,accepted);}
    if(['/api/entries','/api/documents','/api/visit-preparations','/api/health-record','/api/medical-document','/api/health-assistant'].includes(path)&&method==='POST'){
     const workflow=['/api/documents','/api/medical-document'].includes(path)?'document':path==='/api/health-assistant'?'chat':path==='/api/visit-preparations'?'visit':'entry';let input,document=null;
     store.requireConsent(uid);
@@ -59,15 +69,15 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
     }else input=await jsonBody(req,configured);
     if(path==='/api/health-assistant')input={question:input.question,selected_source_ids:input.selected_source_ids||[]};
     if(input.input_kind!==undefined)check(input.input_kind==='self_report'||(workflow==='document'&&input.input_kind==='pasted_document'));
-    const accepted=store.accept(uid,workflow,input,key,document,expectedEpoch);jobs.kick();return json(res,202,accepted);
+    ensureConfigIdle();const accepted=store.accept(uid,workflow,input,key,document,expectedEpoch);jobs.kick();return json(res,202,accepted);
    }
    let match=path.match(/^\/api\/(sources|runs|results|fact-changes|operations)\/([^/]+)$/);
    if(match&&method==='GET'){const [,collection,objectId]=match;const type={sources:'source',runs:'run',results:'result','fact-changes':'fact_change',operations:'operation'}[collection];let value;try{value=store.get(uid,type,objectId);}catch(e){if(type!=='operation'||e.code!=='NOT_FOUND')throw e;value=store.get(uid,'deletion_job',objectId);}if(type==='fact_change')value={...value,review_revision:store.user(uid).revision,sources:value.source_ids.map(s=>store.get(uid,'source',s))};if(type==='run')value=publicRun(store,uid,value);return json(res,200,value);}
    match=path.match(/^\/api\/results\/([^/]+)\/edit$/);if(match&&method==='POST')return json(res,200,store.editVisit(uid,match[1],await jsonBody(req,configured),key,expectedEpoch));
-   match=path.match(/^\/api\/fact-changes\/([^/]+)\/(confirm|reject)$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);const result=match[2]==='confirm'?store.confirm(uid,match[1],body,key,expectedEpoch):store.reject(uid,match[1],body,key,expectedEpoch);jobs.kick();return json(res,200,result);}
+   match=path.match(/^\/api\/fact-changes\/([^/]+)\/(confirm|reject)$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);ensureConfigIdle();const result=match[2]==='confirm'?store.confirm(uid,match[1],body,key,expectedEpoch):store.reject(uid,match[1],body,key,expectedEpoch);jobs.kick();return json(res,200,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/cancel$/);if(match&&method==='POST'){const result=store.cancel(uid,match[1],expectedEpoch);jobs.cancel(match[1]);return json(res,200,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/retry$/);if(match&&method==='POST'){const result=store.retry(uid,match[1],key,expectedEpoch);jobs.kick();return json(res,202,result);}
-   match=path.match(/^\/api\/runs\/([^/]+)\/reanalyse$/);if(match&&method==='POST'){const result=store.reanalyse(uid,match[1],await jsonBody(req,configured),key,expectedEpoch);jobs.cancel(match[1]);jobs.kick();return json(res,202,result);}
+   match=path.match(/^\/api\/runs\/([^/]+)\/reanalyse$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);ensureConfigIdle();const result=store.reanalyse(uid,match[1],body,key,expectedEpoch);jobs.cancel(match[1]);jobs.kick();return json(res,202,result);}
    match=path.match(/^\/api\/facts\/([^/]+)\/change-requests$/);if(match&&method==='POST')return json(res,202,store.changeRequest(uid,match[1],await jsonBody(req,configured),key,expectedEpoch));
    match=path.match(/^\/api\/care-tasks\/([^/]+)$/);if(match&&method==='PATCH')return json(res,200,store.updateTask(uid,match[1],await jsonBody(req,configured),expectedEpoch));
    match=path.match(/^\/api\/data\/(all|[^/]+)$/);if(match&&method==='DELETE'){const result=store.deleteData(uid,match[1],key,expectedEpoch);for(const [rid]of jobs.running)if(store.internalRun(rid).owner===uid)jobs.cancel(rid);return json(res,202,result);}
@@ -76,7 +86,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
   check(['GET','HEAD'].includes(method),'METHOD_NOT_ALLOWED',405);
   if(path==='/'){res.writeHead(302,{Location:'/web/'});return res.end();}
   if(path==='/runtime-config.js'&&method==='GET'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end("window.HEALTHTHREAD_CONFIG={storageMode:'domain'};window.HEALTHTHREAD_API_URL='/api/health-assistant';window.HEALTHTHREAD_RECORD_URL='/api/health-record';window.HEALTHTHREAD_PARSE_URL='/api/medical-document';");}
-  const mounts=[['/web/',resolve(root,'apps/web')],['/mobile/',resolve(root,'apps/mobile')],['/packages/client/',resolve(root,'packages/client')]];const mount=mounts.find(([prefix])=>path.startsWith(prefix));check(mount,'NOT_FOUND',404);const relative=path.slice(mount[0].length)||'index.html';check(!relative.includes('\0')&&!relative.split('/').some(p=>p.startsWith('.')),'PATH_DENIED',403);let file;try{file=await realpath(resolve(mount[1],relative));}catch{fail(404,'NOT_FOUND');}check(file.startsWith(await realpath(mount[1])+sep),'PATH_DENIED',403);check(mime[extname(file)],'NOT_FOUND',404);const bytes=await readFile(file);res.writeHead(200,{'Content-Type':mime[extname(file)],'X-Content-Type-Options':'nosniff','Cache-Control':'no-cache'});res.end(method==='HEAD'?undefined:bytes);
+  const mounts=[['/setup/',resolve(root,'apps/setup')],['/web/',resolve(root,'apps/web')],['/mobile/',resolve(root,'apps/mobile')],['/packages/client/',resolve(root,'packages/client')]];const mount=mounts.find(([prefix])=>path.startsWith(prefix));check(mount,'NOT_FOUND',404);const relative=path.slice(mount[0].length)||'index.html';check(!relative.includes('\0')&&!relative.split('/').some(p=>p.startsWith('.')),'PATH_DENIED',403);let file;try{file=await realpath(resolve(mount[1],relative));}catch{fail(404,'NOT_FOUND');}check(file.startsWith(await realpath(mount[1])+sep),'PATH_DENIED',403);check(mime[extname(file)],'NOT_FOUND',404);const bytes=await readFile(file);res.writeHead(200,{'Content-Type':mime[extname(file)],'X-Content-Type-Options':'nosniff','Cache-Control':'no-cache'});res.end(method==='HEAD'?undefined:bytes);
  }catch(error){if(!error.status)console.error(JSON.stringify({request_id:requestId,code:'INTERNAL_ERROR',phase:'request'}));if(!res.headersSent)json(res,error.status||500,errorBody(error,'request',requestId),error.status===429?{'Retry-After':'60'}:{});else res.end();}});
- return {server,store,jobs,listen:(port=4173,host='127.0.0.1')=>new Promise((resolveListen,reject)=>{server.once('error',reject);server.listen(port,host,()=>{server.off('error',reject);resolveListen();});}),async close(){await jobs.close();server.closeAllConnections();if(server.listening)await new Promise(done=>server.close(done));store.close();}};
+ return {server,store,jobs,listen:(port=4173,host='127.0.0.1')=>new Promise((resolveListen,reject)=>{server.once('error',reject);server.listen(port,host,()=>{server.off('error',reject);resolveListen();});}),async close(){await jobs.close();await modelConfiguration?.close();server.closeAllConnections();if(server.listening)await new Promise(done=>server.close(done));store.close();}};
 }

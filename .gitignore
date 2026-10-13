@@ -12,3 +12,6 @@ preview/
 visit-prep-concept-video/
 
 .superpowers/
+
+# Self-contained judge releases
+dist/

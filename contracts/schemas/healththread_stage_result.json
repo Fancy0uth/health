@@ -225,7 +225,7 @@
         "fact_refs",
         "evidence"
       ],
-      "description": "Every cited source quote and fact value must equal the rendered claim text. A visit must render at least one claim supported directly by the current concern source."
+      "description": "Every submitted source quote and fact value must equal the evidence claim text. Granular claims are optional for v2 chat and visit; the server preserves authorized source links. V2 visible reply or visit speech is a separate natural synthesis. Legacy visit evidence requirements remain unchanged."
     },
     "visit_payload": {
       "type": "object",
@@ -259,7 +259,12 @@
             "$ref": "#/$defs/claim"
           },
           "minItems": 0,
-          "maxItems": 100
+          "maxItems": 100,
+          "description": "For format_version:2 default to []; authorized source links are server-owned. Optional granular claims still require exact source evidence. Do not drop format_version during repairs."
+        },
+        "format_version": {
+          "const": 2,
+          "description": "Natural patient-facing format. Omit for legacy payloads."
         }
       },
       "required": [
@@ -357,9 +362,42 @@
             "greeting",
             "clarify",
             "prepare",
+            "offer_visit",
+            "confirm_visit",
+            "offer_record",
+            "confirm_record",
+            "offer_both",
+            "confirm_both",
             "records",
             "scope"
-          ]
+          ],
+          "description": "offer_* means the assistant is asking the user for execution permission. Asking for permission always uses offer_*, never confirm_*. confirm_* means the current user explicitly authorized execution of a matching still-pending prior offer. If pending_action_offer is absent/null, use offer_* for an action request. Refused, deferred or superseded offers cannot authorize execution. Interpret meaning, not keywords such as confirm or yes."
+        },
+        "format_version": {
+          "const": 2,
+          "description": "Natural patient-facing format. Omit for legacy payloads."
+        },
+        "reply": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000,
+          "description": "The complete natural assistant turn, including any focused questions. Evidence metadata is not the visible reply."
+        },
+        "confirmation_quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000,
+          "description": "Only for confirm_*: exact full current user text explicitly granting execution permission for the current pending_action_offer. Asking the assistant to confirm or agreeing with a symptom summary is not execution consent. Omit for offer_*."
+        },
+        "confirmation_offer_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Only for confirm_*: copy the existing matching pending_action_offer.run_id exactly. Never invent an id or use an empty string. If no pending offer exists, choose offer_* and omit all confirmation fields; do not recover a refused or expired offer from history."
+        },
+        "confirmation_has_new_details": {
+          "type": "boolean",
+          "description": "False only when the consenting user turn contains no new health details or corrections; omitted means retain the source."
         }
       },
       "required": [
@@ -368,6 +406,43 @@
         "unknowns",
         "claims",
         "intent"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "format_version"
+            ]
+          },
+          "then": {
+            "required": [
+              "reply"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "format_version",
+              "intent"
+            ],
+            "properties": {
+              "intent": {
+                "enum": [
+                  "confirm_visit",
+                  "confirm_record",
+                  "confirm_both"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "confirmation_quote",
+              "confirmation_offer_id"
+            ]
+          }
+        }
       ]
     }
   }

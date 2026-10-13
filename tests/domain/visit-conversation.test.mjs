@@ -80,3 +80,15 @@ test('visit repair diagnostics identify primary concern evidence and missing sou
  const saved=tools.healththread_stage_result({kind:'visit_preparation',payload,dependencies:[{source_id:card.source_id,source_text_version:1}],operation_key:'diagnostic-stage-001'});
  assert.ok(saved.result_id);
 });
+
+test('question safety rejection identifies questions and preserves source duration through a local repair',t=>{
+ const {s,a}=fixture(t),card=s.accept(a,'visit',{current_concern:'最近三天饭后腹胀，没有吃药，过敏史不清楚。'},'question-repair-visit');s.claimRun(card.run_id);
+ const tools=s.toolsFor(card.run_id),{source,sentence_spans}=tools.healththread_read_source({source_id:card.source_id});tools.healththread_retrieve_context({});
+ const args={kind:'visit_preparation',operation_key:'question-repair-stage',dependencies:[{source_id:source.id,source_text_version:1}],payload:{speech:source.text,questions:['针对我最近三天饭后腹胀、没有吃药、过敏史不清楚的情况，需要补充哪些检查？'],unknowns:[],claims:[{text:source.text,fact_refs:[],evidence:sentence_spans}]}};
+ assert.throws(()=>tools.healththread_stage_result(args),error=>{assert.equal(error.code,'INVALID_AGENT_OUTPUT');assert.equal(error.details?.path,'payload.questions');assert.equal(error.details?.question_index,0);assert.match(error.details?.rule||'',/speech/);assert.match(error.details?.rule||'',/non-numeric/);return true;});
+ assert.equal(s.all('result',a).length,0);
+ args.payload.questions=['针对我描述的腹胀情况，就诊时需要补充哪些信息？'];
+ const saved=tools.healththread_stage_result(args),result=s.get(a,'result',saved.result_id);
+ assert.equal(result.payload.speech,source.text);assert.deepEqual(result.payload.claims,args.payload.claims);assert.deepEqual(result.payload.questions,args.payload.questions);
+});
+test('patient can edit or clear unknowns while omitted fields preserve prior content and original model payload',t=>{const {s,a}=fixture(t),card=visitResult(s,a,{current_concern:'腹胀。'}),original=s.get(a,'result',card.result_id).payload;const first=s.editVisit(a,card.result_id,{speech:'腹胀，开始时间已说明。',questions:[],unknowns:['只需补充持续时间。'],expected_edit_revision:0},'edit-unknowns-first-001');assert.deepEqual(first.user_edit.unknowns,['只需补充持续时间。']);assert.deepEqual(first.payload,original);const legacy=s.editVisit(a,card.result_id,{speech:'饭后腹胀。',questions:[],expected_edit_revision:1},'edit-unknowns-legacy-01');assert.deepEqual(legacy.user_edit.unknowns,first.user_edit.unknowns);assert.throws(()=>s.editVisit(a,card.result_id,{speech:'饭后腹胀。',questions:[],unknowns:['x'.repeat(2001)],expected_edit_revision:2},'edit-unknowns-long-001'),{code:'INVALID_INPUT'});const cleared=s.editVisit(a,card.result_id,{speech:'饭后腹胀。',questions:[],unknowns:[],expected_edit_revision:2},'edit-unknowns-clear-001');assert.deepEqual(cleared.user_edit.unknowns,[]);assert.equal(cleared.user_edit.revision,3);assert.deepEqual(cleared.payload,original);});

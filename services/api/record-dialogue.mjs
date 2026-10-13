@@ -59,12 +59,27 @@ export function acceptRecordTurn(store,uid,input,key,epoch){
 }
 
 export function stageRecordSummary(store,run,change,dialogue){
-  keys(dialogue,['questions','missing_fields']);
-  check(Array.isArray(dialogue.questions)&&dialogue.questions.length<=3&&dialogue.questions.every(q=>typeof q==='string'&&q.length<=1000&&/[？?]$/.test(q)&&!/(请服|请用|停药|加量|减量|[0-9一二三四五六七八九十]+\s*(?:mg|ml|毫克|毫升|片|粒|次|天|周))/i.test(q)),'INVALID_AGENT_OUTPUT',422);
+  keys(dialogue,['questions','missing_fields','summary'],['questions','missing_fields']);
+  check(dialogue.summary===undefined||(typeof dialogue.summary==='string'&&dialogue.summary.trim().length>0&&dialogue.summary.length<=20000),'INVALID_AGENT_OUTPUT',422);
+  check(Array.isArray(dialogue.questions)&&dialogue.questions.length<=3,'INVALID_AGENT_OUTPUT',422);
+  const invalidQuestion=dialogue.questions.findIndex(q=>{
+    if(typeof q!=='string'||q.length>1000||!/[？?]$/.test(q))return true;
+    if(/请服|请用|停药|加量|减量|[0-9一二三四五六七八九十]+\s*(?:mg|ml|毫克|毫升|片|粒)/i.test(q))return true;
+    // Symptom frequency/duration is an observation, not a prescribed regimen.
+    // Keep numeric action/observation-window recommendations out of this flow.
+    const hasQuantity=/[0-9一二三四五六七八九十]+\s*(?:次|天|周)/.test(q);
+    const asksSymptoms=/发生|出现|发作|不适|不舒服|疼|痛|腹胀|症状|这种情况|持续|频率|开始/.test(q);
+    const proposesAction=/观察|等待|等到|服药|服用|用药|吃药|喝药|建议|应该|就诊|医院|检查|复查|治疗|休息|运动/.test(q);
+    return hasQuantity&&(!asksSymptoms||proposesAction);
+  });
+  if(invalidQuestion!==-1)fail(422,'INVALID_AGENT_OUTPUT','请修改记录追问中的不允许表述。',{
+    path:'record_dialogue.questions',question_index:invalidQuestion,
+    rule:'Ask neutral questions about the reported symptoms, onset, frequency and duration. Do not propose medication doses, treatment, or numeric waiting/observation windows. Repair only this question; keep valid candidates and exact source evidence unchanged.',
+  });
   check(Array.isArray(dialogue.missing_fields)&&dialogue.missing_fields.length<=RECORD_MISSING_FIELDS.length&&new Set(dialogue.missing_fields).size===dialogue.missing_fields.length&&dialogue.missing_fields.every(field=>RECORD_MISSING_FIELDS.includes(field)),'INVALID_AGENT_OUTPUT',422);
   const thread=store.get(run.owner,'record_thread',run.record_thread_id);check(thread.latest_run_id===run.id,'REVISION_CONFLICT',409);
   thread.version++;thread.latest_change_id=change.id;thread.status=change.proposals.length?'awaiting_confirmation':'needs_details';thread.updated_at=store.now();
-  const summary=store.insert(run.owner,'record_summary',{record_thread_id:thread.id,run_id:run.id,fact_change_id:change.id,version:thread.version,source_ids:[...thread.source_ids],turn_source_id:run.source_ids[0],proposals:structuredClone(change.proposals),questions:[...dialogue.questions],missing_fields:[...dialogue.missing_fields],profile_revision:run.base_profile_revision,created_at:store.now()});
+  const summary=store.insert(run.owner,'record_summary',{record_thread_id:thread.id,run_id:run.id,fact_change_id:change.id,version:thread.version,source_ids:[...thread.source_ids],turn_source_id:run.source_ids[0],proposals:structuredClone(change.proposals),...(dialogue.summary?{summary:dialogue.summary}:{}),questions:[...dialogue.questions],missing_fields:[...dialogue.missing_fields],profile_revision:run.base_profile_revision,created_at:store.now()});
   thread.latest_summary_id=summary.id;store.save('record_thread',thread);return summary.id;
 }
 

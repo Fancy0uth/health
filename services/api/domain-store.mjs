@@ -14,6 +14,10 @@ import {
   literalSourceTime,
   validateSourceTime,
 } from "./source-validation.mjs";
+const indexedSentences = (source) => {
+  const annotations=sentenceAnnotations(source);
+  return sentenceSpans(source).map((span,sentence_index)=>({source_id:source.id,sentence_index,quote:span.quote,assertion:annotations[sentence_index].assertion,temporal_scope:annotations[sentence_index].temporal_scope,unsupported:annotations[sentence_index].unsupported,ambiguous:annotations[sentence_index].ambiguous}));
+};
 const id = (kind) => `${kind}_${randomUUID()}`;
 const hash = (v) => createHash("sha256").update(v).digest("hex");
 const canonical = (v) =>
@@ -339,7 +343,8 @@ export class DomainStore {
       scope_epoch: 1,
       created_at: this.now(),
       expires_at: this.clock() + this.limits.scopeTtlMs,
-      deadline: this.clock() + this.limits.deadlineMs,
+      queue_expires_at: this.clock() + this.limits.queueTtlMs,
+      deadline: null,
       fact_change_id: null,
       result_id: null,
       result_ref: null,
@@ -357,7 +362,7 @@ export class DomainStore {
       operation_id: operationId,
       state: "queued",
       attempt: 0,
-      deadline: run.deadline,
+      deadline: run.queue_expires_at,
       version: 1,
     });
   }
@@ -386,6 +391,69 @@ export class DomainStore {
     check(!runs.some(r=>r.deleted),"SOURCE_DELETED",410);
     return [...new Set(runs.map(r=>r.source_ids[0]))].map(sid=>this.get(uid,"source",sid));
   }
+  pendingVisitOffer(uid, conversationId) {
+    const latest=this.all('run',uid).filter(r=>r.workflow==='chat'&&r.conversation_id===conversationId).at(-1);
+    if(!latest || latest.status!=='completed' || latest.execution_error || !latest.runtime || latest.deleted || latest.visit_offer_consumed_by)return null;
+    const result=this.get(uid,'result',latest.result_id);
+    return result.validity==='current' && ['offer_visit','offer_record','offer_both'].includes(result.payload.intent) ? latest.id : null;
+  }
+  validateVisitConfirmation(run, payload) {
+    payload ||= this.get(run.owner,'result',run.result_id).payload;
+    const offerIntent=payload.intent.replace('confirm_','offer_');
+    const consentError=(reason,path,rule)=>fail(422,'INVALID_AGENT_OUTPUT','本轮尚未满足操作确认条件，请修正对话意图。',{reason,path,rule});
+    const askFirst=`Use intent ${offerIntent} and a natural reply summarizing the requested action and asking for confirmation, then wait for a later user turn. Remove confirmation_quote, confirmation_offer_id and confirmation_has_new_details. Do not invent or reuse an old offer id, and do not claim that saving or generation has started. If the user is refusing, correcting, asking a question or deferring, use clarify instead.`;
+    const offer=run.visit_offer_run_id && this.get(run.owner,'run',run.visit_offer_run_id);
+    if(!offer)consentError('NO_PENDING_ACTION_OFFER','payload.intent',`There is no pending_action_offer for this turn. A request to ask for confirmation is an offer, not confirmed consent. ${askFirst}`);
+    if(!(offer.conversation_id===run.conversation_id && offer.runtime && !offer.execution_error && !offer.visit_offer_consumed_by && offer.status==='completed'))
+      consentError('ACTION_OFFER_UNAVAILABLE','payload.intent',`The prior offer is unavailable, unverified or already consumed. ${askFirst}`);
+    const result=this.get(run.owner,'result',offer.result_id);
+    if(result.validity!=='current')consentError('STALE_ACTION_OFFER','payload.intent',`The prior offer is stale. ${askFirst}`);
+    if(result.payload.intent!==offerIntent)consentError('ACTION_OFFER_SCOPE_MISMATCH','payload.intent',`The pending offer does not authorize this action scope. ${askFirst}`);
+    if(payload.format_version===2){
+      if(payload.confirmation_offer_id!==offer.id)consentError('CONFIRMATION_OFFER_ID_MISMATCH','payload.confirmation_offer_id',`Only if the current user explicitly approves the pending action, copy the exact pending_action_offer.run_id (${offer.id}). Never infer approval merely from a request to ask for confirmation; use ${offerIntent} and wait in that case.`);
+      if(payload.confirmation_quote!==this.get(run.owner,'source',run.source_ids[0]).text)consentError('CONFIRMATION_QUOTE_MISMATCH','payload.confirmation_quote','Only if the current user explicitly approves the pending action, copy their entire current source text verbatim as confirmation_quote. Do not quote a previous turn or fabricate consent. Otherwise use clarify or a new offer and wait.');
+    } else {
+    const text=this.get(run.owner,'source',run.source_ids[0]).text.trim().replace(/[，。！!,.\s]/g,'').toLowerCase();
+    // Match the entire consent utterance; mentioning generation is not authorization.
+    const affirmative=/^(好的?|可以|行|是的?|同意|确认|没问题|yes|ok|okay|sure)$/.test(text);
+    const request=/^(好的?|可以|行|是的?|同意|确认|没问题)?(请|麻烦)?(现在|就)?(帮我|给我)?(按照?刚才说的)?(生成|整理|开始生成|开始整理)(一份|一张|一个)?(医生沟通卡|就诊沟通卡|沟通卡|健康报告|报告|卡片)?(吧)?(谢谢)?$/.test(text)
+      || /^(好的?|可以)?(现在)?开始吧$/.test(text)
+      || /^(yes|ok|okay|sure)?(please)?generate(a|the)?(doctorcard|visitcard|healthreport|report|card)?(please)?$/.test(text);
+    check(text.length<=100 && (affirmative||request),'INVALID_AGENT_OUTPUT',422);
+    }
+    const later=this.all('run',run.owner).filter(r=>r.workflow==='chat'&&r.conversation_id===run.conversation_id);
+    check(later.at(-1)?.id===run.id,'INVALID_AGENT_OUTPUT',422);
+    // A retry is a new run, not a new user turn: a subsequent refusal supersedes it.
+    check(this.conversationSources(run.owner,run.conversation_id).at(-1)?.id===run.source_ids[0],'INVALID_AGENT_OUTPUT',422);
+    return offer;
+  }
+  enqueueVisitContinuation(run) {
+    if(run.workflow!=='chat'||(run.continuation_run_id||run.continuation_record_run_id)||run.execution_error||!run.result_id)return;
+    const result=this.get(run.owner,'result',run.result_id);
+    if(!['confirm_visit','confirm_record','confirm_both'].includes(result.payload.intent))return;
+    check(result.validity==='current','STALE_DEPENDENCY',409);
+    const offer=this.validateVisitConfirmation(run),uid=run.owner;
+    const confirmation=this.get(uid,'source',run.source_ids[0]).text;
+    const controlOnly=result.payload.format_version===2 ? result.payload.confirmation_has_new_details===false : confirmation.replace(/没问题|是的?|医生沟通卡|沟通卡|健康报告|报告|卡片|刚才说的|就按|一份|好的|可以|确认|同意|麻烦|现在|帮我|请|生成|整理|开始|谢谢|好的?|行|吧|就|按|yes|okay|ok|sure|please|generate|[，。！!,.\s]/gi,'')==='';
+    const sources=this.conversationSources(uid,run.conversation_id).filter(source=>!controlOnly||source.id!==run.source_ids[0]),text=this.text(sources.map(s=>s.text).join('\n'));
+    const selected=[...new Set([...sources.map(s=>s.id),...run.source_ids.filter(sid=>!controlOnly||sid!==run.source_ids[0])])];
+    check(selected.length<this.limits.retrievalCount,'PAYLOAD_TOO_LARGE',413);
+    check(Buffer.byteLength(text)+selected.reduce((n,sid)=>n+Buffer.byteLength(this.get(uid,'source',sid).text),0)<=this.limits.textBytes*2,'PAYLOAD_TOO_LARGE',413);
+    this.checkQueueAdmission(uid);
+    const source=this.insert(uid,'source',{kind:'self_report',text,text_version:1,content_hash:hash(text),recorded_at:this.now(),pages:[],derived_source_ids:sources.map(s=>s.id),input_kind:'self_report'});
+    const episode=this.insert(uid,'episode',{source_id:source.id,label:null,status:'pending',created_at:this.now()});
+    const entry=this.insert(uid,'entry',{source_id:source.id,input_kind:source.input_kind,received_at:this.now(),raw_time_text:null,episode_id:episode.id});
+    for(const workflow of (result.payload.intent==='confirm_both'?['visit','entry']:result.payload.intent==='confirm_record'?['entry']:['visit'])){
+      let thread=null;
+      if(workflow==='entry')thread=this.insert(uid,'record_thread',{episode_id:episode.id,source_ids:[source.id,...selected],version:1,status:'analyzing',created_at:this.now(),updated_at:this.now(),latest_run_id:null,latest_change_id:null,latest_summary_id:null});
+      const child=this.newRun(uid,workflow,[source.id,...selected],{conversation_id:run.conversation_id,parent_run_id:run.id,document_id:null,...(thread?{record_thread_id:thread.id}:{})});
+      if(thread){thread.latest_run_id=child.id;this.save('record_thread',thread);}
+      const operation=this.insert(uid,'operation',{kind:'accept',status:'committed',source_id:source.id,entry_id:entry.id,document_id:null,run_id:child.id,recorded_at:this.now(),saved:true});
+      this.queueRun(child,operation.id);
+      run[workflow==='visit'?'continuation_run_id':'continuation_record_run_id']=child.id;
+    }
+    offer.visit_offer_consumed_by=run.id;this.save('run',offer);
+  }
   conversationMessages(run) {
     if(!run.conversation_id)return [];
     const messages=[];
@@ -393,7 +461,12 @@ export class DomainStore {
     for(const source of this.conversationSources(run.owner,run.conversation_id).filter(source=>run.source_ids.includes(source.id))){
       messages.push({role:'user',text:source.text,source_id:source.id});
       const response=results.find(result=>result.source_ids[0]===source.id);
-      if(response?.payload.questions?.length)messages.push({role:'assistant',text:response.payload.questions.join('\n'),context_only:true});
+      if(response){
+        const text=response.payload.format_version===2?response.payload.reply:response.payload.questions?.join('\n');
+        const parent=this.get(run.owner,'run',response.run_id);
+        const actions=['continuation_run_id','continuation_record_run_id'].filter(key=>parent[key]).map(key=>{const child=this.get(run.owner,'run',parent[key]);return {run_id:child.id,workflow:child.workflow,status:child.status,phase:child.phase,runtime_verified:!!child.runtime&&!child.execution_error,execution_error:child.execution_error||null,error:child.error||child.execution_error||null,result_id:child.result_id,fact_change_id:child.fact_change_id,record_thread_id:child.record_thread_id||null};});
+        if(text)messages.push({role:'assistant',text,intent:response.payload.intent,context_only:true,...(actions.length?{actions}:{})});
+      }
     }
     check(Buffer.byteLength(JSON.stringify(messages))<=this.limits.outputBytes,'PAYLOAD_TOO_LARGE',413);
     return messages;
@@ -406,11 +479,13 @@ export class DomainStore {
       // Patient wording is editable even when its evidence needs a fresh review.
       // Keep the original payload and its stale status unchanged.
       check(['current','stale'].includes(result.status)&&['current','stale'].includes(result.validity),"STALE_DEPENDENCY",409);
-      keys(body,['speech','questions','expected_edit_revision']);
+      keys(body,['speech','questions','unknowns','expected_edit_revision'],['speech','questions','expected_edit_revision']);
       check(Number.isSafeInteger(body.expected_edit_revision)&&body.expected_edit_revision===(result.user_edit?.revision||0),'REVISION_CONFLICT',409);
       const speech=this.text(body.speech);
       check(speech.length<=20000&&Array.isArray(body.questions)&&body.questions.length<=20&&body.questions.every(q=>typeof q==='string'&&q.length<=1000),'INVALID_INPUT');
-      result.user_edit={speech,questions:[...body.questions],revision:body.expected_edit_revision+1,edited_at:this.now()};
+      check(body.unknowns===undefined||(Array.isArray(body.unknowns)&&body.unknowns.length<=20&&body.unknowns.every(x=>typeof x==='string'&&x.length<=2000)),'INVALID_INPUT');
+      const unknowns=body.unknowns??result.user_edit?.unknowns??result.payload.unknowns??[];
+      result.user_edit={speech,questions:[...body.questions],unknowns:[...unknowns],revision:body.expected_edit_revision+1,edited_at:this.now()};
       this.save('result',result);return result;
     }));
   }
@@ -458,7 +533,7 @@ export class DomainStore {
             ...(derivedSourceIds.length?{derived_source_ids:[...new Set(derivedSourceIds)]}:{}),
             input_kind: workflow === "chat" ? "assistant_question" : document ? "pdf" : workflow === "document" ? "pasted_document" : "self_report",
           });
-          const episode = input.episode_id
+          const episode = workflow === "chat" ? null : input.episode_id
             ? this.get(uid, "episode", input.episode_id)
             : this.insert(uid, "episode", {
                 source_id: source.id,
@@ -466,7 +541,7 @@ export class DomainStore {
                 status: "pending",
                 created_at: this.now(),
               });
-          const entry = this.insert(uid, "entry", {
+          const entry = workflow === "chat" ? null : this.insert(uid, "entry", {
             source_id: source.id,
             input_kind: source.input_kind,
             received_at: this.now(),
@@ -487,12 +562,13 @@ export class DomainStore {
             if (document)
               this.db.prepare("INSERT INTO originals VALUES(?,?,?)").run(source.id, uid, document.bytes);
           }
-          const run = this.newRun(uid, workflow, [source.id, ...selected], { document_id: doc?.id || null, ...(conversationId ? {conversation_id:conversationId} : {}) });
+          const visitOffer=workflow==='chat'&&conversationId?this.pendingVisitOffer(uid,conversationId):null;
+          const run = this.newRun(uid, workflow, [source.id, ...selected], { ...(visitOffer?{visit_offer_run_id:visitOffer}:{}), document_id: doc?.id || null, ...(conversationId ? {conversation_id:conversationId} : {}) });
           const operation = this.insert(uid, "operation", {
             kind: "accept",
             status: "committed",
             source_id: source.id,
-            entry_id: entry.id,
+            entry_id: entry?.id || null,
             document_id: doc?.id || null,
             run_id: run.id,
             recorded_at: this.now(),
@@ -500,7 +576,7 @@ export class DomainStore {
           });
           this.queueRun(run, operation.id);
           return {
-            entry_id: entry.id,
+            entry_id: entry?.id || null,
             source_id: source.id,
             ...(doc ? { document_id: doc.id } : {}),
             ...(run.conversation_id ? {conversation_id:run.conversation_id} : {}),
@@ -534,7 +610,7 @@ export class DomainStore {
     return this.transaction(() => {
       const r = this.internalRun(runId);
       if (r.status !== "queued") return null;
-      if (r.deadline <= this.clock()) {
+      if ((r.queue_expires_at ?? r.deadline) <= this.clock()) {
         r.status = "failed";
         r.phase = "dispatch";
         r.error = runError("DEADLINE_EXCEEDED", "dispatch");
@@ -553,9 +629,12 @@ export class DomainStore {
       }
       r.status = "running";
       r.phase = "agent";
+      r.started_at = this.now();
+      r.deadline = Math.min(this.clock() + this.limits.deadlineMs, r.expires_at);
       this.save("run", r);
       const d = this.all("dispatch", r.owner).find((d) => d.run_id === r.id);
       d.state = "running";
+      d.deadline = r.deadline;
       d.attempt++;
       d.version++;
       this.save("dispatch", d);
@@ -819,6 +898,7 @@ export class DomainStore {
             source,
             sentence_spans: sentenceSpans(source),
             sentence_annotations: sentenceAnnotations(source),
+            indexed_sentences: indexedSentences(source),
           };
         }),
       healththread_retrieve_context: (args) =>
@@ -840,8 +920,11 @@ export class DomainStore {
           return {
             facts: facts.slice(0, this.limits.retrievalCount),
             sources,
-            ...(r.conversation_id?{conversation_messages:this.conversationMessages(r)}:{}),
-            source_spans:sources.map(source=>({source_id:source.id,sentence_spans:sentenceSpans(source),sentence_annotations:sentenceAnnotations(source)})),
+            ...(r.conversation_id?{conversation_messages:this.conversationMessages(r),pending_visit_offer:!!r.visit_offer_run_id,...(()=>{
+              const offer=r.visit_offer_run_id?{run_id:r.visit_offer_run_id,action:this.get(r.owner,'result',this.get(r.owner,'run',r.visit_offer_run_id).result_id).payload.intent.replace('offer_','')}:null;
+              return {pending_offer:offer,pending_action_offer:offer};
+            })()}:{}),
+            source_spans:sources.map(source=>({source_id:source.id,sentence_spans:sentenceSpans(source),sentence_annotations:sentenceAnnotations(source),indexed_sentences:indexedSentences(source)})),
             conflicts: p.pending_changes.map((c) => ({ id: c.id, conflicts: c.conflicts })),
             snapshot_revision: p.profile_revision,
           };
@@ -865,7 +948,7 @@ export class DomainStore {
     });
   }
   stageCandidates(run, args, read) {
-    keys(args, ["candidates", "base_profile_revision", "operation_key", "record_dialogue"],["candidates", "base_profile_revision", "operation_key"]);
+    keys(args, ["candidates", "base_profile_revision", "operation_key", "record_dialogue", "record_source_refs"],["candidates", "base_profile_revision", "operation_key"]);
     check(["entry", "document"].includes(run.workflow), "INVALID_AGENT_OUTPUT", 422);
     return this.receipt(run.owner, `stage:${run.id}`, args.operation_key, args, () => {
       check(
@@ -884,21 +967,58 @@ export class DomainStore {
         "TOOL_SEQUENCE_REQUIRED",
         422,
       );
-      const proposals = args.candidates.map((c, i) => {
-        for (const field of ["fact_id", "episode_id", "expected_version"])
+      const readCandidateSource=(sid)=>{
+        check(run.read_sources?.includes(sid),'INVALID_AGENT_OUTPUT',422);
+        return read(run,sid);
+      };
+      const naturalRecordSummary=run.workflow==='entry'&&run.record_thread_id&&typeof args.record_dialogue?.summary==='string'&&args.record_dialogue.summary.trim().length>0;
+      const warnings=[];
+      let candidateInputs=args.candidates;
+      if(Object.hasOwn(args,'record_source_refs')){
+        check(naturalRecordSummary&&args.candidates.length===0&&Array.isArray(args.record_source_refs)&&args.record_source_refs.length<=100,'INVALID_AGENT_OUTPUT',422);
+        const seenRefs=new Set();
+        candidateInputs=args.record_source_refs.flatMap((ref,index)=>{
+          keys(ref,['source_id','sentence_index']);
+          check(typeof ref.source_id==='string'&&Number.isSafeInteger(ref.sentence_index)&&ref.sentence_index>=0,'INVALID_AGENT_OUTPUT',422);
+          const source=readCandidateSource(ref.source_id),span=sentenceSpans(source)[ref.sentence_index],annotation=sentenceAnnotations(source)[ref.sentence_index];
+          if(!span)fail(422,'INVALID_AGENT_OUTPUT','原句编号不在已读取来源中。',{path:`record_source_refs[${index}].sentence_index`,rule:'Copy source_id and sentence_index from indexed_sentences returned by the read/context tool; indexes are zero-based. Do not invent indexes or source IDs.'});
+          const refKey=canonical(ref);check(!seenRefs.has(refKey),'INVALID_AGENT_OUTPUT',422);seenRefs.add(refKey);
+          if(annotation.unsupported||annotation.ambiguous){
+            warnings.push({code:'SOURCE_ONLY_SENTENCE',source_id:ref.source_id,sentence_index:ref.sentence_index,reason:annotation.unsupported?'missing_information':'mixed_temporal_scope'});
+            return [];
+          }
+          return [{field:'reported_text',value:span.quote,assertion:annotation.assertion,temporal_scope:annotation.temporal_scope,effective_time:annotation.effective_time,evidence:[span],proposal_kind:'new'}];
+        });
+      }
+      const proposals = candidateInputs.map((input, i) => {
+        const c=structuredClone(input);
+        const naturalRecord=naturalRecordSummary&&c.field==='reported_text'&&c.proposal_kind==='new';
+        for (const field of ["fact_id", "episode_id", "expected_version"]){
+          if(naturalRecord&&c[field]===null)delete c[field];
           if (Object.hasOwn(c, field))
             fail(422, "INVALID_AGENT_OUTPUT", "新增候选不得自行指定事实标识、版本或事件。", {
               path: `candidates[${i}].${field}`,
               rule: "Omit this field for new proposals; server assigns identities.",
             });
+        }
         check(c.proposal_kind === "new", "INVALID_AGENT_OUTPUT", 422);
-        return {
-          ...validateCandidate(c, (s) => {
-            check(run.read_sources?.includes(s), "INVALID_AGENT_OUTPUT", 422);
-            return read(run, s);
-          }),
-          id: id("candidate"),
-        };
+        if(naturalRecord){
+          // The server owns finite source markers and literal time metadata.
+          // Derive them only after checking the complete verbatim evidence.
+          const refs=validateEvidence(c.evidence,readCandidateSource);
+          const annotations=refs.map(({source,evidence})=>{
+            check(c.value===evidence.quote,'INVALID_AGENT_OUTPUT',422);
+            const annotation=sentenceAnnotations(source).find(a=>canonical(a.locator)===canonical(evidence.locator));
+            if(!annotation)fail(422,'INVALID_AGENT_OUTPUT','记录候选须引用完整原句。',{
+              path:`candidates[${i}].evidence`,rule:'Select one complete sentence_span from the read source and preserve its quote and locator exactly. Do not combine or rewrite evidence spans.',
+            });
+            return annotation;
+          });
+          c.assertion=annotations[0].assertion;
+          c.temporal_scope=annotations[0].temporal_scope;
+          c.effective_time=structuredClone(annotations[0].effective_time);
+        }
+        return {...validateCandidate(c,readCandidateSource),id:id('candidate')};
       });
       const spans = new Set();
       for (const proposal of proposals)
@@ -931,7 +1051,7 @@ export class DomainStore {
       run.phase = "review";
       this.save("run", run);
       this.finishDispatch(run);
-      return { fact_change_id: change.id, status: "needs_review",...(summaryId?{record_summary_id:summaryId}:{}) };
+      return { fact_change_id: change.id, status: "needs_review",...(summaryId?{record_summary_id:summaryId}:{}),...(warnings.length?{warnings}:{}) };
     });
   }
   confirm(uid, changeId, body, key, expectedEpoch) {
@@ -1083,6 +1203,30 @@ export class DomainStore {
       }),
     );
   }
+  continuationParent(uid,previous,errorCode) {
+    const field=previous.workflow==='visit'?'continuation_run_id':previous.workflow==='entry'?'continuation_record_run_id':null;
+    if(!field)return null;
+    const lineage=[previous],seen=new Set([previous.id]);
+    let ancestor=previous;
+    while(ancestor.parent_run_id){
+      check(!seen.has(ancestor.parent_run_id),errorCode,409);
+      ancestor=this.get(uid,'run',ancestor.parent_run_id);seen.add(ancestor.id);
+      if(ancestor.workflow==='chat'){
+        check(ancestor.conversation_id&&lineage.every(r=>!r.conversation_id||r.conversation_id===ancestor.conversation_id),errorCode,409);
+        if(ancestor[field]!==previous.id){
+          // Older reanalysis runs omitted conversation_id and left the chat at
+          // the cancelled predecessor. Recover only the current record thread.
+          const pointed=lineage.find(r=>r.id===ancestor[field]);
+          const thread=previous.record_thread_id&&this.get(uid,'record_thread',previous.record_thread_id);
+          check(thread&&thread.latest_run_id===previous.id&&pointed?.status==='cancelled'&&pointed.phase==='reanalysed',errorCode,409);
+        }
+        return {parent:ancestor,field,conversation_id:ancestor.conversation_id};
+      }
+      check(ancestor.workflow===previous.workflow&&ancestor.record_thread_id===previous.record_thread_id&&canonical(ancestor.source_ids)===canonical(previous.source_ids),errorCode,409);
+      lineage.push(ancestor);
+    }
+    return null;
+  }
   reanalyse(uid, runId, body, key, expectedEpoch) {
     return this.transaction(() =>
       this.receipt(uid, `reanalyse:${runId}`, key, body, () => {
@@ -1101,6 +1245,7 @@ export class DomainStore {
         check(change.status === "pending", "REVISION_CONFLICT", 409);
         for (const sid of old.source_ids) this.get(uid, "source", sid);
         this.checkQueueAdmission(uid);
+        const continuation=this.continuationParent(uid,old,'RUN_NOT_REANALYSABLE');
         // Expire the old proposal and scope atomically; never rebase its values into current facts.
         old.status = "cancelled";
         old.phase = "reanalysed";
@@ -1110,6 +1255,7 @@ export class DomainStore {
         const recordThread=checkRecordRetry(this,uid,old);
         const run = this.newRun(uid, old.workflow, old.source_ids, {
           ...(old.record_thread_id?{record_thread_id:old.record_thread_id}:{}),
+          ...((continuation?.conversation_id||old.conversation_id)?{conversation_id:continuation?.conversation_id||old.conversation_id}:{}),
           document_id: old.document_id,
           parent_run_id: old.id,
         });
@@ -1130,6 +1276,7 @@ export class DomainStore {
           recorded_at: this.now(),
         });
         this.queueRun(run, operation.id);
+        if(continuation){continuation.parent[continuation.field]=run.id;this.save('run',continuation.parent);}
         return {
           run_id: run.id,
           source_id: old.source_ids[0],
@@ -1216,11 +1363,13 @@ export class DomainStore {
         args.dependencies.some((d) => d.fact_id === ref.fact_id && d.revision === ref.revision);
       const payload = structuredClone(args.payload);
       if (["visit_preparation", "assistant_reply"].includes(args.kind)) {
-        const chat = args.kind === "assistant_reply";
-        if (chat) check(["greeting", "clarify", "prepare", "records", "scope"].includes(payload.intent), "INVALID_AGENT_OUTPUT", 422);
+        const chat = args.kind === "assistant_reply", v2=payload.format_version===2;
+        check(payload.format_version===undefined||v2,"INVALID_AGENT_OUTPUT",422);
+        if (chat) check(["greeting", "clarify", "prepare", "records", "scope", "offer_visit", "confirm_visit", ...(v2?["offer_record","confirm_record","offer_both","confirm_both"]:[])].includes(payload.intent), "INVALID_AGENT_OUTPUT", 422);
+        if(chat && payload.intent.startsWith('confirm_'))this.validateVisitConfirmation(run,payload);
         keys(
           payload,
-          ["speech", "questions", "unknowns", "claims", ...(chat ? ["intent"] : [])],
+          ["speech", "questions", "unknowns", "claims", ...(chat ? ["intent"] : []), ...(v2?["format_version",...(chat?["reply","confirmation_quote","confirmation_offer_id","confirmation_has_new_details"]:[])]:[])],
           ["speech", "questions", "unknowns", "claims"],
         );
         check(
@@ -1237,24 +1386,21 @@ export class DomainStore {
           "INVALID_AGENT_OUTPUT",
           422,
         );
-        check(
-          payload.questions.every(
-            (q) =>
-              /[？?]$/.test(q) &&
-              !/(请服|请用|停药|加量|减量|[0-9一二三四五六七八九十]+\s*(?:mg|ml|毫克|毫升|片|粒|次|天|周))/i.test(
-                q,
-              ),
-          ),
-          "INVALID_AGENT_OUTPUT",
-          422,
-        );
-        if(!payload.claims.some(c=>Array.isArray(c.evidence)&&c.evidence.some(e=>e.source_id===run.source_ids[0]&&e.quote===c.text)))
+        if(v2&&chat)check(['confirmation_quote','confirmation_offer_id'].every(key=>payload[key]===undefined||(typeof payload[key]==='string'&&payload[key].length>0&&payload[key].length<=20000))&&typeof payload.reply==='string'&&payload.reply.trim().length>0&&payload.reply.length<=20000 && (payload.confirmation_has_new_details===undefined||typeof payload.confirmation_has_new_details==='boolean'),'INVALID_AGENT_OUTPUT',422);
+        const invalidQuestion=v2?-1:payload.questions.findIndex(q=>
+          !/[？?]$/.test(q) ||
+          /(请服|请用|停药|加量|减量|[0-9一二三四五六七八九十]+\s*(?:mg|ml|毫克|毫升|片|粒|次|天|周))/i.test(q));
+        if(invalidQuestion!==-1)fail(422,'INVALID_AGENT_OUTPUT','问题包含不允许的表述，请仅修改问题。',{
+          path:'payload.questions',question_index:invalidQuestion,
+          rule:'Each question must end in a question mark and must not contain medication instructions, numeric doses, frequencies or durations (including source durations such as 三天). Rewrite only the invalid question as a non-numeric patient question. Preserve the original duration in speech and claims; keep their exact evidence, locators and dependencies unchanged. Do not guess or repair source locators for this error.',
+        });
+        if(!v2&&!payload.claims.some(c=>Array.isArray(c.evidence)&&c.evidence.some(e=>e.source_id===run.source_ids[0]&&e.quote===c.text)))
           fail(422,'INVALID_AGENT_OUTPUT','缺少本次主来源的原句证据。',{
             path:'payload.claims',required_source_id:run.source_ids[0],
             rule:'Include at least one exact sentence_span from healththread_read_source for required_source_id. Copy quote and locator unchanged; add its source_id/source_text_version to dependencies. For conversation visits the primary source already contains every user turn.',
           });
         const supported = [];
-        for (const claim of payload.claims) {
+        for (const [claimIndex,claim] of payload.claims.entries()) {
           keys(claim, ["text", "fact_refs", "evidence"]);
           check(
             typeof claim.text === "string" && Array.isArray(claim.fact_refs) && Array.isArray(claim.evidence),
@@ -1275,15 +1421,16 @@ export class DomainStore {
               quotes.push(e.quote);
             }
           }
-          check(
-            quotes.length > 0 && quotes.every((quote) => quote === claim.text),
-            "INVALID_AGENT_OUTPUT",
-            422,
-          );
+          if(!(quotes.length > 0 && quotes.every((quote) => v2 ? quote.trim() === claim.text.trim() : quote === claim.text)))
+            fail(422,'INVALID_AGENT_OUTPUT','证据摘要与所引原文不一致，请仅修正摘要文本。',{
+              path:'payload.claims',claim_index:claimIndex,reason:'CLAIM_TEXT_EVIDENCE_MISMATCH',
+              rule:'Every claim.text must match each supporting evidence.quote or fact value; v2 permits only leading/trailing whitespace differences. Copy the supporting wording exactly, preserving negation, uncertainty and internal whitespace. Do not rewrite evidence quotes, locators or dependencies. Natural synthesis belongs in speech/reply, not claim.text.',
+            });
           supported.push(claim.text);
         }
         // Only source-supported sentences may be asserted in the speech. Questions/unknowns remain explicitly questions.
-        check(payload.speech === supported.join("\n"), "INVALID_AGENT_OUTPUT", 422);
+        if(!v2)check(payload.speech === supported.join("\n"), "INVALID_AGENT_OUTPUT", 422);
+        if(v2&&!chat)check(payload.speech.trim().length>0,"INVALID_AGENT_OUTPUT",422);
         if (!chat) {
           payload.department = { status: "not_configured" };
           payload.triage = { status: "not_configured" };
@@ -1396,9 +1543,11 @@ export class DomainStore {
         check(previous.source_ids.length > 0, "RUN_NOT_RETRYABLE", 409);
         this.checkQueueAdmission(uid);
         const recordThread=checkRecordRetry(this,uid,previous);
+        const continuation=this.continuationParent(uid,previous,'RUN_NOT_RETRYABLE');
         const run = this.newRun(uid, previous.workflow, previous.source_ids, {
           ...(previous.record_thread_id?{record_thread_id:previous.record_thread_id}:{}),
-          ...(previous.conversation_id?{conversation_id:previous.conversation_id}:{}),
+          ...((continuation?.conversation_id||previous.conversation_id)?{conversation_id:continuation?.conversation_id||previous.conversation_id}:{}),
+          ...(previous.visit_offer_run_id?{visit_offer_run_id:previous.visit_offer_run_id}:{}),
           document_id: previous.document_id,
           parent_run_id: previous.id,
         });
@@ -1413,6 +1562,7 @@ export class DomainStore {
           recorded_at: this.now(),
         });
         this.queueRun(run, op.id);
+        if(continuation){continuation.parent[continuation.field]=run.id;this.save('run',continuation.parent);}
         return { run_id: run.id, source_id: previous.source_ids[0], operation_id: op.id, saved: true };
       }),
     );
@@ -1421,7 +1571,7 @@ export class DomainStore {
     return this.transaction(() => {
       this.checkExpectedEpoch(uid, expectedEpoch);
       const r = this.get(uid, "run", runId);
-      if (active.includes(r.status)) {
+      if (active.includes(r.status) || (r.workflow==='chat' && r.status==='completed' && !r.runtime)) {
         r.status = "cancelled";
         r.phase = "cancelled";
         r.scope_epoch++;
@@ -1451,8 +1601,15 @@ export class DomainStore {
       const r = this.internalRun(runId);
       check(["running", "needs_review", "completed"].includes(r.status), "SCOPE_REVOKED", 409);
       const u = this.user(r.owner);
-      check(u.epoch === r.epoch && this.consent(r.owner).version === r.consent_version, "SCOPE_REVOKED", 403);
+      check(u.epoch === r.epoch && this.consent(r.owner).granted && this.consent(r.owner).version === r.consent_version && !r.deleted && this.clock()<r.expires_at, "SCOPE_REVOKED", 403);
+      for(const sid of r.source_ids)this.get(r.owner,"source",sid);
+      check(metadata && ['fixture','real'].includes(metadata.mode),'INVALID_AGENT_OUTPUT',422);
+      if(metadata.mode==='real'){
+        const agh=metadata.agh;
+        check(agh&&agh.provider==='agnes-ai'&&typeof agh.session_id==='string'&&agh.session_id.length>0&&typeof agh.model==='string'&&Number.isSafeInteger(agh.last_seq)&&agh.last_seq>=0&&Array.isArray(agh.tool_receipt_ids)&&agh.tool_receipt_ids.length===r.tool_receipts.length&&r.tool_receipts.every((id,index)=>agh.tool_receipt_ids[index]===id),'INVALID_AGENT_OUTPUT',422);
+      }
       r.runtime = metadata;
+      this.enqueueVisitContinuation(r);
       this.save("run", r);
       return r;
     });

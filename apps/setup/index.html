@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Agnes 模型配置 · 就诊表达助手</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/web/"><span class="brand-mark" aria-hidden="true">＋</span> 就诊表达助手</a><span class="top-label">项目设置</span></header>
+  <main>
+    <div class="intro"><span class="eyebrow" id="eyebrow">首次设置</span><h1>Agnes 模型配置</h1><p>连接你的模型，让每一次就诊准备更从容。</p></div>
+    <section class="card" aria-labelledby="config-title">
+      <div class="card-heading"><div><h2 id="config-title">连接 Agnes</h2><p class="muted">在浏览器里完成配置，即可开始使用。</p></div><span class="status-chip" id="status-chip">正在检查</span></div>
+      <div id="loading" role="status">正在读取项目配置…</div>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <div id="signed-out" hidden><p>请先登录项目账号，再返回此页完成模型配置。</p><a class="button primary" href="/web/">前往登录</a></div>
+      <div id="current" class="current" hidden><span class="muted">当前模型</span><strong id="current-model"></strong><p id="runtime-status" class="muted"></p></div>
+      <div id="readonly" class="notice" hidden>只有本机项目管理员可以修改模型配置。你可以继续使用已配置的服务。</div>
+      <div id="configured-actions" class="actions" hidden><a id="enter-project" class="button primary" href="/web/">进入项目</a><button id="change" class="secondary" type="button">更换 API Key / 模型</button></div>
+      <form id="config-form" hidden>
+        <div class="step"><span class="step-number">1</span><div><h3>输入 API Key</h3><p class="muted">使用 Agnes 提供的 API Key，它不是项目登录密码。</p></div></div>
+        <label for="api-key">Agnes API Key</label>
+        <input id="api-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴你的 API Key" aria-describedby="key-help" />
+        <p id="key-help" class="help">密钥不会保存在浏览器中；保存后由本机服务保管。刷新页面会清空输入。</p>
+        <button id="test" class="secondary" type="button" disabled>测试连接并获取模型</button>
+        <div class="divider"></div>
+        <div class="step"><span class="step-number">2</span><div><h3>选择可用模型</h3><p class="muted">连接成功后，从你的账号可用模型中选择。</p></div></div>
+        <label for="model">模型</label><select id="model" disabled><option value="">请先测试连接</option></select>
+        <p class="privacy">使用模型时，你提交的对话和选择处理的健康资料会发送至 Agnes。请仅提交你同意交由该服务处理的内容。</p>
+        <div class="actions"><button id="save" class="primary" type="submit" disabled>保存并进入项目</button><button id="cancel" class="text-button" type="button" hidden>取消修改</button></div>
+      </form>
+    </section>
+    <footer><span>同一份配置，电脑和手机共用</span><nav aria-label="打开项目"><a href="/web/">电脑界面 ↗</a><a href="/mobile/">手机界面 ↗</a></nav></footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

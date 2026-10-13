@@ -93,3 +93,8 @@ test('a corrected confirmed conversation shows the current fact and can be corre
   await assert.rejects(bridge.editRecord(a.source_id,'旧窗口再次修改。',original.fact_id,original.revision),e=>e.code==='REVISION_CONFLICT');
   const again=await bridge.editRecord(a.source_id,'再次更正：目前偶有头痛。',item.facts[0].fact_id,item.facts[0].revision);assert.ok(again.fact_change_id);assert.equal((await bridge.review(a.source_id)).id,again.fact_change_id);assert.equal(bridge.snapshot().records.find(r=>r.id===a.source_id).change_id,again.fact_change_id);
 });
+
+test('record projection uses the current natural summary before verification',async t=>{
+ const natural={...agent,async run(input){const stage=input.tools.healththread_stage_candidates;return agent.run({...input,tools:{...input.tools,healththread_stage_candidates:args=>stage({...args,record_dialogue:{...args.record_dialogue,summary:'你描述了饭后腹胀，目前还不确定原因。'}})}});}};
+ const {bridge}=await setup(t,natural);const accepted=await bridge.recordTurn('饭后腹胀。');await bridge.wait(accepted.run_id);const record=bridge.snapshot().records.find(item=>item.id===accepted.source_id);assert.equal(record.summary,'你描述了饭后腹胀，目前还不确定原因。');assert.equal(record.text,'饭后腹胀。');
+});

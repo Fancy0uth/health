@@ -5,6 +5,7 @@ export const isRecordConfirmation=text=>typeof text==='string'&&/^(确认|确认
 // The model supplies validated candidates and questions. Framing and metadata
 // come from the saved source and review object, never from a second extraction.
 export function recordSummaryText(summary,sources=[]) {
+  if(summary.summary?.trim())return [summary.summary,...(summary.questions||[]),'记录已保存，待你核对。可以补充修改，或在准确无误后回复“确认记录”。'].join('\n\n');
   const byId=new Map(sources.map(source=>[source.id,source]));
   const originals=summary.source_ids.map(id=>byId.get(id)).filter(Boolean);
   const facts=summary.proposals.map((proposal,index)=>{

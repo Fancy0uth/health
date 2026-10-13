@@ -100,3 +100,7 @@ AGH_ROOT=/absolute/path/to/agnes-harness node --test tests/sdk-build.test.mjs
 详细验收操作见 [runbook](docs/backend/runbook.md)，接口见 [OpenAPI](contracts/openapi.yaml)，故障范围见 [fault-matrix](docs/backend/fault-matrix.md)。所有运行数据库、凭据和原始 SDK 证据保存在被忽略的 `.runtime/` / `.env`，不要提交真实健康资料。
 
 旧原型 SQLite/浏览器历史不会自动导入新的领域模型，也不属于当前用户删除的对象。代码通过 feature 分支交付；本地运行不等于已部署公网服务。
+
+## 无终端配置的评委版
+
+评委发行包内置 Agnes Harness 与 Node.js，解压后双击启动，在浏览器里填写 Agnes API Key、验证连接和选择模型。支持 Windows x64、macOS Apple Silicon 与 Intel 三种包。使用与排错步骤见 [评委版使用说明](docs/distribution/评委版使用说明.md)。维护者运行 `npm run package:judge` 生成发行包；`npm run start:judge` 可在本机体验相同的配置流程。
