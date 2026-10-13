@@ -22,7 +22,7 @@ export class AgnesAgent {
    phase='model_selection';
    for(const slot of ['primary','escalation','fast','compaction','verifier'])await session.setModel({slot,route:runtime.selected.route,model:runtime.selected.model});
    iterator=session.events()[Symbol.asyncIterator]();reader=(async()=>{for(;;){const item=await iterator.next();if(item.done)break;events.push(item.value);seen=item.value.seq;wake?.();}})();
-   const prompt=`$${skill}\n执行 HealthThread ${run.workflow==='care_plan'?'care_plan 独立已确认医嘱接续':run.workflow+' 提取/沟通'}工作流。业务输入标识（内容必须通过工具读取）：${JSON.stringify({source_id:run.source_ids[0],selected_source_ids:run.source_ids.slice(1),document_id:run.document_id,base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。完成暂存后停止，不自行确认，不声称聊天文字已保存。`;
+   const prompt=`$${skill}\n执行 HealthThread ${run.workflow==='care_plan'?'care_plan 独立已确认医嘱接续':run.workflow+' 提取/沟通'}工作流。业务输入标识（内容必须通过工具读取）：${JSON.stringify({source_id:run.source_ids[0],record_thread_id:run.record_thread_id,selected_source_ids:run.source_ids.slice(1),document_id:run.document_id,base_profile_revision:run.base_profile_revision,operation_key:'stage:'+run.id})}。完成暂存后停止，不自行确认，不声称聊天文字已保存。`;
    let turn;
    for(let attempt=0;attempt<3;attempt++){
     phase='prompt';turn=await session.prompt(attempt===0?prompt:`$${skill}\n上一轮未获得必需的 stage 工具回执。请使用已读证据完成本次暂存；不能将聊天 JSON 当作产物。`,{signal});

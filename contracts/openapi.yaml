@@ -1482,7 +1482,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": true,
+                "additionalProperties": false,
                 "properties": {
                   "accepted_change_ids": {
                     "type": "array",
@@ -1497,6 +1497,13 @@
                   "expected_profile_revision": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "record_summary_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "confirmation_message": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -2384,6 +2391,114 @@
           }
         }
       }
+    },
+    "/api/record-turns": {
+      "post": {
+        "summary": "Persist or extend an owned record conversation, expire prior draft atomically and dispatch W1",
+        "operationId": "post_record_turns",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordTurnReceipt"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "default": {
+            "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "existing_source_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "record_thread_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2592,6 +2707,10 @@
           },
           "conversation_id": {
             "type": "string"
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },
@@ -3545,6 +3664,10 @@
           },
           "expired_at": {
             "type": "string"
+          },
+          "review_revision": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -3560,7 +3683,8 @@
           "proposals",
           "conflicts",
           "created_at",
-          "sources"
+          "sources",
+          "review_revision"
         ]
       },
       "FactRevision": {
@@ -4250,7 +4374,8 @@
               "reject",
               "retry",
               "reanalyse",
-              "change_request"
+              "change_request",
+              "record_turn"
             ]
           },
           "status": {
@@ -4301,6 +4426,10 @@
           },
           "deleted": {
             "type": "boolean"
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -4324,7 +4453,8 @@
               "reject",
               "retry",
               "reanalyse",
-              "change_request"
+              "change_request",
+              "record_turn"
             ]
           },
           "status": {
@@ -4369,6 +4499,10 @@
           },
           "deleted": {
             "type": "boolean"
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -4713,6 +4847,10 @@
           },
           "conversation_id": {
             "type": "string"
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -4886,6 +5024,24 @@
                 "base64"
               ]
             }
+          },
+          "record_threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordThread"
+            }
+          },
+          "record_summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordSummary"
+            }
+          },
+          "record_confirmations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordConfirmation"
+            }
           }
         },
         "required": [
@@ -4904,7 +5060,10 @@
           "consents",
           "audit",
           "operations",
-          "originals"
+          "originals",
+          "record_threads",
+          "record_summaries",
+          "record_confirmations"
         ]
       },
       "Capabilities": {
@@ -5209,6 +5368,12 @@
                 "items": {
                   "$ref": "#/components/schemas/CareTask"
                 }
+              },
+              "recordThreads": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RecordConversation"
+                }
               }
             },
             "required": [
@@ -5219,13 +5384,375 @@
               "consent",
               "medical",
               "cardRecords",
-              "tasks"
+              "tasks",
+              "recordThreads"
             ]
           }
         },
         "required": [
           "revision",
           "state"
+        ]
+      },
+      "RecordTurnReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entry_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "saved": {
+            "const": true
+          }
+        },
+        "required": [
+          "source_id",
+          "entry_id",
+          "record_thread_id",
+          "record_version",
+          "run_id",
+          "operation_id",
+          "saved"
+        ]
+      },
+      "RecordSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fact_change_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "turn_source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Proposal"
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3
+          },
+          "missing_fields": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "症状表现",
+                "开始时间",
+                "身体部位",
+                "频率",
+                "持续时间",
+                "程度",
+                "影响",
+                "用药",
+                "过敏"
+              ]
+            }
+          },
+          "profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "record_thread_id",
+          "run_id",
+          "fact_change_id",
+          "version",
+          "source_ids",
+          "turn_source_id",
+          "proposals",
+          "questions",
+          "missing_fields",
+          "profile_revision",
+          "created_at"
+        ]
+      },
+      "RecordConfirmation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_thread_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record_summary_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accepted_change_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CommitReceipt"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "record_thread_id",
+          "record_summary_id",
+          "source_ids",
+          "message",
+          "accepted_change_ids",
+          "outcome",
+          "created_at"
+        ]
+      },
+      "RecordThread": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "episode_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "analyzing",
+              "awaiting_confirmation",
+              "needs_details",
+              "confirmed",
+              "partially_confirmed",
+              "rejected"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "latest_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_change_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_summary_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "episode_id",
+          "source_ids",
+          "version",
+          "status",
+          "created_at",
+          "updated_at",
+          "latest_run_id",
+          "latest_change_id",
+          "latest_summary_id"
+        ]
+      },
+      "RecordConversation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "episode_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "analyzing",
+              "awaiting_confirmation",
+              "needs_details",
+              "confirmed",
+              "partially_confirmed",
+              "rejected"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "latest_run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_change_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_summary_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordSummary"
+            }
+          },
+          "confirmations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecordConfirmation"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "owner",
+          "episode_id",
+          "source_ids",
+          "version",
+          "status",
+          "created_at",
+          "updated_at",
+          "latest_run_id",
+          "latest_change_id",
+          "latest_summary_id",
+          "summaries",
+          "confirmations"
         ]
       }
     },

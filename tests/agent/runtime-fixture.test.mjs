@@ -16,6 +16,19 @@ test('fixture: real public Host installs approved plugin and exact-root Skills, 
 import {scriptedProvider,fixtureRuntime} from './scripted-provider.mjs';
 import {AgnesAgent} from '../../services/api/agnes-agent.mjs';
 import {DomainStore} from '../../services/api/domain-store.mjs';
+import {sentenceSpans,literalSourceTime,classifySourceMarkers} from '../../services/api/source-validation.mjs';
+test('fixture: record dialogue uses real SDK tool schema and persists the model questions and complete pending summary',async t=>{
+ const home=await mkdtemp(join(tmpdir(),'ht-agh-record-dialogue-'));let runtime;
+ const store=new DomainStore({demoAccounts:[{username:'record-sdk',password:'fixture-record-password'}]});
+ t.after(async()=>{await runtime?.close();store.close();await rm(home,{recursive:true,force:true});});
+ const uid=store.login('record-sdk','fixture-record-password').user.id;store.setConsent(uid,{purpose:'analysis',granted:true,expected_version:1});
+ const a=store.acceptRecordTurn(uid,{text:'目前没有头痛。'},'sdk-record-input-0001'),run=store.claimRun(a.run_id),source=store.get(uid,'source',a.source_id);
+ const candidates=sentenceSpans(source).map(span=>({field:'reported_text',value:span.quote,assertion:classifySourceMarkers(span.quote).assertion,temporal_scope:classifySourceMarkers(span.quote).temporal_scope,effective_time:literalSourceTime(span.quote,source.id),evidence:[span],proposal_kind:'new'}));
+ const provider=scriptedProvider([{tool:'healththread_read_source',args:{source_id:source.id}},{tool:'healththread_retrieve_context',args:{source_ids:[]}},{tool:'healththread_stage_candidates',args:{candidates,base_profile_revision:1,operation_key:'sdk-record-stage-0001',record_dialogue:{questions:['这次还有其他身体感受吗？'],missing_fields:['用药','过敏']}}},{text:'已暂存，待用户确认'}]);
+ runtime=await createRuntime({home,fixture:fixtureRuntime(provider)});const agent=new AgnesAgent({runtime,store});const tools=Object.fromEntries(Object.keys(store.toolsFor(run.id)).map(n=>[n,(args,invocation)=>store.toolsFor(run.id,invocation)[n](args)]));
+ const output=await agent.run({run,tools,signal:new AbortController().signal});assert.equal(output.agh.tool_receipt_ids.length,3);assert.ok(JSON.stringify(provider.requests[0]).includes(a.record_thread_id));
+ const thread=store.recordThreads(uid)[0];assert.equal(thread.summaries[0].questions[0],'这次还有其他身体感受吗？');assert.equal(thread.summaries[0].proposals[0].assertion,'negated');assert.equal(store.profile(uid).facts.length,0);
+});
 test('fixture: the home assistant uses its own preloaded Skill and three correlated SDK tools',async t=>{
  const home=await mkdtemp(join(tmpdir(),'ht-agh-chat-'));let runtime;
  const store=new DomainStore({demoAccounts:[{username:'runtime',password:'fixture-runtime-password'}]});

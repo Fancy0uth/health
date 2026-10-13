@@ -18,7 +18,7 @@ function origin(req){let value;try{value=new URL(req.headers.origin);}catch{fail
 const tokenFrom=req=>req.headers.cookie?.split(';').map(x=>x.trim()).find(x=>x.startsWith('ht_session='))?.slice('ht_session='.length);
 const pick=(value,fields)=>Object.fromEntries(fields.filter(key=>Object.hasOwn(value,key)).map(key=>[key,value[key]]));
 const publicOperation=value=>{const {owner,...out}=value;return out;};
-function publicRun(store,uid,run){return{...pick(run,['id','workflow','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
+function publicRun(store,uid,run){return{...pick(run,['id','workflow','record_thread_id','conversation_id','status','phase','source_ids','base_profile_revision','created_at','fact_change_id','result_id','result_ref','error','execution_error','tool_receipts','document_id','parent_run_id','operation_id','repair_attempts','runtime','deleted']),saved_receipt:publicOperation(store.get(uid,'operation',run.operation_id))};}
 const publicDocument=value=>pick(value,['id','source_id','name','media_type','byte_size','content_hash','extraction_status','pages']);
 function listQuery(url,run){const allowed=run?['limit','before','source_id','status']:['limit','before'];check([...url.searchParams.keys()].every(k=>allowed.includes(k))&&new Set(url.searchParams.keys()).size===[...url.searchParams.keys()].length);return Object.fromEntries(url.searchParams);}
 export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/healththread-domain.sqlite'),agent=null,agentFactory=null,demoAccounts=[],limits={}}={}){
@@ -40,7 +40,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    if(path==='/api/auth/logout'&&method==='POST'){store.logout(token);return json(res,200,{logged_out:true},{'Set-Cookie':'ht_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'});}
    const expectedEpoch=['GET','HEAD'].includes(method)?undefined:requestEpoch(req);
    if(path==='/api/state'&&method==='PUT')fail(405,'METHOD_NOT_ALLOWED','正式资料只能通过核对事务更新。');
-   if(path==='/api/state'&&method==='GET'){const p=store.profile(uid);return json(res,200,{revision:p.profile_revision,state:{records:store.timeline(uid).entries.map(e=>({id:e.source_id,text:e.source.text,date:null,status:'saved'})),facts:p.facts,pending_changes:p.pending_changes,sessions:[],consent:store.consent(uid),medical:null,cardRecords:store.all('result',uid),tasks:store.careTasks(uid).tasks}});}
+   if(path==='/api/state'&&method==='GET'){const p=store.profile(uid);return json(res,200,{revision:p.profile_revision,state:{recordThreads:store.recordThreads(uid),records:store.timeline(uid).entries.map(e=>({id:e.source_id,text:e.source.text,date:null,status:'saved'})),facts:p.facts,pending_changes:p.pending_changes,sessions:[],consent:store.consent(uid),medical:null,cardRecords:store.all('result',uid),tasks:store.careTasks(uid).tasks}});}
    if(path==='/api/profile'&&method==='GET')return json(res,200,store.profile(uid));
    if(path==='/api/timeline'&&method==='GET')return json(res,200,store.timeline(uid));
    if(path==='/api/runs'&&method==='GET'){const page=store.listOwned(uid,'run',listQuery(url,true));return json(res,200,{runs:page.items.map(run=>publicRun(store,uid,run)),next_cursor:page.next_cursor});}
@@ -50,6 +50,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
    if(path==='/api/consents'&&method==='PATCH'){const result=store.setConsent(uid,await jsonBody(req,configured),expectedEpoch);for(const [rid]of jobs.running)if(store.internalRun(rid).owner===uid)jobs.cancel(rid);return json(res,200,result);}
    if(path==='/api/export'&&method==='GET')return json(res,200,store.exportData(uid),{'Content-Disposition':'attachment; filename="healththread-export.json"'});
    const key=req.headers['idempotency-key'];
+   if(path==='/api/record-turns'&&method==='POST'){const accepted=store.acceptRecordTurn(uid,await jsonBody(req,configured),key,expectedEpoch);jobs.kick();return json(res,202,accepted);}
    if(['/api/entries','/api/documents','/api/visit-preparations','/api/health-record','/api/medical-document','/api/health-assistant'].includes(path)&&method==='POST'){
     const workflow=['/api/documents','/api/medical-document'].includes(path)?'document':path==='/api/health-assistant'?'chat':path==='/api/visit-preparations'?'visit':'entry';let input,document=null;
     store.requireConsent(uid);
@@ -61,7 +62,7 @@ export function createApp({root=defaultRoot,dbPath=resolve(root,'.runtime/health
     const accepted=store.accept(uid,workflow,input,key,document,expectedEpoch);jobs.kick();return json(res,202,accepted);
    }
    let match=path.match(/^\/api\/(sources|runs|results|fact-changes|operations)\/([^/]+)$/);
-   if(match&&method==='GET'){const [,collection,objectId]=match;const type={sources:'source',runs:'run',results:'result','fact-changes':'fact_change',operations:'operation'}[collection];let value;try{value=store.get(uid,type,objectId);}catch(e){if(type!=='operation'||e.code!=='NOT_FOUND')throw e;value=store.get(uid,'deletion_job',objectId);}if(type==='fact_change')value={...value,sources:value.source_ids.map(s=>store.get(uid,'source',s))};if(type==='run')value=publicRun(store,uid,value);return json(res,200,value);}
+   if(match&&method==='GET'){const [,collection,objectId]=match;const type={sources:'source',runs:'run',results:'result','fact-changes':'fact_change',operations:'operation'}[collection];let value;try{value=store.get(uid,type,objectId);}catch(e){if(type!=='operation'||e.code!=='NOT_FOUND')throw e;value=store.get(uid,'deletion_job',objectId);}if(type==='fact_change')value={...value,review_revision:store.user(uid).revision,sources:value.source_ids.map(s=>store.get(uid,'source',s))};if(type==='run')value=publicRun(store,uid,value);return json(res,200,value);}
    match=path.match(/^\/api\/fact-changes\/([^/]+)\/(confirm|reject)$/);if(match&&method==='POST'){const body=await jsonBody(req,configured);const result=match[2]==='confirm'?store.confirm(uid,match[1],body,key,expectedEpoch):store.reject(uid,match[1],body,key,expectedEpoch);jobs.kick();return json(res,200,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/cancel$/);if(match&&method==='POST'){const result=store.cancel(uid,match[1],expectedEpoch);jobs.cancel(match[1]);return json(res,200,result);}
    match=path.match(/^\/api\/runs\/([^/]+)\/retry$/);if(match&&method==='POST'){const result=store.retry(uid,match[1],key,expectedEpoch);jobs.kick();return json(res,202,result);}

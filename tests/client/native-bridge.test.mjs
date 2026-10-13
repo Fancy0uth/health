@@ -60,6 +60,21 @@ test('original medical review preserves multiple instructions and partial confir
 test('original visit action uses owned source IDs and shows actual persisted speech without a template fallback',async t=>{
   const {bridge}=await setup(t);const entry=await bridge.createEntry('既往头痛。');await bridge.wait(entry.run_id);const reply=await bridge.requestAgent('/api/visit-preparations',{current_concern:'本次想说明夜间咳嗽。',selected_record_ids:[entry.source_id]});assert.equal(reply.speech,'本次想说明夜间咳嗽。');assert.equal(bridge.snapshot().cardDraft,reply.speech);assert.ok(bridge.snapshot().cardVersion>0);
 });
+test('a selected-history visit cannot replace the original entry analysis or mark its pending candidates as merely saved',async t=>{
+  const {bridge}=await setup(t);const entry=await bridge.createEntry('目前夜间咳嗽。');await bridge.wait(entry.run_id);
+  await bridge.requestAgent('/api/visit-preparations',{current_concern:'准备说明本次情况。',selected_record_ids:[entry.source_id]});
+  const record=bridge.snapshot().records.find(r=>r.id===entry.source_id);assert.equal(record.run_id,entry.run_id);assert.equal(record.analysis,'complete');assert.ok(record.proposals.length);
+});
+test('a visit-only source is identified as context rather than a pending record with impossible confirmation',async t=>{
+  const {bridge}=await setup(t);await bridge.requestAgent('/api/visit-preparations',{current_concern:'今天想向医生说明夜间咳嗽。',selected_record_ids:[]});
+  const item=bridge.snapshot().records[0];assert.equal(item.record_kind,'visit_context');assert.equal(item.status,'reference');assert.equal(item.analysis,'not_requested');
+});
+test('fresh review can confirm an unchanged draft after another independent record was confirmed',async t=>{
+  const {bridge,client}=await setup(t);const a=await bridge.createEntry('第一条独立记录。');await bridge.wait(a.run_id);const b=await bridge.createEntry('第二条独立记录。');await bridge.wait(b.run_id);
+  const second=await bridge.review(b.source_id);await bridge.confirm(b.source_id,[second.proposals[0].id]);
+  const first=await bridge.review(a.source_id);const freshRevision=client.state.profile.profile_revision;
+  await bridge.confirm(a.source_id,[first.proposals[0].id],freshRevision,first.id);assert.equal(client.state.profile.facts.length,2);
+});
 test('assistant questions use a distinct persisted AGH workflow without creating a doctor card or confirmed facts',async t=>{
   const {bridge,client}=await setup(t);const reply=await bridge.requestAgent('/api/health-assistant',{question:'如何准备就诊资料？'});
   assert.equal(client.state.runs[reply.run_id].workflow,'chat');

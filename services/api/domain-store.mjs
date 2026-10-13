@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID, randomBytes, createHash, scryptSync, timingSafeEqual } from "node:crypto";
 import { check, fail, LIMITS } from "./domain-errors.mjs";
+import {acceptRecordTurn,stageRecordSummary,checkRecordConfirmation,finishRecordConfirmation,recordThreads,checkRecordRetry,updateRecordRetry} from './record-dialogue.mjs';
 import {
   keys,
   validateCandidate,
@@ -51,6 +52,7 @@ export class DomainStore {
    CREATE TRIGGER IF NOT EXISTS immutable_source BEFORE UPDATE ON objects WHEN OLD.type='source' BEGIN SELECT RAISE(ABORT,'immutable_source'); END;
    CREATE TRIGGER IF NOT EXISTS immutable_input_records BEFORE UPDATE ON objects WHEN OLD.type IN ('entry','document','episode') BEGIN SELECT RAISE(ABORT,'immutable_input_record'); END;
    CREATE TRIGGER IF NOT EXISTS immutable_fact_revision BEFORE UPDATE ON objects WHEN OLD.type='fact_revision' BEGIN SELECT RAISE(ABORT,'immutable_fact_revision'); END;`);
+    this.db.exec("CREATE TRIGGER IF NOT EXISTS immutable_record_summary BEFORE UPDATE ON objects WHEN OLD.type='record_summary' BEGIN SELECT RAISE(ABORT,'immutable_record_summary'); END;");
     if (
       !this.db
         .prepare("PRAGMA table_info(users)")
@@ -102,6 +104,8 @@ export class DomainStore {
   now() {
     return new Date(this.clock()).toISOString();
   }
+  acceptRecordTurn(uid,input,key,epoch){return acceptRecordTurn(this,uid,input,key,epoch);}
+  recordThreads(uid){return recordThreads(this,uid);}
   close() {
     this.db.close();
   }
@@ -783,6 +787,7 @@ export class DomainStore {
           return {
             facts: facts.slice(0, this.limits.retrievalCount),
             sources,
+            source_spans:sources.map(source=>({source_id:source.id,sentence_spans:sentenceSpans(source),sentence_annotations:sentenceAnnotations(source)})),
             conflicts: p.pending_changes.map((c) => ({ id: c.id, conflicts: c.conflicts })),
             snapshot_revision: p.profile_revision,
           };
@@ -806,7 +811,7 @@ export class DomainStore {
     });
   }
   stageCandidates(run, args, read) {
-    keys(args, ["candidates", "base_profile_revision", "operation_key"]);
+    keys(args, ["candidates", "base_profile_revision", "operation_key", "record_dialogue"],["candidates", "base_profile_revision", "operation_key"]);
     check(["entry", "document"].includes(run.workflow), "INVALID_AGENT_OUTPUT", 422);
     return this.receipt(run.owner, `stage:${run.id}`, args.operation_key, args, () => {
       check(
@@ -866,12 +871,13 @@ export class DomainStore {
         created_at: this.now(),
         document_id: run.document_id,
       });
+      const summaryId=run.record_thread_id?stageRecordSummary(this,run,change,args.record_dialogue):null;
       run.fact_change_id = change.id;
       run.status = "needs_review";
       run.phase = "review";
       this.save("run", run);
       this.finishDispatch(run);
-      return { fact_change_id: change.id, status: "needs_review" };
+      return { fact_change_id: change.id, status: "needs_review",...(summaryId?{record_summary_id:summaryId}:{}) };
     });
   }
   confirm(uid, changeId, body, key, expectedEpoch) {
@@ -881,10 +887,12 @@ export class DomainStore {
         const change = this.get(uid, "fact_change", changeId),
           u = this.user(uid),
           c = this.requireConsent(uid);
+        keys(body,['accepted_change_ids','expected_profile_revision','record_summary_id','confirmation_message'],['accepted_change_ids','expected_profile_revision']);
+        checkRecordConfirmation(this,uid,change,body);
         check(change.status === "pending", "REVISION_CONFLICT", 409);
         check(change.epoch === u.epoch && change.consent_version === c.version, "SCOPE_REVOKED", 403);
         check(
-          body.expected_profile_revision === u.revision && change.base_profile_revision === u.revision,
+          body.expected_profile_revision === u.revision && change.base_profile_revision <= u.revision,
           "REVISION_CONFLICT",
           409,
         );
@@ -962,12 +970,13 @@ export class DomainStore {
           this.queueRun(r, operation.id);
           continuation = r.id;
         }
-        return {
+        const outcome = {
           profile_revision: revision,
           commit_receipt: operation.id,
           operation_id: operation.id,
           ...(continuation ? { continuation_run_id: continuation } : {}),
         };
+        finishRecordConfirmation(this,uid,change,body,outcome);return outcome;
       }),
     );
   }
@@ -1042,10 +1051,13 @@ export class DomainStore {
         old.scope_epoch++;
         this.save("run", old);
         this.finishDispatch(old);
+        const recordThread=checkRecordRetry(this,uid,old);
         const run = this.newRun(uid, old.workflow, old.source_ids, {
+          ...(old.record_thread_id?{record_thread_id:old.record_thread_id}:{}),
           document_id: old.document_id,
           parent_run_id: old.id,
         });
+        updateRecordRetry(this,recordThread,run);
         change.status = "expired";
         change.terminal_reason = "reanalysed";
         change.expired_at = this.now();
@@ -1333,10 +1345,13 @@ export class DomainStore {
         for (const sid of previous.source_ids) this.get(uid, "source", sid);
         check(previous.source_ids.length > 0, "RUN_NOT_RETRYABLE", 409);
         this.checkQueueAdmission(uid);
+        const recordThread=checkRecordRetry(this,uid,previous);
         const run = this.newRun(uid, previous.workflow, previous.source_ids, {
+          ...(previous.record_thread_id?{record_thread_id:previous.record_thread_id}:{}),
           document_id: previous.document_id,
           parent_run_id: previous.id,
         });
+        updateRecordRetry(this,recordThread,run);
         const op = this.insert(uid, "operation", {
           kind: "retry",
           status: "committed",
@@ -1494,6 +1509,7 @@ export class DomainStore {
       consents: "consent",
       audit: "audit",
       operations: "operation",
+      record_threads:"record_thread",record_summaries:"record_summary",record_confirmations:"record_confirmation",
     }))
       out[name] = this.all(type, uid);
     out.originals = this.db
@@ -1539,6 +1555,7 @@ export class DomainStore {
             .map((f) => f.fact_id),
         );
         const types = [
+          "record_thread","record_summary","record_confirmation",
           "runtime_binding",
           "fact_revision",
           "fact_change",
@@ -1565,6 +1582,7 @@ export class DomainStore {
                   removedFacts.has(p.fact_id) || p.evidence?.some((e) => sourceIds.includes(e.source_id)),
               ) ||
               removed.has(obj.result_id) ||
+              removed.has(obj.record_thread_id) ||
               removed.has(obj.fact_change_id);
             if (dependent) {
               removed.add(obj.id);

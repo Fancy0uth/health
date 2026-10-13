@@ -1,3 +1,4 @@
+import {isRecordConfirmation} from '../../packages/client/record-dialogue.js';
 import {assertionLabel,scopeLabel} from '../../packages/client/presentation.js';
 import {nativeBridge} from '../../packages/client/native-bridge.js';
 const native=nativeBridge();
@@ -23,6 +24,10 @@ let inputMode = 'ask';
 const drafts={ask:'',record:native.client.getDraft('record',''),transcript:''};
 const filters = { issue: 'all', time: 'all', status: 'all', task: 'all' };
 const checked = new Set();
+let reviewSnapshot=null;
+let medicalReviewSnapshot=null;
+let confirmBusy=false;
+const capturedReview=(item,medical=false)=>{const snapshot=medical?medicalReviewSnapshot:reviewSnapshot;return snapshot?.source_ids.includes(medical?item?.source_id:item?.id)?snapshot:null;};
 const exportRanges = new Set(['records', 'sessions', 'medical', 'card']);
 const medicalChecked = new Set();
 let medicalChoice = 'keep';
@@ -53,7 +58,7 @@ function mark(size = 32) { return `<img class="brand-mark" src="./assets/mark.pn
 const wordmark = (width = 140) => `<img class="wordmark" src="./assets/wordmark.svg" width="156" height="19" style="width:${width}px;height:${width * 19 / 156}px" alt="HealthThread" />`;
 const button = (label, action, tone = '', extra = '') => `<button type="button" class="button ${tone}" data-action="${action}" ${extra}>${escape(label)}</button>`;
 const iconButton = (name, action, label, extra = '') => `<button type="button" class="icon-button" data-action="${action}" aria-label="${escape(label)}" ${extra}>${icon(name)}</button>`;
-const badge = (value, label) => `<span class="badge ${value}">${escape(label || ({ confirmed: '已核对', pending: '待核对', stale: '已过期', conflict: '有冲突', done: '已完成', paused: '已暂停' })[value])}</span>`;
+const badge = (value, label) => `<span class="badge ${value}">${escape(label || ({ confirmed: '已核对', reference:'就诊描述', pending: '待核对', stale: '已过期', conflict: '有冲突', done: '已完成', paused: '已暂停' })[value])}</span>`;
 const section = (title, content, className = '') => `<section class="card ${className}">${title ? `<h2>${escape(title)}</h2>` : ''}${content}</section>`;
 const heading = (title, side = '') => `<div class="section-heading"><h2>${escape(title)}</h2>${side}</div>`;
 const notice = (title, text, tone = '') => `<aside class="notice ${tone}"><strong>${escape(title)}</strong><p>${escape(text)}</p></aside>`;
@@ -136,7 +141,7 @@ function navigation() {
 }
 function composer() {
   const ask = inputMode === 'ask';
-  return `<form id="composer" class="composer"><div class="input-modes" role="group" aria-label="输入用途"><button type="button" data-action="mode-ask" class="${ask ? 'active' : ''}" aria-pressed="${ask}">向助手提问</button><button type="button" data-action="mode-record" class="${ask ? '' : 'active'}" aria-pressed="${!ask}">记录身体感受</button></div><div class="input-controls"><label class="sr-only" for="message-input">${ask ? '向助手提问' : '记录身体感受'}</label><textarea id="message-input" name="message" rows="1" placeholder="想聊什么，或记录身体感受…">${escape(drafts[inputMode])}</textarea>${iconButton('mic', 'voice', voice ? '停止录音' : '语音输入', (window.SpeechRecognition || window.webkitSpeechRecognition) ? '' : 'disabled title="当前浏览器不支持语音转写"')}${iconButton('send', 'send', ask ? '发送问题' : '保存记录', busySession ? 'disabled' : '')}</div></form>`;
+  return `<form id="composer" class="composer"><div class="input-modes" role="group" aria-label="输入用途"><button type="button" data-action="mode-ask" class="${ask ? 'active' : ''}" aria-pressed="${ask}">向助手提问</button><button type="button" data-action="mode-record" class="${ask ? '' : 'active'}" aria-pressed="${!ask}">记录身体感受</button></div><div class="input-controls"><label class="sr-only" for="message-input">${ask ? '向助手提问' : '记录身体感受'}</label><textarea id="message-input" name="message" rows="1" placeholder="想聊什么，或记录身体感受…">${escape(drafts[inputMode])}</textarea>${iconButton('mic', 'voice', voice ? '停止录音' : '语音输入', (window.SpeechRecognition || window.webkitSpeechRecognition) ? '' : 'disabled title="当前浏览器不支持语音转写"')}${iconButton('send', 'send', ask ? '发送问题' : '发送记录', busySession ? 'disabled' : '')}</div></form>`;
 }
 
 function content() {
@@ -204,18 +209,25 @@ function analysis() {
   if (!item) return empty('没有找到记录', '返回首页重新查看。');
   return `<h2>原文已保存</h2>${section('用户原文', `<blockquote>${escape(item.text)}</blockquote>`)}${item.analysis === 'failed' ? notice('分析未完成', '原文仍然保留，可以重试或手动核对。', 'warning') + button('重试分析', 'retry-analysis') + button('手动核对', 'review', 'secondary', `data-id="${escape(item.id)}"`) : progress('正在整理候选事实', '分析完成后由你核对。')}`;
 }
-function openReview(value) {
-  const item = store.record(value) || d().records.find(r => r.status !== 'confirmed');
-  if (!item) return notify('当前没有待核对记录。');
-  checked.clear();
-  // Nothing is preselected; only actual proposal IDs may be confirmed.
-  drafts.reviewDescription = item.summary || item.candidate?.description || item.text;
-  drafts.reviewDate=item.date||item.candidate?.date||'';
-  go('home', 'review', item.id);
+async function openReview(value,preserve=false,medical=false) {
+  const item=medical?d().medical:store.record(value)||d().records.find(r=>r.change_id)||activeRecord();
+  if(!item)return notify('当前没有这条记录。');
+  const selection=medical?medicalChecked:checked;if(!preserve)selection.clear();
+  let snapshot=null;try{snapshot=await native.review(medical?item.source_id:item.id);store.reload();const valid=new Set(snapshot.proposals.map(p=>p.id));for(const id of selection)if(!valid.has(id))selection.delete(id);}
+  catch(error){if(error.code!=='NO_PENDING_CANDIDATES')throw error;store.reload();selection.clear();}
+  if(medical){medicalReviewSnapshot=snapshot;go('timeline','medicalReview');}else{reviewSnapshot=snapshot;go('home','review',item.id);}
+}
+async function confirmReview(medical=false) {
+  const item=medical?d().medical:activeRecord(),selection=medical?medicalChecked:checked,snapshot=capturedReview(item,medical);
+  if(confirmBusy||!item||!selection.size||!snapshot)return notify('请读取候选并选择要确认的字段。');
+  confirmBusy=true;render();
+  try{const receipt=await native.confirm(medical?item.source_id:item.id,[...selection],snapshot.review_revision,snapshot.id);store.reload();selection.clear();go('timeline',medical?'medical':'');notify('所选事实已确认。');if(receipt.continuation_run_id){try{await native.wait(receipt.continuation_run_id);}catch(error){notify('病历信息已确认；诊后事项整理未完成，原文与确认结果已保留。');}store.reload();render();}}
+  catch(error){notify(error.code==='REVISION_CONFLICT'?'核对版本已变化，勾选已保留。请刷新核对内容，重新检查后提交。':error.message||'确认未完成，请恢复原请求。');}
+  finally{confirmBusy=false;render();}
 }
 function review() {
-  const item=activeRecord();if(!item)return empty('没有找到记录','请返回时间线。');
-  return `<p class="muted">原文已保存 · 等待核对</p>${section('用户原文',`<blockquote>${escape(item.text)}</blockquote>`)}${heading('候选事实')}${(item.proposals||[]).map(p=>checkRow(p.value,`${assertionLabel(p.assertion)} · ${scopeLabel(p.temporal_scope)} · 时间：${p.effective_time?.raw||'未记录'}`,'review-field',p.id,checked.has(p.id))).join('')||notice('暂无可确认候选',item.analysis==='failed'?'分析未完成，原文保留。':'原文已保存；不把未记录内容补成事实。')}`;
+  const current=activeRecord(),item=capturedReview(current)?{...current,proposals:reviewSnapshot.proposals}:current;if(!item)return empty('没有找到记录','请返回时间线。');
+  return `<p class="muted">原文已保存 · 等待核对</p>${section('用户原文',`<blockquote>${escape(item.text)}</blockquote>`)}${heading('候选事实')}${(item.proposals||[]).map(p=>checkRow(p.value,`${assertionLabel(p.assertion)} · ${scopeLabel(p.temporal_scope)} · 时间：${p.effective_time?.raw||'未记录'}`,'review-field',p.id,checked.has(p.id))).join('')||notice('暂无可确认候选',item.analysis==='failed'?'分析未完成，原文保留。':'当前没有可确认候选；可重新整理原文或查看已确认的信息。')}${button('刷新核对内容','refresh-review','secondary')}${button(item.record_kind==='visit_context'?'整理为记录':'重新分析原文',item.record_kind==='visit_context'?'convert-record':'retry-analysis','secondary')}`;
 }
 function visit() {
   return `<h2>把这次情况理清楚</h2>${textarea('当前困扰', 'currentConcern', d().currentConcern || '', 3)}${section('', fact('开始时间', d().visitHasRelevantHistory === false ? d().visitStartDate : d().symptomStart) + fact('近期变化', d().recentChange || '未记录') + fact('进食影响', d().impact || '未记录'))}${field('补充开始时间', 'visitStartDate', d().visitHasRelevantHistory === false ? d().visitStartDate || '' : d().symptomStart, 'date')}${field('对日常活动或进食的影响', 'impact', d().impact || '', 'text', 'placeholder="不确定可留空"')}${heading('相关历史', `<small>已选 ${(d().selectedHistory || []).length} 条</small>`)}${(d().selectedHistory || []).map(value => store.record(value)).filter(Boolean).map(r => `<div class="selected-history">${actionRow(`${dateLabel(r.date)} · ${r.issue}`, `${r.source} · ${r.status === 'confirmed' ? '已核对' : '待核对'}`, 'timeline', 'source', `data-id="${escape(r.id)}"`)}${iconButton('close', 'remove-history', '移除这条历史', `data-id="${escape(r.id)}"`)}</div>`).join('')}${button('选择相关历史', 'history', 'secondary')}${notice('还可以补充', '近期用药、过敏史与既往检查尚未记录。', 'warning')}${actionRow('就诊入口参考', '查看适用范围与依据', 'document', 'reference')}`;
@@ -243,8 +255,8 @@ function upload() {
   return `<h2>上传并核对病历</h2><button class="upload-zone" type="button" data-action="choose-file">${icon('upload', 40)}<strong>选择文件或病历文字</strong><small>文字 / 可复制文本的 PDF · 最大 5 MB</small></button><input type="file" id="medical-file" accept=".txt,.pdf,text/plain,application/pdf" hidden/>${file ? notice('文件仍在本机', `${file.name}；未上传，刷新后需重新选择。`) : ''}${d().uploadState === 'failed' ? notice('文件尚未解析', d().uploadError || '请查看已保存原文和运行状态，或重新选择原文件恢复请求。', 'warning') : ''}${textarea('也可以粘贴病历文字', 'medicalText', drafts.medicalText || '', 5, 'placeholder="粘贴可核对的病历原文"')}${button('解析这段文字', 'parse-text', 'secondary')}${notice('核对后才更新资料', window.HEALTHTHREAD_PARSE_URL ? '选中的文件将发送到项目配置的解析服务；授权可在设置中撤回。' : '病历文字保存在当前演示档案；当前仅演示字段提取。')}${actionRow('使用模拟门诊记录', '用于演示解析与差异核对', 'document', 'sample-file')}`;
 }
 function medicalReview() {
-  const item=d().medical;if(!item)return empty('还没有病历','请先上传资料。',button('上传资料','upload'));
-  return `<h2>原文与字段分别核对</h2>${section(item.name,`<blockquote>${escape(item.original)}</blockquote>`)}${heading('提取字段')}${(item.proposals||[]).map(p=>checkRow(p.value,`${assertionLabel(p.assertion)} · ${scopeLabel(p.temporal_scope)} · 时间：${p.effective_time?.raw||'未记录'}`,'medical-field',p.id,medicalChecked.has(p.id))).join('')||notice('暂无可确认候选',item.status==='confirmed'?'所选候选已核对。':'原文保留，请查看分析状态。')}`;
+  const current=d().medical,item=capturedReview(current,true)?{...current,proposals:medicalReviewSnapshot.proposals}:current;if(!item)return empty('还没有病历','请先上传资料。',button('上传资料','upload'));
+  return `<h2>原文与字段分别核对</h2>${section(item.name,`<blockquote>${escape(item.original)}</blockquote>`)}${heading('提取字段')}${(item.proposals||[]).map(p=>checkRow(p.value,`${assertionLabel(p.assertion)} · ${scopeLabel(p.temporal_scope)} · 时间：${p.effective_time?.raw||'未记录'}`,'medical-field',p.id,medicalChecked.has(p.id))).join('')||notice('暂无可确认候选',item.status==='confirmed'?'所选候选已核对。':'原文保留，请查看分析状态。')}${button('刷新核对内容','refresh-medical','secondary')}`;
 }
 function communicationCard() {
   if (!store.cardExists()) return empty('还没有沟通卡', '在首页整理本次情况，选择相关历史后生成。', button('准备就诊', 'prepare'));
@@ -276,7 +288,7 @@ function resultPage() {
 function progress(title, text) { return `<section class="progress-card" role="status"><div class="indeterminate"><span></span></div><h2>${escape(title)}</h2><p class="muted">${escape(text)}</p></section>`; }
 function footer() {
   switch (route.view) {
-    case 'review': return button('确认所选字段', 'confirm-review', '', checked.size ? '' : 'disabled');
+    case 'review': return button('确认所选字段', 'confirm-review', '', checked.size&&capturedReview(activeRecord())&&!confirmBusy ? '' : 'disabled');
     case 'visit': return button('生成医生沟通卡', 'generate-card');
     case 'history': return button(`确认选择 · ${(d().selectedHistory || []).length} 条`, 'confirm-history');
     case 'reference': return button('继续生成沟通卡', 'generate-card');
@@ -284,7 +296,7 @@ function footer() {
     case 'correct': return button('确认更正', 'confirm-correction');
     case 'versions': return button('返回时间线', 'health-tab');
     case 'upload': return button('选择文件', 'choose-file');
-    case 'medicalReview': return button('确认核对结果', 'confirm-medical', '', medicalChecked.size ? '' : 'disabled');
+    case 'medicalReview': return button('确认核对结果', 'confirm-medical', '', medicalChecked.size&&capturedReview(d().medical,true)&&!confirmBusy ? '' : 'disabled');
     case 'editCard': return button('保存草稿', 'save-card', 'secondary') + button('确认内容', 'confirm-card');
     case 'print': return button('系统分享 / 打印', 'share-card');
     case 'export': return button('生成导出文件', 'generate-export');
@@ -306,7 +318,7 @@ function renderSheet() {
   if (kind === 'source' || kind === 'record') {
     title = kind === 'source' ? '事实来源' : '记录详情';
     if (!item) html = notice('原始记录已不存在', '沟通卡保留了生成时的来源快照，请重新核对后生成。', 'warning');
-    else html = `<p class="muted">${escape(item.source)} · 症状与事件日期</p>${section('用户原文', `<blockquote>“${escape(item.text)}”</blockquote>`)}${fact('记录时间', item.created)}${fact('事件日期', item.date || '未记录')}${fact('确认状态', `${item.status === 'confirmed' ? '已核对' : '待核对'} · v${item.version || 1}`)}${item.correction ? notice('用户已更正日期', `原因：${item.correction}。原文与旧版本保留。`) : ''}${kind === 'source' ? button('查看原始记录', 'sheet-record', 'secondary', `data-id="${escape(item.id)}"`) : button('核对这条记录', 'review', '', `data-id="${escape(item.id)}"`)}${button('更正事件日期', 'correct', 'secondary', `data-id="${escape(item.id)}"`)}`;
+    else html = `<p class="muted">${escape(item.source)} · 症状与事件日期</p>${section('用户原文', `<blockquote>“${escape(item.text)}”</blockquote>`)}${fact('记录时间', item.created)}${fact('事件日期', item.date || '未记录')}${fact('确认状态', `${item.status === 'confirmed' ? '已核对' : '待核对'} · v${item.version || 1}`)}${item.correction ? notice('用户已更正日期', `原因：${item.correction}。原文与旧版本保留。`) : ''}${kind === 'source' ? button('查看原始记录', 'sheet-record', 'secondary', `data-id="${escape(item.id)}"`) : button(item.record_kind==='visit_context'?'整理为记录':'核对这条记录', 'review', '', `data-id="${escape(item.id)}"`)}${button('更正事件日期', 'correct', 'secondary', `data-id="${escape(item.id)}"`)}`;
   } else if (kind === 'filters') {
     title = '筛选健康记录';
     html = `<label class="field"><span>问题</span><select name="filter-issue"><option value="all">全部问题</option>${[...new Set(d().records.map(r => r.issue))].map(v => `<option value="${escape(v)}" ${filters.issue === v ? 'selected' : ''}>${escape(v)}</option>`).join('')}</select></label><label class="field"><span>时间</span><select name="filter-time"><option value="all">全部时间</option><option value="recent" ${filters.time === 'recent' ? 'selected' : ''}>最近 7 天</option></select></label><label class="field"><span>确认状态</span><select name="filter-status">${[['all', '全部状态'], ['pending', '待核对'], ['confirmed', '已核对']].map(([key, label]) => `<option value="${key}" ${filters.status === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>${button('应用筛选', 'apply-filters')}${button('清除筛选', 'clear-filters', 'secondary')}`;
@@ -387,19 +399,26 @@ async function sendChat(retry = false) {
     }
   }
 }
-async function saveRecord(text = drafts.record) {
-  text = text.trim();
-  if (!text) return notify('先填写身体感受。');
-  if (!d().consent.organize) { go('settings', 'consent'); return notify('请先授权健康记录整理。'); }
-  native.client.setDraft('record',text);
-  const receipt=await native.createEntry(text);store.reload();
-  const item=store.record(receipt.source_id);
-  native.client.clearDraftIf('record',text);
-  drafts.record = '';
-  drafts.transcript = '';
-  go('home', 'analysis', item.id);
-  return analyzeRecord(item);
+async function saveRecord(text = drafts.record,existingSourceId=null) {
+  if(busySession)return;
+  text=text.trim();if(!text)return notify('先填写身体感受。');
+  if(!d().consent.organize){go('settings','consent');return notify('请先授权健康记录整理。');}
+  const session=activeChat();const continuing=!existingSourceId&&session?.record_thread_id&&!['confirmed','partially_confirmed'].includes(session.record_status);
+  const confirmation=isRecordConfirmation(text),review=session?.messages.findLast(m=>m.record_review)?.record_review;
+  if(confirmation&&!continuing)return notify('请先查看待确认的模型汇总；已确认记录不需要重复提交。');
+  native.client.setDraft('record',text);busySession=session?.id||'record';render();
+  try{
+    if(confirmation){await native.confirmRecord(session.record_thread_id,text,review);store.reload();}
+    else{
+      const receipt=await native.recordTurn(text,continuing?session.record_thread_id:null,continuing?session.record_version:undefined,existingSourceId);store.reload();d().activeSessionId=receipt.record_thread_id;save();go('home','chat',receipt.record_thread_id,route.view==='chat');
+      if(drafts.record.trim()===text)drafts.record='';if(drafts.ask.trim()===text)drafts.ask='';drafts.transcript='';native.client.clearDraftIf('record',text);
+      await native.wait(receipt.run_id);store.reload();
+    }
+    if(drafts.record.trim()===text)drafts.record='';if(drafts.ask.trim()===text)drafts.ask='';native.client.clearDraftIf('record',text);
+  }catch(error){store.reload();notify(error.code==='REVISION_CONFLICT'?'记录或核对版本已变化，输入已保留。请阅读最新汇总后再提交。':error.message||'模型整理未完成，原文仍然保留。');}
+  finally{busySession=null;render();scrollChat();}
 }
+function submitMessage(){const session=activeChat(),text=drafts[inputMode];return inputMode==='record'||session?.record_thread_id&&(!['confirmed','partially_confirmed'].includes(session.record_status)||isRecordConfirmation(text))?saveRecord(text):sendChat();}
 async function analyzeRecord(item) {
   if(!item)return;const job=++jobSequence;jobController?.abort();jobController=new AbortController();
   try{if(!item.run_id)throw new Error('请读取已保存记录的运行状态。');await native.wait(item.run_id,{signal:jobController.signal});if(job!==jobSequence)return;store.reload();openReview(item.id);render();}
@@ -460,7 +479,7 @@ async function onFile(event) {
 async function parseMedical(original,selectedFile=null,demo=false) {
   if(!d().consent.parse){go('settings','consent');return notify('请先授权病历解析。');}
   const job=++jobSequence;jobController?.abort();jobController=new AbortController();
-  try{const receipt=await native.createDocument(selectedFile?{file:selectedFile}:{text:original,name:demo?'合成医嘱示例':file?.name||'粘贴的病历文字'});store.reload();go('timeline','parsing');await native.wait(receipt.run_id,{signal:jobController.signal});if(job!==jobSequence)return;store.reload();medicalChecked.clear();go('timeline','medicalReview');}
+  try{const receipt=await native.createDocument(selectedFile?{file:selectedFile}:{text:original,name:demo?'合成医嘱示例':file?.name||'粘贴的病历文字'});store.reload();go('timeline','parsing');await native.wait(receipt.run_id,{signal:jobController.signal});if(job!==jobSequence)return;store.reload();await openReview(d().medical?.source_id,false,true);}
   catch(error){if(job!==jobSequence)return;store.reload();go('timeline','upload');notify(error.message||'解析未完成；已接收的原文仍保留。');}
 }
 function cardText(){return native.copyText();}
@@ -480,12 +499,12 @@ async function action(name, el) {
     case 'new-chat': d().activeSessionId = null; drafts.ask = ''; inputMode = 'ask'; save(); return go('home', 'chat');
     case 'mode-ask': case 'mode-record': inputMode = name === 'mode-ask' ? 'ask' : 'record'; render(); return document.querySelector('#message-input')?.focus();
     case 'logout': return native.client.logout();
-    case 'send': return inputMode === 'record' ? saveRecord() : sendChat();
+    case 'send': return submitMessage();
     case 'retry-chat': return sendChat(true);
     case 'suggest': inputMode = 'ask'; drafts.ask = '饭后总腹胀，偶尔反酸，去医院前该准备什么？'; return sendChat();
     case 'message-visit': case 'prepare': return prepare(value);
     case 'message-timeline': case 'health-tab': return go('timeline');
-    case 'message-home': case 'record-change': inputMode = 'record'; return go('home', 'chat');
+    case 'message-home': case 'record-change': d().activeSessionId=null;save();inputMode='record';return go('home','chat');
     case 'conversations': return go('home', 'conversations');
     case 'clear-search': conversationQuery = ''; render(); return document.querySelector('[name="search"]')?.focus();
     case 'conversation': return go('home', 'conversation', value);
@@ -505,10 +524,13 @@ async function action(name, el) {
     case 'review': return openReview(value);
     case 'recover-original': await native.recover(file);store.reload();render();return notify('原请求已恢复，没有重复创建资料。');
     case 'retry-analysis': {const item=activeRecord();if(!item)return;const receipt=await native.retryEntry(item.id);store.reload();go('home','analysis',item.id);await native.wait(receipt.run_id);store.reload();return openReview(item.id);}
-    case 'confirm-review': {const item=activeRecord();if(!item||!checked.size)return;await native.confirm(item.id,[...checked],item.base_profile_revision,item.change_id);store.reload();checked.clear();go('timeline');return notify('所选事实已通过核对事务提交。');}
+    case 'confirm-review': return confirmReview();
+    case 'refresh-review': return openReview(route.id,true);
+    case 'refresh-medical': return openReview(d().medical?.source_id,true,true);
+    case 'convert-record': {const item=activeRecord();if(item)return saveRecord(item.text,item.id);return;}
     case 'correct': { const item = store.record(value) || activeRecord(); if (!item) return; drafts.editDate = item.date || ''; drafts.editReason = ''; return go('timeline', 'correct', item.id); }
     case 'confirm-correction': {
-      const item=activeRecord();if(!item)return;if(!drafts.editDate||!drafts.editReason?.trim())return notify('请填写更正日期和原因。');const receipt=await native.correct(item.id,drafts.editDate,drafts.editReason.trim());store.reload();go('home','review',receipt.source_id);return notify('更正原文已保存，请核对新候选后提交。');
+      const item=activeRecord();if(!item)return;if(!drafts.editDate||!drafts.editReason?.trim())return notify('请填写更正日期和原因。');const receipt=await native.correct(item.id,drafts.editDate,drafts.editReason.trim());store.reload();await openReview(receipt.source_id);return notify('更正原文已保存，请核对新候选后提交。');
     }
     case 'versions': return go('timeline', 'versions');
     case 'history': return go('home', 'history');
@@ -530,9 +552,9 @@ async function action(name, el) {
     case 'sample-file': return parseMedical(store.MEDICAL_TEXT, null, true);
     case 'parse-text': return parseMedical(drafts.medicalText);
     case 'cancel-job': jobController?.abort(); ++jobSequence; if (d().medical) d().uploadState = 'ready'; save(); return go('timeline', 'medical');
-    case 'medical-review': if(value){d().selectedDocumentId=value;save();store.reload();}medicalChecked.clear();return go('timeline','medicalReview');
+    case 'medical-review': if(value){d().selectedDocumentId=value;save();store.reload();}return openReview(d().medical?.source_id,false,true);
     case 'medical-source': return openSheet('medicalSource');
-    case 'confirm-medical': {const item=d().medical;if(!item||!medicalChecked.size)return;const receipt=await native.confirm(item.source_id,[...medicalChecked],item.base_profile_revision,item.change_id);store.reload();go('timeline','medical');if(receipt.continuation_run_id){notify('医嘱已核对，事项正在独立整理。');await native.wait(receipt.continuation_run_id);store.reload();render();}return;}
+    case 'confirm-medical': return confirmReview(true);
     case 'task': selectedTask=value||d().tasks?.[0]?.id;return openSheet('task',selectedTask);
     case 'task-done': case 'task-pause': case 'task-resume': await native.updateTask(selectedTask,({ 'task-done':'done','task-pause':'paused','task-resume':'pending'})[name],Number(el.dataset.version));store.reload();closeSheet();render();return notify('事项执行状态已更新。');
     case 'task-filter': filters.task = el.dataset.value; return render();
@@ -562,7 +584,7 @@ document.addEventListener('click', event => {
   Promise.resolve(action(el.dataset.action, el)).catch(error => { console.error(error); notify(error.message||'操作未完成，请重试。'); });
 });
 document.addEventListener('submit', event => {
-  if (event.target.id === 'composer') { event.preventDefault(); Promise.resolve(action('send', event.target)).catch(() => notify('发送未完成，请重试。')); }
+  if (event.target.id === 'composer') { event.preventDefault(); Promise.resolve(action('send', event.target)).catch(error => notify(error.message||'发送未完成，请恢复原请求。')); }
 });
 document.addEventListener('input', event => {
   const el = event.target;

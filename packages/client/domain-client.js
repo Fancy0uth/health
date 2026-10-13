@@ -7,7 +7,7 @@ export class MemoryStorage {
   get length() { return this.values.size; }
   key(index) { return [...this.values.keys()][index] ?? null; }
 }
-const empty = () => ({user:null,profile:{profile_revision:null,facts:[],pending_changes:[]},timeline:{entries:[]},tasks:{tasks:[]},consents:{consents:[]},results:[],runs:{},runPage:{next_cursor:null,initialized:false},documents:{documents:[],next_cursor:null,initialized:false},capabilities:null});
+const empty = () => ({user:null,profile:{profile_revision:null,facts:[],pending_changes:[]},timeline:{entries:[]},tasks:{tasks:[]},consents:{consents:[]},results:[],recordThreads:[],runs:{},runPage:{next_cursor:null,initialized:false},documents:{documents:[],next_cursor:null,initialized:false},capabilities:null});
 const problem = (code, message, extra = {}) => Object.assign(new Error(message), {code,...extra});
 const EPOCH=Symbol('server-epoch');
 const clone = value => structuredClone(value);
@@ -200,7 +200,7 @@ export class DomainClient {
     const docCursor=this.state.documents.initialized&&!newDocuments?this.state.documents.next_cursor:documents.next_cursor;
     const mergedDocs=new Map(documents.documents.map(document=>[document.id,document]));
     for(const document of knownDocs.values())if(!mergedDocs.has(document.id)&&sourceIds.has(document.source_id))mergedDocs.set(document.id,document);
-    this.state={...this.state,profile,timeline,tasks,consents,results:projection.state.cardRecords||[],capabilities,runs,runPage:{next_cursor:runCursor,initialized:true},documents:{documents:[...mergedDocs.values()],next_cursor:docCursor,initialized:true}};this.emit();return this.state;
+    this.state={...this.state,profile,timeline,tasks,consents,results:projection.state.cardRecords||[],recordThreads:projection.state.recordThreads||[],capabilities,runs,runPage:{next_cursor:runCursor,initialized:true},documents:{documents:[...mergedDocs.values()],next_cursor:docCursor,initialized:true}};this.emit();return this.state;
   }
   async loadMoreRuns() {
     const cursor=this.state.runPage.next_cursor;if(!cursor) return;
@@ -263,6 +263,7 @@ export class DomainClient {
     return this.execute(op,ticket);
   }
   async fileMetadata(file) {return {name:file.name,type:file.type,size:file.size,sha256:await fingerprint(await file.arrayBuffer())};}
+  createRecordTurn(text,recordThreadId,version,sourceId) {return this.submit('record-turn:'+(recordThreadId||sourceId||'new'),'/api/record-turns',{...(sourceId?{existing_source_id:sourceId}:{text}),...(recordThreadId?{record_thread_id:recordThreadId,expected_version:version}:{})});}
   createEntry(text) {return this.submit('entry','/api/entries',{text,input_kind:'self_report'});}
   async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
   async createDocument({text,name,file}={}) { const ticket=this.ticket();if(file) {const metadata=await this.fileMetadata(file);this.check(ticket);return this.submit('document','/api/documents',{file:metadata},'POST',file,ticket);}return this.submit('document','/api/documents',{text,name}); }
@@ -270,7 +271,7 @@ export class DomainClient {
   factChange(id) {return this.read('/api/fact-changes/'+encodeURIComponent(id));}
   source(id) {return this.read('/api/sources/'+encodeURIComponent(id));}
   operation(id) {return this.read('/api/operations/'+encodeURIComponent(id));}
-  confirm(id,ids,revision) {return this.submit('confirm:'+id,'/api/fact-changes/'+encodeURIComponent(id)+'/confirm',{accepted_change_ids:[...ids],expected_profile_revision:revision});}
+  confirm(id,ids,revision,extra={}) {return this.submit('confirm:'+id,'/api/fact-changes/'+encodeURIComponent(id)+'/confirm',{accepted_change_ids:[...ids],expected_profile_revision:revision,...extra});}
   reject(id,revision) {return this.submit('reject:'+id,'/api/fact-changes/'+encodeURIComponent(id)+'/reject',{expected_profile_revision:revision});}
   reanalyse(id,revision) {return this.submit('reanalyse:'+id,'/api/runs/'+encodeURIComponent(id)+'/reanalyse',{expected_profile_revision:revision});}
   retryRun(id) {return this.submit('retry:'+id,'/api/runs/'+encodeURIComponent(id)+'/retry',{});}

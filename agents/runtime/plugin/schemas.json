@@ -66,6 +66,43 @@
         "type": "string",
         "minLength": 16,
         "maxLength": 128
+      },
+      "record_dialogue": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "questions": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "missing_fields": {
+            "type": "array",
+            "maxItems": 9,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "症状表现",
+                "开始时间",
+                "身体部位",
+                "频率",
+                "持续时间",
+                "程度",
+                "影响",
+                "用药",
+                "过敏"
+              ]
+            }
+          }
+        },
+        "required": [
+          "questions",
+          "missing_fields"
+        ]
       }
     },
     "required": [

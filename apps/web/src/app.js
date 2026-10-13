@@ -1,3 +1,4 @@
+import {isRecordConfirmation} from '../../../packages/client/record-dialogue.js';
 import {assertionLabel,scopeLabel} from '../../../packages/client/presentation.js';
 import {nativeBridge} from '../../../packages/client/native-bridge.js';
 const native=nativeBridge();
@@ -37,6 +38,9 @@ let editDate = data.symptomStart;
 let editReason = '';
 let reviewDescription = '饭后腹胀 · 偶有反酸';
 let selectedForReview = new Set();
+let reviewSnapshot=null;
+let confirmBusy=false;
+const capturedReview=sourceId=>reviewSnapshot?.source_ids.includes(sourceId)?reviewSnapshot:null;
 let chatBusy = false;
 let notice = '';
 let mobileMenu = false;
@@ -143,7 +147,7 @@ function homePage() {
   const isRecord = inputMode === 'record';
   const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   const voiceLabel = voiceListening ? '停止语音输入' : voiceSupported ? '开始语音输入' : '当前浏览器不支持语音输入';
-  return `<div class="content home-content" data-node-id="4:63"><h1>你好，${esc(native.client.state.user?.username||'')}</h1><div class="home-grid"><section class="chat-panel panel"><div class="chat-top"><h2>AI 健康助手</h2>${button('新对话', 'new-chat', 'quiet', activeSession() ? '' : 'disabled')}</div>${chatMessages()}<div class="composer-wrap"><form id="chat-form" class="chat-composer"><div class="composer-modes" role="group" aria-label="输入用途"><button type="button" class="composer-mode ${isRecord ? '' : 'active'}" data-act="mode-ask" aria-pressed="${!isRecord}">向助手提问</button><button type="button" class="composer-mode ${isRecord ? 'active' : ''}" data-act="mode-record" aria-pressed="${isRecord}">记录身体感受</button></div><label for="chat-input" class="sr-only">${isRecord ? '记录身体感受' : '向 AI 健康助手提问'}</label><textarea id="chat-input" rows="1" placeholder="${isRecord ? '例如：饭后有点腹胀…' : activeSession() ? '还需要补充哪些信息？' : '就诊前，我应该准备哪些资料？'}">${esc(isRecord ? recordDraft : chatDraft)}</textarea><div class="composer-bottom"><span class="composer-help">${voiceListening ? '正在听，请说话…' : isRecord ? '保存后可核对记录' : 'Enter 发送 · Shift + Enter 换行'}</span><div class="composer-actions"><button type="button" class="mic-button ${voiceListening ? 'is-listening' : ''}" data-act="voice" aria-label="${voiceLabel}" title="${voiceLabel}" aria-pressed="${voiceListening}" ${voiceSupported ? '' : 'disabled'}><img src="./assets/b8836.svg" alt="" width="22" height="22"/></button>${button(isRecord ? '保存记录' : chatBusy ? '回复中…' : '发送 ↑', isRecord ? 'save-record' : 'send-chat', 'primary', chatBusy ? 'disabled' : '')}</div></div></form><p class="chat-note">回答供参考；记录保存后需要你核对。</p></div></section><div class="home-rail">${panel('对话记录', (recent || hint('还没有对话。')) + button('查看全部对话', 'conversations', 'secondary', data.sessions.length ? 'class="full-width"' : 'class="full-width" disabled'), 'recent-panel')}<section class="panel pending-panel"><div class="between"><h2>待核对</h2><span class="small warning-text">${pendingCount()} 项</span></div><p class="small muted">${hasPending() ? '开始时间、症状描述' : '当前没有待核对事项'}</p>${button('去核对', 'review', 'primary', hasPending() ? '' : 'disabled')}</section></div></div></div>`;
+  return `<div class="content home-content" data-node-id="4:63"><h1>你好，${esc(native.client.state.user?.username||'')}</h1><div class="home-grid"><section class="chat-panel panel"><div class="chat-top"><h2>AI 健康助手</h2>${button('新对话', 'new-chat', 'quiet', activeSession() ? '' : 'disabled')}</div>${chatMessages()}<div class="composer-wrap"><form id="chat-form" class="chat-composer"><div class="composer-modes" role="group" aria-label="输入用途"><button type="button" class="composer-mode ${isRecord ? '' : 'active'}" data-act="mode-ask" aria-pressed="${!isRecord}">向助手提问</button><button type="button" class="composer-mode ${isRecord ? 'active' : ''}" data-act="mode-record" aria-pressed="${isRecord}">记录身体感受</button></div><label for="chat-input" class="sr-only">${isRecord ? '记录身体感受' : '向 AI 健康助手提问'}</label><textarea id="chat-input" rows="1" placeholder="${isRecord ? '例如：饭后有点腹胀…' : activeSession() ? '还需要补充哪些信息？' : '就诊前，我应该准备哪些资料？'}">${esc(isRecord ? recordDraft : chatDraft)}</textarea><div class="composer-bottom"><span class="composer-help">${voiceListening ? '正在听，请说话…' : isRecord ? '模型整理后，请回复确认或继续补充' : 'Enter 发送 · Shift + Enter 换行'}</span><div class="composer-actions"><button type="button" class="mic-button ${voiceListening ? 'is-listening' : ''}" data-act="voice" aria-label="${voiceLabel}" title="${voiceLabel}" aria-pressed="${voiceListening}" ${voiceSupported ? '' : 'disabled'}><img src="./assets/b8836.svg" alt="" width="22" height="22"/></button>${button(isRecord ? '发送记录' : chatBusy ? '回复中…' : '发送 ↑', isRecord ? 'save-record' : 'send-chat', 'primary', chatBusy ? 'disabled' : '')}</div></div></form><p class="chat-note">回答供参考；记录保存后需要你核对。</p></div></section><div class="home-rail">${panel('对话记录', (recent || hint('还没有对话。')) + button('查看全部对话', 'conversations', 'secondary', data.sessions.length ? 'class="full-width"' : 'class="full-width" disabled'), 'recent-panel')}<section class="panel pending-panel"><div class="between"><h2>待核对</h2><span class="small warning-text">${pendingCount()} 项</span></div><p class="small muted">${hasPending() ? '开始时间、症状描述' : '当前没有待核对事项'}</p>${button('去核对', 'review', 'primary', hasPending() ? '' : 'disabled')}</section></div></div></div>`;
 }
 
 function conversationPage() {
@@ -209,7 +213,7 @@ function timelineTabs() {
 function timelinePage() {
   const issues = [...new Set(data.records.map(r => r.issue || '胃部不适'))];
   const items = data.records.filter(r => (timelineFilter === 'all' || r.status === timelineFilter) && (timelineIssue === 'all' || (r.issue || '胃部不适') === timelineIssue) && (timelineTime === 'all' || new Date(r.date) >= new Date(Date.now() - 7 * 86400000)));
-  const cards = items.map((r, i) => `<article class="panel fact-panel">${i === 0 ? `<h2>${esc(r.issue || '胃部不适')} · ${items.length} 条记录</h2>` : ''}<div class="fact-date"><h2>${esc(fmt(r.date))}</h2>${r.status === 'confirmed' ? status('confirmed', '已核对') : ''}</div><p>${esc(r.summary || r.text)}</p><div class="card-actions">${r.status === 'confirmed' ? button(r.source + ' · 来源', 'source', 'quiet', `data-id="${attr(r.id)}"`) + button('更正日期', 'correct', 'secondary', `data-id="${attr(r.id)}"`) + button('版本与冲突', 'conflict') : status('pending', '待核对') + button('查看记录', 'record', 'secondary', `data-id="${attr(r.id)}"`) + button('核对事实', 'review', 'secondary', `data-id="${attr(r.id)}"`)}</div></article>`).join('');
+  const cards = items.map((r, i) => `<article class="panel fact-panel">${i === 0 ? `<h2>${esc(r.issue || '胃部不适')} · ${items.length} 条记录</h2>` : ''}<div class="fact-date"><h2>${esc(fmt(r.date))}</h2>${r.status === 'confirmed' ? status('confirmed', '已核对') : ''}</div><p>${esc(r.summary || r.text)}</p><div class="card-actions">${r.status === 'confirmed' ? button(r.source + ' · 来源', 'source', 'quiet', `data-id="${attr(r.id)}"`) + button('更正日期', 'correct', 'secondary', `data-id="${attr(r.id)}"`) + button('版本与冲突', 'conflict') : status('pending', r.record_kind==='visit_context'?'就诊描述':'待核对') + button('查看记录', 'record', 'secondary', `data-id="${attr(r.id)}"`) + button(r.record_kind==='visit_context'?'整理为记录':'核对事实', 'review', 'secondary', `data-id="${attr(r.id)}"`)}</div></article>`).join('');
   return `<div class="content timeline-content" data-node-id="4:93">${actionHeader('健康时间线', button('病历与事项', 'timeline-medical', 'primary'))}${timelineTabs()}<div class="filter-row"><label><span class="sr-only">问题</span><select id="timeline-issue" aria-label="问题筛选"><option value="all">${issues.length === 1 ? esc(issues[0]) : '全部问题'}</option>${issues.length > 1 ? issues.map(issue => `<option value="${attr(issue)}" ${timelineIssue === issue ? 'selected' : ''}>${esc(issue)}</option>`).join('') : ''}</select></label><label><span class="sr-only">时间</span><select id="timeline-time" aria-label="时间筛选"><option value="all">全部时间</option><option value="week" ${timelineTime === 'week' ? 'selected' : ''}>最近 7 天</option></select></label><label><span class="sr-only">确认状态</span><select id="timeline-filter" aria-label="确认状态"><option value="all" ${timelineFilter === 'all' ? 'selected' : ''}>全部状态</option><option value="confirmed" ${timelineFilter === 'confirmed' ? 'selected' : ''}>已核对</option><option value="pending" ${timelineFilter === 'pending' ? 'selected' : ''}>待核对 ${pendingCount()}</option></select></label></div>${cards || panel('暂无记录', '<p class="muted">没有符合筛选条件的记录。</p>' + button('记录新变化', 'record-new-change'))}</div>`;
 }
 
@@ -271,11 +275,12 @@ function renderDrawer() {
 function renderSubPage() {
   const head = (title = subviewTitle(), extra = '') => actionHeader(title, extra || back());
   const two = (left, right, className = '') => `<div class="columns ${className}"><div class="stack">${left}</div><div class="stack">${right}</div></div>`;
-  const reviewedRecord = record(selectedRecord) || latestRecord();
+  const currentReviewRecord = record(selectedRecord) || latestRecord();
+  const reviewedRecord=capturedReview(currentReviewRecord?.id)?{...currentReviewRecord,proposals:reviewSnapshot.proposals}:currentReviewRecord;
   switch (subview) {
     case 'visit': return visitPage();
     case 'conversations': return conversationPage();
-    case 'review': return `<div class="content">${head()}<div class="steps">原文已保存 <span>→</span> 候选内容 <span>→</span> 等待核对</div>${two(panel('用户原文',`<blockquote>${esc(reviewedRecord?.text)}</blockquote>${hint('记录于 '+(reviewedRecord?.created||'未记录'))}`),panel('候选事实',(reviewedRecord?.proposals||[]).map(p=>`<label class="check-row"><input type="checkbox" data-review="${attr(p.id)}" ${selectedForReview.has(p.id)?'checked':''}/><span>${esc(p.value)}</span></label>${row('原文时间',p.effective_time?.raw||'未记录')}${hint(`${assertionLabel(p.assertion)} · ${scopeLabel(p.temporal_scope)} · 保留完整原句`)}`).join('')||hint(reviewedRecord?.analysis==='failed'?'分析未完成，原文保留。':'暂无候选，已保存原文。'))+'<div class="button-row">'+button('确认已选字段','confirm-review','primary',selectedForReview.size?'':'disabled')+button('重新分析原文','retry-analysis')+button('暂后处理','close-subview')+'</div>','review-columns')}</div>`;
+    case 'review': return `<div class="content">${head()}<div class="steps">原文已保存 <span>→</span> 候选内容 <span>→</span> 等待核对</div>${two(panel('用户原文',`<blockquote>${esc(reviewedRecord?.text)}</blockquote>${hint('记录于 '+(reviewedRecord?.created||'未记录'))}`),panel('候选事实',(reviewedRecord?.proposals||[]).map(p=>`<label class="check-row"><input type="checkbox" data-review="${attr(p.id)}" ${selectedForReview.has(p.id)?'checked':''}/><span>${esc(p.value)}</span></label>${row('原文时间',p.effective_time?.raw||'未记录')}${hint(`${assertionLabel(p.assertion)} · ${scopeLabel(p.temporal_scope)} · 保留完整原句`)}`).join('')||hint(reviewedRecord?.analysis==='failed'?'分析未完成，原文保留。':'当前没有可确认候选；已确认的信息可在时间线查看，未分析的原文可重新整理。'))+'<div class="button-row">'+button('确认已选字段','confirm-review','primary',selectedForReview.size&&capturedReview(reviewedRecord?.id)&&!confirmBusy?'':'disabled')+button('刷新核对内容','refresh-review')+button(reviewedRecord?.record_kind==='visit_context'?'整理为记录':'重新分析原文',reviewedRecord?.record_kind==='visit_context'?'convert-record':'retry-analysis')+button('暂后处理','close-subview')+'</div>','review-columns')}</div>`;
     case 'voice': return `<div class="content narrow-content">${head()}${panel('转写文本', `<p class="muted">请核对时间、数字、药名与否定词。</p><label class="field"><span>可编辑文本</span><textarea id="voice-text" rows="6">${esc(recordDraft)}</textarea></label><div class="button-row">${button('确认并保存', 'save-voice', 'primary')}${button('返回修改', 'close-subview')}</div>`)}</div>`;
     case 'correct': return `<div class="content narrow-content">${head()}${panel('开始时间', `${row('当前值', data.symptomStart)}${field('更正为', 'editDate', editDate, 'date')}<label class="field"><span>修改原因</span><textarea data-field="editReason" rows="3">${esc(editReason)}</textarea></label><div class="soft-warning">影响：时间线生成新版本；引用旧版本的沟通卡将标记过期。</div><div class="button-row">${button('确认更正', 'submit-correction', 'primary')}${button('取消', 'close-subview')}</div>`)}</div>`;
     case 'conflict': return `<div class="content">${head()}${two(panel('当前版本 · v' + data.factVersion, `${status('confirmed', '已核对')}${row('开始时间', data.symptomStart)}${hint('来源：用户自述')}${button('查看来源', 'source')}`), panel('新候选 · 待提交', `${status('pending', '待核对')}${row('候选原文时间',data.medical?.proposals?.[0]?.effective_time?.raw||'没有新候选')}${hint(data.medical?.name||'没有待核对病历来源')}${button('查看病历', 'medical-review')}`))}<div class="button-row">${button('保留当前版本', 'close-subview')}${button('修改后确认', 'correct', 'primary')}${button('暂不处理', 'close-subview', 'text')}</div></div>`;
@@ -285,7 +290,7 @@ function renderSubPage() {
     case 'print': return `<div class="content print-screen">${head('打印预览', button('浏览器打印', 'print', 'primary'))}<article class="print-sheet"><h1>医生沟通卡</h1><p>林悦 · 生成于 ${esc(data.cardGeneratedAt||'未记录')} · 版本 v${data.cardVersion}${isCardStale() ? ' · 已过期' : ''}</p><h2>一分钟表达稿</h2><p>${esc(generatedCardText())}</p><h2>本次情况</h2><p>主要困扰：${esc(data.cardConcern||'未记录')}<br>开始时间：${esc(data.cardStartDate || '未记录')}<br>用药情况：未记录 · 过敏情况：未记录</p><h2>想问医生</h2><ol>${data.questions.map(q => `<li>${esc(q)}</li>`).join('')}</ol><footer>来源：用户自述；未核对字段请在就诊时说明。</footer></article></div>`;
     case 'upload': return `<div class="content">${head()}<div class="steps">选择文件 <span>→</span> 上传 <span>→</span> 解析 <span>→</span> 核对</div>${panel('选择资料', `<p>文字 / 可复制文本的 PDF · 模拟资料</p><input id="file-input" class="sr-only" type="file" accept=".txt,.pdf,text/plain,application/pdf"/>${button('选择文件', 'choose-file')}${button('使用模拟病历', 'sample-file', 'primary')}<p class="small muted">已授权后，选择的TXT或文本层PDF会提交到共享后端，原文先保存再分析。</p>`)}${panel(data.uploadedName || '模拟门诊记录.pdf', `${row('上传状态', data.uploadState === 'empty' ? '未选择' : '原件保留在本机')}${row('解析状态', { empty: '等待文件', selected: '待解析', failed: '无法识别 · 可重试', parsed: '解析完成 · 待核对', reviewed: '已核对' }[data.uploadState])}${hint('核对后才更新画像。')}${button('查看模拟差异', 'medical-review', 'primary')}`)}</div>`;
     case 'medicalReview': {
-      const m=data.medical;return `<div class="content">${head()}${two(panel((m?.name||'病历资料')+' · 原文',`<div class="document-text">${esc(m?.original||'请先上传文字或文本层PDF。').replaceAll('\n','<br>')}</div>`),panel('提取字段',(m?.proposals||[]).map(p=>`<label class="check-row"><input type="checkbox" data-review="${attr(p.id)}" ${selectedForReview.has(p.id)?'checked':''}/><span>${esc(p.value)}</span></label>${row('原文时间',p.effective_time?.raw||'未记录')}`).join('')||hint(m?.status==='confirmed'?'所选候选已核对。':'暂无可确认候选，原文仍保留。'))+button('确认核对结果','confirm-medical','primary',selectedForReview.size?'':'disabled'),'review-columns')}</div>`;
+      const m=capturedReview(data.medical?.source_id)?{...data.medical,proposals:reviewSnapshot.proposals}:data.medical;return `<div class="content">${head()}${two(panel((m?.name||'病历资料')+' · 原文',`<div class="document-text">${esc(m?.original||'请先上传文字或文本层PDF。').replaceAll('\n','<br>')}</div>`),panel('提取字段',(m?.proposals||[]).map(p=>`<label class="check-row"><input type="checkbox" data-review="${attr(p.id)}" ${selectedForReview.has(p.id)?'checked':''}/><span>${esc(p.value)}</span></label>${row('原文时间',p.effective_time?.raw||'未记录')}`).join('')||hint(m?.status==='confirmed'?'所选候选已核对。':'暂无可确认候选，原文仍保留。'))+button('确认核对结果','confirm-medical','primary',selectedForReview.size&&capturedReview(m?.source_id)&&!confirmBusy?'':'disabled')+button('刷新核对内容','refresh-medical'),'review-columns')}</div>`;
     }
     case 'consent': return `<div class="content narrow-content">${head()}${panel('授权管理', `${[['organize', '健康记录整理', '选中的记录原文与候选字段'], ['parse', '病历解析', '选择上传的病历资料'], ['voice', '语音处理', '转写校对所需音频']].map(([key, label, content]) => `<div class="consent-row"><div><strong>${label}</strong><p class="muted small">用途：${content} · 去向：${key === 'voice' ? '浏览器语音服务（处理方式取决于浏览器）' : '项目配置的处理服务'}</p></div><label class="switch"><input type="checkbox" data-consent="${key}" ${data.consent[key] ? 'checked' : ''}/><span class="sr-only">${label}授权</span></label></div>`).join('')}${hint('撤回后停止新的处理请求；已保存内容可在数据设置中管理。')}`)}</div>`;
     case 'export': return `<div class="content narrow-content">${head()}${panel('导出范围', `<p>健康记录与来源 · 已确认事实与版本 · 沟通卡与诊后事项</p>${hint('旧沟通卡会标出生成版本和过期状态。')}${button('生成并下载 JSON', 'download-export', 'primary')}`)}${panel('最近导出', row('资料包', data.exportAt || '未生成'))}</div>`;
@@ -351,6 +356,8 @@ async function sendChat(retry = false) {
 }
 
 function submitHomeInput() {
+  const session=activeSession(),text=document.getElementById('chat-input')?.value|| (inputMode==='record'?recordDraft:chatDraft);
+  if(session?.record_thread_id&&(!['confirmed','partially_confirmed'].includes(session.record_status)||isRecordConfirmation(text)))return saveRecord(text);
   if (inputMode === 'record') return saveRecord(document.getElementById('chat-input')?.value || recordDraft);
   return sendChat();
 }
@@ -393,25 +400,46 @@ function startVoiceInput() {
   catch { voiceRecognition = null; flash('无法启动语音输入，请重试或输入文字。'); }
 }
 
-async function saveRecord(value) {
+async function saveRecord(value,existingSourceId=null) {
+  if(chatBusy)return;
   const text=value.trim();if(!text)return flash('先填写身体感受。');
   if(!data.consent.organize)return flash('请先在设置中授权健康记录整理。');
-  native.client.setDraft('record',text);
+  const session=activeSession();const continuing=!existingSourceId&&session?.record_thread_id&&!['confirmed','partially_confirmed'].includes(session.record_status);
+  const confirmation=isRecordConfirmation(text),review=session?.messages.findLast(m=>m.record_review)?.record_review;
+  if(confirmation&&!continuing)return flash('请先查看待确认的模型汇总；已确认记录不需要重复提交。');
+  native.client.setDraft('record',text);chatBusy=true;render();
   try {
-    const receipt=await native.createEntry(text);selectedRecord=receipt.source_id;
-    data=loadData();const session=ensureSession(text);
-    session.messages.push({role:'user',text,kind:'record',recordId:selectedRecord});saveData(data);
-    if(recordDraft===text)recordDraft='';native.client.clearDraftIf('record',text);
-    selectedForReview.clear();openSubview('review');
-    await native.wait(receipt.run_id);data=loadData();render();
-  } catch(error){data=loadData();flash(error.message||'分析未完成，请查看原文与运行状态。');}
+    if(confirmation){await native.confirmRecord(session.record_thread_id,text,review);data=loadData();}
+    else {
+      const receipt=await native.recordTurn(text,continuing?session.record_thread_id:null,continuing?session.record_version:undefined,existingSourceId);
+      selectedRecord=receipt.source_id;data=loadData();data.activeSessionId=receipt.record_thread_id;saveData(data);open('home');
+      if(recordDraft.trim()===text)recordDraft='';if(chatDraft.trim()===text)chatDraft='';native.client.clearDraftIf('record',text);
+      await native.wait(receipt.run_id);data=loadData();
+    }
+    if(recordDraft.trim()===text)recordDraft='';if(chatDraft.trim()===text)chatDraft='';native.client.clearDraftIf('record',text);
+  } catch(error){data=loadData();flash(error.code==='REVISION_CONFLICT'?'记录或核对版本已变化，输入已保留。请阅读最新汇总后再提交。':error.message||'模型整理未完成，原文仍然保留。');}
+  finally{chatBusy=false;render();document.getElementById('chat-thread')?.scrollTo({top:99999});}
+}
+async function openReview(sourceId,medical=false,preserve=false) {
+  const target=medical?data.medical:record(sourceId);if(!target)return flash('当前没有这条记录。');
+  selectedRecord=sourceId;reviewSnapshot=null;if(!preserve)selectedForReview.clear();
+  try{reviewSnapshot=await native.review(sourceId);data=loadData();const valid=new Set(reviewSnapshot.proposals.map(p=>p.id));selectedForReview=new Set([...selectedForReview].filter(id=>valid.has(id)));}
+  catch(error){if(error.code!=='NO_PENDING_CANDIDATES')throw error;data=loadData();selectedForReview.clear();}
+  if(subview!==(medical?'medicalReview':'review'))openSubview(medical?'medicalReview':'review');else render();
+}
+async function confirmReview(medical=false) {
+  const target=medical?data.medical:record(selectedRecord);if(confirmBusy||!target||!selectedForReview.size||!capturedReview(medical?target.source_id:target.id))return flash('请读取候选并选择要确认的字段。');
+  confirmBusy=true;render();
+  try{const receipt=await native.confirm(medical?target.source_id:target.id,[...selectedForReview],reviewSnapshot.review_revision,reviewSnapshot.id);data=loadData();selectedForReview.clear();reviewSnapshot=null;open(medical?'records':'timeline');flash('所选事实已确认。');if(receipt.continuation_run_id){try{await native.wait(receipt.continuation_run_id);}catch(error){flash('病历信息已确认；诊后事项整理未完成，原文与确认结果已保留。');}data=loadData();render();}}
+  catch(error){flash(error.code==='REVISION_CONFLICT'?'核对版本已变化，勾选已保留。请点击“刷新核对内容”重新检查后提交。':error.message||'确认未完成，请恢复原请求。');}
+  finally{confirmBusy=false;render();}
 }
 async function onFileChange(event) {
   const file=event.target.files?.[0];if(!file)return;selectedUploadFile=file;
   if(!data.consent.parse)return flash('请先在设置中授权病历解析。');
   try {
     const receipt=/\.txt$/i.test(file.name)?await native.createDocument({text:await file.text(),name:file.name}):await native.createDocument({file});
-    data=loadData();openSubview('medicalReview');await native.wait(receipt.run_id);data=loadData();render();
+    data=loadData();flash('原文已保存，正在分析病历。');await native.wait(receipt.run_id);data=loadData();notice='病历分析已完成，等待你核对。';await openReview(receipt.source_id,true);
   }catch(error){data=loadData();flash(error.message||'解析未完成，已接收的原文仍保留。');}
 }
 
@@ -425,7 +453,7 @@ async function doAction(act, el) {
     case 'timeline-health': timelineTab = 'health'; return open('timeline');
     case 'timeline-medical': timelineTab = 'medical'; return open('timeline');
     case 'filter-task': taskFilter = el.dataset.status; return render();
-    case 'record-new-change': inputMode = 'record'; return open('home');
+    case 'record-new-change': data.activeSessionId=null;saveData(data);inputMode = 'record'; return open('home');
     case 'conversations': selectedSessionId = sortedSessions()[0]?.id || null; return openSubview('conversations', 'home');
     case 'conversation': selectedSessionId = el.dataset.id; return openSubview('conversations', 'home');
     case 'select-session': selectedSessionId = el.dataset.id; return render();
@@ -451,18 +479,15 @@ async function doAction(act, el) {
     case 'record': selectedRecord = el.dataset.id || selectedRecord; return openSubview('record');
     case 'source': selectedChatSource = false; selectedMedicalSource = false; selectedRecord = el.dataset.id || selectedRecord; return openSubview('source');
     case 'chat-source': selectedChatSource = true; selectedMedicalSource = false; return openSubview('source');
-    case 'review': {
-      const target=record(el.dataset.id)||data.records.find(r=>r.change_id);
-      if(!target)return flash('当前没有待核对记录。');selectedRecord=target.id;selectedForReview.clear();return openSubview('review');
-    }
-    case 'confirm-review': {
-      const target=record(selectedRecord);if(!target||!selectedForReview.size)return flash('请先选择真实候选。');
-      await native.confirm(target.id,[...selectedForReview],target.base_profile_revision,target.change_id);data=loadData();selectedForReview.clear();timelineTab='health';open('timeline');return flash('所选事实已通过核对事务提交。');
-    }
+    case 'review': {const target=record(el.dataset.id)||data.records.find(r=>r.change_id)||record(selectedRecord)||latestRecord();if(!target)return flash('当前没有待核对记录。');return openReview(target.id);}
+    case 'refresh-review': return openReview(selectedRecord||latestRecord()?.id,false,true);
+    case 'refresh-medical': return openReview(data.medical?.source_id,true,true);
+    case 'convert-record': {const target=record(selectedRecord);if(target)return saveRecord(target.text,target.id);return;}
+    case 'confirm-review': return confirmReview();
     case 'correct': selectedRecord=el.dataset.id||selectedRecord||data.records.find(r=>r.facts?.length)?.id;editDate=record(selectedRecord)?.date||'';editReason='';return openSubview('correct');
     case 'submit-correction': {
       const date=document.getElementById('editDate')?.value||editDate;if(!date||!editReason.trim())return flash('请填写日期和更正原因。');
-      const receipt=await native.correct(selectedRecord,date,editReason.trim());selectedRecord=receipt.source_id;data=loadData();selectedForReview.clear();openSubview('review');return flash('更正原文已保存，请核对新的候选后提交。');
+      const receipt=await native.correct(selectedRecord,date,editReason.trim());selectedRecord=receipt.source_id;data=loadData();selectedForReview.clear();await openReview(selectedRecord);return flash('更正原文已保存，请核对新的候选后提交。');
     }
     case 'conflict': return openSubview('conflict');
     case 'select-history': return openSubview('history');
@@ -479,15 +504,12 @@ async function doAction(act, el) {
     case 'upload': return openSubview('upload');
     case 'choose-file': return document.getElementById('file-input')?.click();
     case 'sample-file': {
-      const receipt=await native.createDocument({text:'医嘱：每日记录症状。\n医嘱：三天后复诊。',name:'合成医嘱示例'});data=loadData();openSubview('medicalReview');await native.wait(receipt.run_id);data=loadData();render();return;
+      const receipt=await native.createDocument({text:'医嘱：每日记录症状。\n医嘱：三天后复诊。',name:'合成医嘱示例'});data=loadData();flash('原文已保存，正在分析病历。');await native.wait(receipt.run_id);data=loadData();notice='病历分析已完成，等待你核对。';await openReview(receipt.source_id,true);return;
     }
-    case 'medical-review': if(el.dataset.id){data.selectedDocumentId=el.dataset.id;saveData(data);data=loadData();}selectedForReview.clear();return openSubview('medicalReview');
+    case 'medical-review': if(el.dataset.id){data.selectedDocumentId=el.dataset.id;saveData(data);data=loadData();}return openReview(data.medical?.source_id,true);
     case 'keep-medical-date': return flash('请逐项选择实际候选；不自动覆盖现有事实。');
     case 'medical-source': selectedChatSource=false;selectedMedicalSource=true;return openSubview('source');
-    case 'confirm-medical': {
-      const m=data.medical;if(!m||!selectedForReview.size)return flash('先选择要确认的医嘱或其他候选。');
-      const receipt=await native.confirm(m.source_id,[...selectedForReview],m.base_profile_revision,m.change_id);data=loadData();open('records');if(receipt.continuation_run_id){flash('医嘱已确认，事项正在独立整理。');await native.wait(receipt.continuation_run_id);data=loadData();render();}return;
-    }
+    case 'confirm-medical': return confirmReview(true);
     case 'task': selectedTask=el.dataset.id||data.tasks?.[0]?.id;return openSubview('task');
     case 'task-done': case 'task-pause': case 'task-resume': await native.updateTask(selectedTask,act==='task-done'?'done':act==='task-pause'?'paused':'pending',Number(el.dataset.version));data=loadData();closeSubview();return flash('事项执行状态已更新。');
     case 'consent': return openSubview('consent');
@@ -501,7 +523,7 @@ async function doAction(act, el) {
       if(!deleteAcknowledged)return;await native.deleteAll();data=loadData();recordDraft='';chatDraft='';selectedForReview.clear();deleteAcknowledged=false;return openSubview('deleteResult');
     }
     case 'recover-original': await native.recover(selectedUploadFile);data=loadData();render();return flash('原请求已恢复，没有重复创建资料。');
-    case 'retry-analysis': {const receipt=await native.retryEntry(selectedRecord);await native.wait(receipt.run_id);data=loadData();render();return;}
+    case 'retry-analysis': {const receipt=await native.retryEntry(selectedRecord);await native.wait(receipt.run_id);data=loadData();return openReview(selectedRecord);}
     default: return;
   }
 }
