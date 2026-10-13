@@ -4,8 +4,9 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import {AGH_ROOT} from './runtime-paths.mjs';
 const project = fileURLToPath(new URL('../', import.meta.url));
-export async function buildSdk(aghRoot = process.env.AGH_ROOT) {
+export async function buildSdk(aghRoot = AGH_ROOT) {
   if (!aghRoot) throw new Error('请设置 AGH_ROOT 指向已经安装依赖的 Agnes Harness 源码目录。');
   const source = resolve(aghRoot);
   const lock = JSON.parse(await readFile(resolve(project, 'agents/harness.lock.json'), 'utf8'));

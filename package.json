@@ -15,11 +15,15 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env scripts/start.mjs",
     "dev": "node --env-file-if-exists=.env scripts/start.mjs",
-    "test": "node scripts/test.mjs",
+    "test": "node --env-file-if-exists=.env scripts/test.mjs",
     "check": "node scripts/check.mjs",
     "build:agh-sdk": "node --env-file-if-exists=.env scripts/build-agh-sdk.mjs",
     "build:agh-runtime": "node --env-file-if-exists=.env scripts/build-agh-runtime.mjs",
     "verify:agh-runtime": "node --env-file-if-exists=.env scripts/verify-agh-runtime.mjs",
-    "verify:real-workflows": "node --env-file-if-exists=.env scripts/verify-real-workflows.mjs"
+    "verify:real-workflows": "node --env-file-if-exists=.env scripts/verify-real-workflows.mjs",
+    "setup": "node scripts/setup-local.mjs && npm run setup:agh && npm run build:agh-runtime",
+    "setup:agh": "node --env-file-if-exists=.env scripts/setup-agh.mjs",
+    "configure:agh": "node --env-file-if-exists=.env scripts/configure-agh.mjs",
+    "verify:chat": "node --env-file-if-exists=.env scripts/verify-chat.mjs"
   }
 }

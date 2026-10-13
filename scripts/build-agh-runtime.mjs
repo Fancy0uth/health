@@ -4,14 +4,14 @@ import { mkdir,readFile,readdir,writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-export const PROJECT=fileURLToPath(new URL('../',import.meta.url));
-export const AGH_ROOT=process.env.AGH_ROOT||'/Users/fancyouth123/Documents/Codex/2026-10-06/https-github-com-agnesai-labs-agnes/work/agnes-harness';
+import {PROJECT,AGH_ROOT} from './runtime-paths.mjs';
+export {PROJECT,AGH_ROOT};
 export async function buildRuntime(){
  const lock=JSON.parse(await readFile(join(PROJECT,'agents/harness.lock.json'),'utf8'));
- const commit=execFileSync('git',['rev-parse','HEAD'],{cwd:AGH_ROOT,encoding:'utf8'}).trim();
- if(commit!==lock.commit)throw new Error('AGH_PIN_MISMATCH');
+ let commit;try{commit=execFileSync('git',['rev-parse','HEAD'],{cwd:AGH_ROOT,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}catch{throw Object.assign(new Error('Harness 尚未安装。请运行 npm run setup。'),{code:'AGH_SOURCE_MISSING'});}
+ if(commit!==lock.commit)throw Object.assign(new Error('Harness 版本不匹配。请核对 AGH_ROOT，或在新目录运行 npm run setup。'),{code:'AGH_PIN_MISMATCH'});
  if(execFileSync('git',['diff','HEAD','--name-only'],{cwd:AGH_ROOT,encoding:'utf8'}).trim())throw new Error('AGH_SOURCE_DIRTY');
- const req=createRequire(join(AGH_ROOT,'packages/cli/package.json')); const {build}=req('esbuild');
+ const req=createRequire(join(AGH_ROOT,'packages/cli/package.json')); let build;try{({build}=req('esbuild'));}catch{throw Object.assign(new Error('Harness 依赖未安装。请运行 npm run setup:agh。'),{code:'AGH_DEPENDENCIES_MISSING'});}
  const packages=join(AGH_ROOT,'packages'); const textMap=async(dir,ext)=>Object.fromEntries(await Promise.all((await readdir(dir)).filter(n=>n.endsWith('.'+ext)).map(async n=>[n.slice(0,-ext.length-1),await readFile(join(dir,n),'utf8')])));
  const manifests=async p=>Promise.all((JSON.parse(await readFile(join(packages,p,'package.json'),'utf8')).agnes.extensions||[]).map(n=>readFile(join(packages,p,n,'agnes.extension.json'),'utf8').then(JSON.parse)));
  const defines={AGNES_VERSION:'"0.0.0"',AGNES_COMPOSED_WORKER:'true',AGNES_PACKAGED_BUILTINS:'true',AGNES_BASE_PRESET_TEXT:JSON.stringify(await readFile(join(packages,'base/presets/base.yaml'),'utf8')),AGNES_PROFILE_TEMPLATE_TEXTS:JSON.stringify(await textMap(join(packages,'host/templates'),'yaml')),AGNES_CC_HOOK_MAP_TEXT:JSON.stringify(await readFile(join(packages,'base/extensions/hooks-runner/generated/cc-hook-map.json'),'utf8')),AGNES_CONFORMANCE_FIXTURE_TEXTS:JSON.stringify(await textMap(join(packages,'ai/fixtures/conformance'),'jsonl'))};

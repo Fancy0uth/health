@@ -8,12 +8,13 @@ import {assertAgnes,assertTools,createBindings,runtimeError,TOOL_NAMES} from './
 const project=fileURLToPath(new URL('../../',import.meta.url));
 const source=fileURLToPath(new URL('./',import.meta.url));
 const packageId='@healththread/runtime';
-export const EXISTING_AGH_HOME=process.env.AGH_ACCOUNT_HOME||process.env.AGH_HOME||'/Users/fancyouth123/Documents/Codex/2026-10-06/https-github-com-agnesai-labs-agnes/work/agh-home';
-export const EXISTING_AGH_PROFILE=process.env.AGH_ACCOUNT_PROFILE||'local-dev';
+import {AGH_ACCOUNT_HOME,AGH_ACCOUNT_PROFILE} from '../../scripts/runtime-paths.mjs';
+export const EXISTING_AGH_HOME=AGH_ACCOUNT_HOME;
+export const EXISTING_AGH_PROFILE=AGH_ACCOUNT_PROFILE;
 const quiet={debug(){},info(){},warn(){},error(){}};
 const inside=(root,p)=>{const rel=relative(root,p);if(rel==='..'||rel.startsWith('..'+sep))throw runtimeError('AGH_SKILL_PATH');return p;};
 async function futureRealpath(path){try{return await realpath(path);}catch(error){if(error.code!=='ENOENT')throw error;return join(await futureRealpath(dirname(path)),basename(path));}}
-async function loadRuntime(){
+export async function loadRuntime(){
  const artifact=join(project,'.runtime/agh-dist/runtime.mjs');
  const proof=JSON.parse(await readFile(join(dirname(artifact),'provenance.json'),'utf8'));
  const lock=JSON.parse(await readFile(join(project,'agents/harness.lock.json'),'utf8'));
@@ -21,7 +22,7 @@ async function loadRuntime(){
  return import(pathToFileURL(artifact).href);
 }
 export async function createRuntime({home,fixture,runConnection=false,accountHome=EXISTING_AGH_HOME,accountProfile=EXISTING_AGH_PROFILE}={}){
- const assetGeneration=await verifyApprovedAssets();home??=join(process.env.HEALTHTHREAD_AGH_HOME||join(project,'.runtime/agh-home'),'releases',assetGeneration);
+ const assetGeneration=await verifyApprovedAssets();home??=join(resolve(project,process.env.HEALTHTHREAD_AGH_HOME||'.runtime/agh-home'),'releases',assetGeneration);
  accountHome=await futureRealpath(resolve(accountHome));home=await futureRealpath(resolve(home));for(const protectedRoot of [accountHome,await futureRealpath(resolve(AGH_ROOT))])if(home===protectedRoot||home.startsWith(protectedRoot+sep))throw runtimeError('AGH_HOME_NOT_ISOLATED');
  const api=await loadRuntime();const {host:H,sdk,local:L,base:B,packages:P,resources:R}=api;
  home=resolve(home);const profileName='healththread'; const dataDir=join(home,'data'),profileDir=join(home,'profiles',profileName),workspace=join(home,'workspace'),cacheDir=join(home,'cache');

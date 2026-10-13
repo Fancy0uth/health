@@ -4,7 +4,9 @@ import {createHealthThreadServer} from '../services/api/server.mjs';
 import {AgnesAgent} from '../services/api/agnes-agent.mjs';
 import {prepareRuntime,runtimeStatus} from '../agents/runtime/startup.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
-const runtime=(process.env.AGENT_MODE||'agnes')==='agnes'?await prepareRuntime():null;
+const mode=process.env.AGENT_MODE||'agnes';
+if(!['agnes','disabled'].includes(mode))throw new Error('AGENT_MODE 必须为 agnes 或 disabled。');
+let runtime;try{runtime=mode==='agnes'?await prepareRuntime({required:true}):null;}catch{process.exit(1);}
 let demoAccounts=[];
 if(process.env.HEALTHTHREAD_DEMO_AUTH==='1'){
  if(!process.env.HEALTHTHREAD_DEMO_USERNAME||!process.env.HEALTHTHREAD_DEMO_PASSWORD)throw new Error('Explicit demo username and password are required.');

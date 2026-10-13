@@ -4,27 +4,64 @@
 
 界面已按用户纠正恢复为上传的两套原页面，保留原布局/样式，仅在原按钮和数据层接入领域 API；先前的共享替代界面已停用。[恢复说明与验证](docs/backend/reviews/native-frontend-restoration.md)。
 
-## 本地启动
+## 在另一台电脑从零运行
 
-需要 Node ≥24.10；文本层 PDF 需要 Poppler 的 `pdfinfo` / `pdftotext`（支持 `/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`）。Node 会报告现有 `node:sqlite` 实验性警告。
+需要 **Node.js 24.10 或以上版本、npm、Git**，并能访问 GitHub、npm registry 和 Agnes 模型服务。安装前用 `node --version`、`npm --version`、`git --version` 检查。Harness 使用锁定的 `pnpm`，安装脚本会自动获取，不要求全局安装 Agnes 或 pnpm。
 
 ```sh
-cp .env.example .env
-# 编辑 .env：显式开启合成演示登录、填写账号，并选择已配置的 Agnes 账户位置
-npm run build:agh-runtime
+git clone --branch codex/healththread-agh-v1-20261013 https://github.com/Fancy0uth/health.git
+cd health
+npm run setup
+npm run configure:agh
 npm run verify:agh-runtime
+npm run verify:chat
 npm start
 ```
 
-两端使用同一个监听端口和数据库：
+按顺序执行，某一步失败先解决该步，不要跳过。
+
+1. **安装**：`npm run setup` 下载 `agents/harness.lock.json` 固定版本的官方 Harness，安装其锁定依赖，再构建项目运行包。首次创建权限受限的 `.env`，终端显示本机网页账号 `demo` 和随机密码；也可在自己的 `.env` 查看。已有 `.env`、Harness 改动和账号不会被覆盖。
+2. **配置模型账号**：`npm run configure:agh` 输入你自己的 **Agnes API key**（终端不回显），选择服务实际返回的可用模型，再输入 `yes` 保存。需要具有有效凭据及可用额度的 Agnes 账号；项目不附带可共享的模型密钥。密钥经 Agnes 官方配置接口存入本机凭据库，不写入网页、Git 或 `.env`。本版本向导支持 Agnes API key，不提供账号注册。
+3. **检查运行环境**：`verify:agh-runtime` 检查模型配置、Harness、Skills 和业务工具，**不调用模型**。它通过不代表额度或实际推理已经通过。
+4. **检查真实对话**：`verify:chat` 调用与网页相同的聊天 API，发送一条合成消息，检查真实模型回复和 SDK 工具回执。会产生少量模型调用费用；使用独立测试数据库，不向你的健康记录插入测试消息。失败会以非零状态退出，日志位于 `.runtime/evidence/`。
+5. **启动和登录**：`npm start` 后打开下面两端，用安装时显示的**网页账号**登录。进入“设置 → 授权管理”开启健康记录整理，再回到首页提问。网页账号与 Agnes API key 是两回事，不要把 API key 输入网页密码框。
 
 - [电脑版](http://127.0.0.1:4173/web/)
 - [手机版](http://127.0.0.1:4173/mobile/)
 - [服务状态](http://127.0.0.1:4173/api/health)
 
-`AGENT_MODE` 默认 `agnes`。产品只调用 AGH 配置的 `agnes-ai` provider；未就绪时保存输入并给出 `blocked`，不会切换模型或用模板冒充真实输出。`AGENT_MODE=disabled` 可检查保存/登录/错误恢复。未显式设置 `HEALTHTHREAD_DEMO_AUTH=1` 与演示账号时登录不可用。仅使用合成资料演示。
+两端共用同一端口、账号和数据库。默认仅绑定本机 `127.0.0.1`；这里的手机版是手机界面预览，不自动开放给局域网手机。仅使用合成资料测试。文本 PDF 解析另需 Poppler 的 `pdfinfo` / `pdftotext`，纯文字聊天不需要它。Node 的 `node:sqlite` 实验性提示本身不是失败。
 
-当前验收环境使用专门的本地合成账号 `demo` / `healththread-demo-2026`，不写入代码默认值；这是演示账号，不连接真实患者。其他机器应在被忽略的 `.env` 中自行设置并保护文件权限。服务绑定 `127.0.0.1`；局域网/TLS 部署未在本次验收范围内。
+### 默认目录与已有配置
+
+无需填写任何人的电脑路径。默认目录均位于当前项目：
+
+| 用途 | 默认位置 |
+| --- | --- |
+| 固定版本 Harness 源码和依赖 | `.runtime/agnes-harness` |
+| Agnes 账号凭据库 | `.runtime/agh-account`，profile 为 `local-dev` |
+| 项目 Host、会话及构建文件 | `.runtime/agh-home`、`.runtime/agh-dist` |
+| 网页账号及本地设置 | `.env` |
+| 健康数据 | `.runtime/healththread-domain.sqlite` |
+
+已有外部 Harness/账号可以在 `.env` 设置 `AGH_ROOT`、`AGH_ACCOUNT_HOME`、`AGH_ACCOUNT_PROFILE`；相对路径统一相对于项目根目录。旧 `AGH_HOME` 仍兼容。不要把账号目录、源码目录和 `HEALTHTHREAD_AGH_HOME` 设成同一目录或相互包含。**不要提交或共享 `.env`、`.runtime`、数据库及凭据目录。**
+
+如果以前复制过 `.env.example`，安装会保留该文件。删除其中旧的示例路径或改为自己的路径，并设置 `HEALTHTHREAD_DEMO_AUTH=1`、网页用户名和至少 10 字符的密码。模型账号已配置时，向导会停止并保留配置；需要独立模型账号时设置一个新的 `AGH_ACCOUNT_HOME`，重新运行配置与检查。
+
+### 常见问题
+
+| 现象 | 处理 |
+| --- | --- |
+| GitHub/npm 下载失败 | 检查网络、代理和仓库访问权限，重新运行 `npm run setup`；不会清空已有源码 |
+| Harness 版本不符或源码有改动 | 保留现有工作，将 `AGH_ROOT` 指向一个新的不存在目录，再运行安装；不要直接重置别人的目录 |
+| `AGH_SOURCE_MISSING` / 缺少依赖 | 运行 `npm run setup` |
+| `AGENT_NOT_CONFIGURED` | 运行 `npm run configure:agh`，检查账号目录和 profile 是否一致 |
+| 已配置但 `verify:chat` 失败 | 检查 Agnes 凭据、额度、模型权限和网络；环境就绪检查不会验证实际推理 |
+| 网页不能登录 | 使用本机 `.env` 的网页账号，检查 `HEALTHTHREAD_DEMO_AUTH=1`；其他电脑的测试账号不会自动同步 |
+| 登录后提示尚未授权 | 在网页设置中开启健康记录整理 |
+| 端口 4173 被占用 | 停止旧服务，或在 `.env` 修改 `PORT`，按启动时显示的新地址访问 |
+
+默认 `AGENT_MODE=agnes`：模型环境初始化失败时启动直接退出并给出配置步骤，避免把不能聊天的网页误认为运行成功。只有明确设置 `AGENT_MODE=disabled` 才进入无需模型的界面/数据调试模式；该模式不能与模型对话。
 
 ## AGH 配置与边界
 
@@ -62,4 +99,4 @@ AGH_ROOT=/absolute/path/to/agnes-harness node --test tests/sdk-build.test.mjs
 
 详细验收操作见 [runbook](docs/backend/runbook.md)，接口见 [OpenAPI](contracts/openapi.yaml)，故障范围见 [fault-matrix](docs/backend/fault-matrix.md)。所有运行数据库、凭据和原始 SDK 证据保存在被忽略的 `.runtime/` / `.env`，不要提交真实健康资料。
 
-旧原型 SQLite/浏览器历史不会自动导入新的领域模型，也不属于当前用户删除的对象。仅本地 feature 分支交付；未推送、部署或合并。
+旧原型 SQLite/浏览器历史不会自动导入新的领域模型，也不属于当前用户删除的对象。代码通过 feature 分支交付；本地运行不等于已部署公网服务。
