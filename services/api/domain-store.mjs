@@ -303,6 +303,7 @@ export class DomainStore {
     if (prev) {
       check(prev.request_hash === requestHash, "IDEMPOTENCY_CONFLICT", 409);
       const outcome = JSON.parse(prev.outcome);
+      if(operation.startsWith('edit:'))check(this.db.prepare("SELECT id FROM objects WHERE owner=? AND type='result' AND id=?").get(uid,operation.slice(5)),'SOURCE_DELETED',410);
       if (/^(accept|retry|reanalyse|change):/.test(operation) && outcome.source_id)
         check(
           this.db
@@ -378,6 +379,41 @@ export class DomainStore {
       this.save("fact_change", change);
     }
   }
+  conversationSources(uid, conversationId) {
+    check(typeof conversationId === "string", "INVALID_INPUT");
+    const runs=this.all("run",uid).filter(r=>r.workflow==='chat'&&r.conversation_id===conversationId).sort((a,b)=>a.created_at.localeCompare(b.created_at));
+    check(runs.length,"NOT_FOUND",404);
+    check(!runs.some(r=>r.deleted),"SOURCE_DELETED",410);
+    return [...new Set(runs.map(r=>r.source_ids[0]))].map(sid=>this.get(uid,"source",sid));
+  }
+  conversationMessages(run) {
+    if(!run.conversation_id)return [];
+    const messages=[];
+    const results=this.all('result',run.owner).filter(result=>result.kind==='assistant_reply'&&result.conversation_id===run.conversation_id).sort((a,b)=>b.created_at.localeCompare(a.created_at));
+    for(const source of this.conversationSources(run.owner,run.conversation_id).filter(source=>run.source_ids.includes(source.id))){
+      messages.push({role:'user',text:source.text,source_id:source.id});
+      const response=results.find(result=>result.source_ids[0]===source.id);
+      if(response?.payload.questions?.length)messages.push({role:'assistant',text:response.payload.questions.join('\n'),context_only:true});
+    }
+    check(Buffer.byteLength(JSON.stringify(messages))<=this.limits.outputBytes,'PAYLOAD_TOO_LARGE',413);
+    return messages;
+  }
+  editVisit(uid,resultId,body,key,expectedEpoch) {
+    return this.transaction(()=>this.receipt(uid,`edit:${resultId}`,key,body,()=>{
+      this.checkExpectedEpoch(uid,expectedEpoch);
+      const result=this.get(uid,"result",resultId);
+      check(result.kind==='visit_preparation',"INVALID_INPUT");
+      // Patient wording is editable even when its evidence needs a fresh review.
+      // Keep the original payload and its stale status unchanged.
+      check(['current','stale'].includes(result.status)&&['current','stale'].includes(result.validity),"STALE_DEPENDENCY",409);
+      keys(body,['speech','questions','expected_edit_revision']);
+      check(Number.isSafeInteger(body.expected_edit_revision)&&body.expected_edit_revision===(result.user_edit?.revision||0),'REVISION_CONFLICT',409);
+      const speech=this.text(body.speech);
+      check(speech.length<=20000&&Array.isArray(body.questions)&&body.questions.length<=20&&body.questions.every(q=>typeof q==='string'&&q.length<=1000),'INVALID_INPUT');
+      result.user_edit={speech,questions:[...body.questions],revision:body.expected_edit_revision+1,edited_at:this.now()};
+      this.save('result',result);return result;
+    }));
+  }
   accept(uid, workflow, input, key, document = null, expectedEpoch) {
     return this.transaction(() =>
       this.receipt(
@@ -389,10 +425,27 @@ export class DomainStore {
           this.checkExpectedEpoch(uid, expectedEpoch);
           this.requireConsent(uid);
           check(["entry", "document", "visit", "chat"].includes(workflow));
-          const text = this.text(workflow === "visit" ? input.current_concern : workflow === "chat" ? input.question : input.text);
+          let selected=input.selected_source_ids||[],conversationId=null,concern=input.current_concern,derivedSourceIds=[];
+          check(Array.isArray(selected));
+          if(workflow==='visit'&&input.previous_result_id){
+            const previous=this.get(uid,'result',input.previous_result_id);
+            check(previous.kind==='visit_preparation','INVALID_INPUT');
+            const previousRun=this.get(uid,'run',previous.run_id);
+            check(!previousRun.deleted&&previousRun.source_ids.length,'SOURCE_DELETED',410);
+            concern=this.get(uid,'source',previousRun.source_ids[0]).text;derivedSourceIds=[previousRun.source_ids[0]];
+            selected=previousRun.source_ids.slice(1);conversationId=previousRun.conversation_id||null;
+          }
+          const priorChat=workflow==='chat'?this.all('run',uid).filter(r=>r.workflow==='chat'&&selected.includes(r.source_ids[0])).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]:null;
+          conversationId=workflow==='visit'?(input.conversation_id||conversationId):workflow==='chat'?(priorChat?.conversation_id||id('chat')):null;
+          if(conversationId&&(workflow==='visit'||priorChat)){
+            const conversation=this.conversationSources(uid,conversationId);
+            if(workflow==='visit'){concern=conversation.map(source=>source.text).join('\n');derivedSourceIds=[...derivedSourceIds,...conversation.map(source=>source.id)];}
+            selected=[...new Set([...selected,...conversation.map(source=>source.id)])];
+          }
+          const text = this.text(workflow === "visit" ? concern : workflow === "chat" ? input.question : input.text);
+          check(selected.length<(conversationId?this.limits.retrievalCount:this.limits.retrievalCount+1),'PAYLOAD_TOO_LARGE',413);
+          check(Buffer.byteLength(text)+selected.reduce((n,sid)=>n+Buffer.byteLength(this.get(uid,'source',sid).text),0)<=this.limits.textBytes*2,'PAYLOAD_TOO_LARGE',413);
           this.checkQueueAdmission(uid);
-          const selected = input.selected_source_ids || [];
-          check(Array.isArray(selected) && selected.length <= this.limits.retrievalCount);
           for (const s of selected) this.get(uid, "source", s);
           if (input.episode_id) this.get(uid, "episode", input.episode_id);
           const source = this.insert(uid, "source", {
@@ -402,6 +455,7 @@ export class DomainStore {
             content_hash: hash(text),
             recorded_at: this.now(),
             pages: document?.pages || [],
+            ...(derivedSourceIds.length?{derived_source_ids:[...new Set(derivedSourceIds)]}:{}),
             input_kind: workflow === "chat" ? "assistant_question" : document ? "pdf" : workflow === "document" ? "pasted_document" : "self_report",
           });
           const episode = input.episode_id
@@ -433,8 +487,7 @@ export class DomainStore {
             if (document)
               this.db.prepare("INSERT INTO originals VALUES(?,?,?)").run(source.id, uid, document.bytes);
           }
-          const priorChat = workflow === "chat" ? this.all("run", uid).filter(r=>r.workflow === "chat" && selected.includes(r.source_ids[0])).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0] : null;
-          const run = this.newRun(uid, workflow, [source.id, ...selected], { document_id: doc?.id || null, ...(workflow === "chat" ? {conversation_id:priorChat?.conversation_id||id("chat")} : {}) });
+          const run = this.newRun(uid, workflow, [source.id, ...selected], { document_id: doc?.id || null, ...(conversationId ? {conversation_id:conversationId} : {}) });
           const operation = this.insert(uid, "operation", {
             kind: "accept",
             status: "committed",
@@ -772,7 +825,7 @@ export class DomainStore {
         call("healththread_retrieve_context", args, (r, a) => {
           keys(a, ["query", "episode_id", "source_ids"], []);
           check(!a.query || (typeof a.query === "string" && a.query.length <= 1000));
-          const ids = a.source_ids || [];
+          const ids = a.source_ids || (r.conversation_id ? r.source_ids : []);
           check(Array.isArray(ids) && ids.length <= this.limits.retrievalCount);
           if (a.episode_id) this.get(r.owner, "episode", a.episode_id);
           const p = this.profile(r.owner),
@@ -781,12 +834,13 @@ export class DomainStore {
           const facts = p.facts.filter(
             (f) =>
               (!query || f.value.normalize("NFKC").toLowerCase().includes(query)) &&
-              (!ids.length || f.evidence.some((e) => ids.includes(e.source_id))) &&
+              (!a.source_ids?.length || f.evidence.some((e) => ids.includes(e.source_id))) &&
               (!a.episode_id || f.episode_id === a.episode_id),
           );
           return {
             facts: facts.slice(0, this.limits.retrievalCount),
             sources,
+            ...(r.conversation_id?{conversation_messages:this.conversationMessages(r)}:{}),
             source_spans:sources.map(source=>({source_id:source.id,sentence_spans:sentenceSpans(source),sentence_annotations:sentenceAnnotations(source)})),
             conflicts: p.pending_changes.map((c) => ({ id: c.id, conflicts: c.conflicts })),
             snapshot_revision: p.profile_revision,
@@ -1023,7 +1077,9 @@ export class DomainStore {
           audit_id: audit.id,
           recorded_at: this.now(),
         });
-        return { profile_revision: user.revision, commit_receipt: operation.id, operation_id: operation.id };
+        const outcome = { profile_revision: user.revision, commit_receipt: operation.id, operation_id: operation.id };
+        finishRecordConfirmation(this,uid,change,{accepted_change_ids:[]},outcome);
+        return outcome;
       }),
     );
   }
@@ -1192,15 +1248,11 @@ export class DomainStore {
           "INVALID_AGENT_OUTPUT",
           422,
         );
-        check(
-          payload.claims.some(
-            (c) =>
-              Array.isArray(c.evidence) &&
-              c.evidence.some((e) => e.source_id === run.source_ids[0] && e.quote === c.text),
-          ),
-          "INVALID_AGENT_OUTPUT",
-          422,
-        );
+        if(!payload.claims.some(c=>Array.isArray(c.evidence)&&c.evidence.some(e=>e.source_id===run.source_ids[0]&&e.quote===c.text)))
+          fail(422,'INVALID_AGENT_OUTPUT','缺少本次主来源的原句证据。',{
+            path:'payload.claims',required_source_id:run.source_ids[0],
+            rule:'Include at least one exact sentence_span from healththread_read_source for required_source_id. Copy quote and locator unchanged; add its source_id/source_text_version to dependencies. For conversation visits the primary source already contains every user turn.',
+          });
         const supported = [];
         for (const claim of payload.claims) {
           keys(claim, ["text", "fact_refs", "evidence"]);
@@ -1215,13 +1267,11 @@ export class DomainStore {
           });
           if (claim.evidence.length) {
             for (const { evidence: e } of validateEvidence(claim.evidence, (sid) => read(run, sid))) {
-              check(
-                args.dependencies.some(
-                  (d) => d.source_id === e.source_id && d.source_text_version === e.source_text_version,
-                ),
-                "INVALID_AGENT_OUTPUT",
-                422,
-              );
+              if(!args.dependencies.some(d=>d.source_id===e.source_id&&d.source_text_version===e.source_text_version))
+                fail(422,'INVALID_AGENT_OUTPUT','引用来源缺少对应依赖。',{
+                  path:'dependencies',missing_dependencies:[{source_id:e.source_id,source_text_version:e.source_text_version}],
+                  rule:'Add this exact source dependency. Every evidence source_id/source_text_version must have a matching dependencies entry, including the primary concern source. Preserve validated claims and evidence.',
+                });
               quotes.push(e.quote);
             }
           }
@@ -1348,6 +1398,7 @@ export class DomainStore {
         const recordThread=checkRecordRetry(this,uid,previous);
         const run = this.newRun(uid, previous.workflow, previous.source_ids, {
           ...(previous.record_thread_id?{record_thread_id:previous.record_thread_id}:{}),
+          ...(previous.conversation_id?{conversation_id:previous.conversation_id}:{}),
           document_id: previous.document_id,
           parent_run_id: previous.id,
         });
@@ -1540,6 +1591,10 @@ export class DomainStore {
         this.user(uid);
         if (sourceId !== "all") this.get(uid, "source", sourceId);
         const sourceIds = sourceId === "all" ? this.all("source", uid).map((s) => s.id) : [sourceId];
+        // Server-derived concern snapshots must be erased with their original dialogue.
+        let derivedAdded=true;
+        while(derivedAdded){derivedAdded=false;for(const source of this.all('source',uid))if(!sourceIds.includes(source.id)&&source.derived_source_ids?.some(sid=>sourceIds.includes(sid))){sourceIds.push(source.id);derivedAdded=true;}}
+
         this.db
           .prepare(
             "UPDATE users SET epoch=epoch+1,revision=revision+1,all_clear_epoch=all_clear_epoch+? WHERE id=?",
@@ -1601,8 +1656,10 @@ export class DomainStore {
             }
           }
         }
-        for (const objectId of removed)
+        for (const objectId of removed) {
           this.db.prepare("DELETE FROM objects WHERE id=? AND owner=?").run(objectId, uid);
+          this.db.prepare("UPDATE receipts SET outcome='{}' WHERE owner=? AND operation=?").run(uid,`edit:${objectId}`);
+        }
         for (const sid of sourceIds)
           this.db.prepare("DELETE FROM originals WHERE source_id=? AND owner=?").run(sid, uid);
         for (const run of this.all("run", uid)) {

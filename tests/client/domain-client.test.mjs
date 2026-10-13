@@ -176,3 +176,15 @@ test('peer polling and export tolerate indirect result withdrawal after fact-sou
  const visit=await a.createVisit('保留这条困扰。',[]);await app.jobs.drain();const completed=await b.pollRun(visit.run_id);const removedResult=completed.result_id;assert.ok(removedResult);
  await a.deleteData(first.source_id);await b.refresh();const withdrawn=await b.pollRun(visit.run_id,{force:true});assert.equal(withdrawn.result_id,null);assert.equal(withdrawn.phase,'result_withdrawn');assert.equal((await b.source(visit.source_id)).text,'保留这条困扰。');assert.ok(!b.state.results.some(r=>r.id===removedResult));const exported=await b.exportData();assert.ok(!JSON.stringify(exported.runs).includes(removedResult));assert.ok(Object.values(b.state.runs).some(r=>r.id===visit.run_id));
 });
+
+test('visit regeneration and patient edits persist through the public client API',async t=>{
+ const {a,b}=await setup(t);
+ const created=await a.createVisit('本次患者描述。');await a.pollRun(created.run_id);await a.refresh();
+ const card=a.state.results.find(r=>r.kind==='visit_preparation');
+ const edited=await a.editVisit(card.id,'患者修改表达。',['我自己的问题'],0);
+ assert.equal(edited.user_edit.revision,1);await a.refresh();assert.equal(a.state.results.find(r=>r.id===card.id).user_edit.speech,'患者修改表达。');
+ await b.refresh();assert.equal(b.state.results.find(r=>r.id===card.id).user_edit.revision,1);
+ await assert.rejects(b.editVisit(card.id,'另一窗口旧稿。',[],0),{code:'REVISION_CONFLICT'});
+ assert.equal(b.state.results.find(r=>r.id===card.id).payload.speech,'本次患者描述。');
+ const regenerated=await a.createVisit('',[],{previous_result_id:card.id});assert.equal((await a.source(regenerated.source_id)).text,'本次患者描述。');
+});

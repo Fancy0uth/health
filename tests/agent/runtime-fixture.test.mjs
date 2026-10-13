@@ -120,3 +120,36 @@ test('fixture: parent shutdown awaits an opening private connection and rejects 
 test('fixture: duplicate stage calls in one native batch retain both invocation sequences and one effect receipt',async t=>{
  const f=await runtimeCase(t,a=>{const stage={tool:'healththread_stage_candidates',args:{candidates:[],base_profile_revision:1,operation_key:'batched-stage-replay-0001'}};return[{tool:'healththread_read_source',args:{source_id:a.source_id}},{tool:'healththread_retrieve_context',args:{}},{tools:[stage,structuredClone(stage)]},{text:'已暂存'}];});const result=await f.agent.run({run:f.run,tools:f.tools,signal:new AbortController().signal});assert.equal(result.agh.tool_receipt_ids.length,3);const correlations=f.store.all('runtime_binding')[0].evidence.correlations;assert.equal(correlations.length,4);assert.ok(correlations[3].call_seq<correlations[2].result_seq);assert.ok(correlations[3].result_seq>correlations[2].result_seq);assert.equal(correlations[3].replay_of_tool_use_id,correlations[2].tool_use_id);
 });
+
+test('fixture: a valid stage after both repairs still receives one tool-disabled finalization turn',async t=>{
+ const f=await runtimeCase(t,a=>[{tool:'healththread_read_source',args:{source_id:a.source_id}},{tool:'healththread_retrieve_context',args:{}},...Array.from({length:2},()=>({tool:'healththread_stage_candidates',args:{candidates:[{value:'invalid'}],base_profile_revision:1,operation_key:'two-repairs-stage-001'}})),{tool:'healththread_stage_candidates',args:{candidates:[],base_profile_revision:1,operation_key:'two-repairs-stage-001'}},{text:'已暂存'},{text:'已暂存，待用户核对'}]);
+ const outcome=await f.agent.run({run:f.run,tools:f.tools,signal:new AbortController().signal});
+ assert.equal(f.provider.requests.length,7);
+ assert.equal(f.store.internalRun(f.run.id).repair_attempts,2);
+ assert.equal(outcome.agh.tool_receipt_ids.length,3);
+ assert.deepEqual(f.store.all('runtime_binding')[0].evidence.turns.map(t=>t.reason),['blocked','completed']);
+ assert.equal(f.store.all('fact_change').length,1);
+});
+test('fixture: finalization after two repairs cannot reopen tools or extend the repair budget',async t=>{
+ const f=await runtimeCase(t,a=>[{tool:'healththread_read_source',args:{source_id:a.source_id}},{tool:'healththread_retrieve_context',args:{}},...Array.from({length:2},()=>({tool:'healththread_stage_candidates',args:{candidates:[{value:'invalid'}],base_profile_revision:1,operation_key:'two-repairs-denied-01'}})),{tool:'healththread_stage_candidates',args:{candidates:[],base_profile_revision:1,operation_key:'two-repairs-denied-01'}},{text:'已暂存'},{tool:'healththread_read_source',args:{source_id:a.source_id}},{text:'不应继续'}]);
+ await assert.rejects(f.agent.run({run:f.run,tools:f.tools,signal:new AbortController().signal}));
+ assert.equal(f.provider.requests.length,7);
+ assert.equal(f.store.internalRun(f.run.id).repair_attempts,2);
+ assert.equal(f.store.internalRun(f.run.id).tool_receipts.length,3);
+ assert.equal(f.store.all('fact_change').length,1);
+ assert.deepEqual(f.store.all('runtime_binding')[0].diagnostic.turns.map(t=>t.reason),['blocked','error']);
+});
+test('fixture: visit repair details reach the model and corrected primary-source evidence stays correlated',async t=>{
+ const home=await mkdtemp(join(tmpdir(),'ht-agh-visit-repair-'));let runtime;const store=new DomainStore({demoAccounts:[{username:'repair-visit',password:'fixture-visit-password'}]});t.after(async()=>{await runtime?.close();store.close();await rm(home,{recursive:true,force:true});});
+ const uid=store.login('repair-visit','fixture-visit-password').user.id;store.setConsent(uid,{purpose:'analysis',granted:true,expected_version:1});
+ const previous=store.accept(uid,'entry',{text:'第一段原文。'},'visit-prior-repair-01');store.failRun(previous.run_id,'FIXTURE');
+ const accepted=store.accept(uid,'visit',{current_concern:'第一段原文。第二段原文。',selected_source_ids:[previous.source_id]},'visit-repair-case-01'),run=store.claimRun(accepted.run_id);
+ const originalSpan=sentenceSpans(store.get(uid,'source',previous.source_id))[0],primarySpan=sentenceSpans(store.get(uid,'source',accepted.source_id))[0];
+ const args=(span,dependency)=>({kind:'visit_preparation',operation_key:'visit-repair-stage01',payload:{speech:span.quote,questions:[],unknowns:[],claims:[{text:span.quote,fact_refs:[],evidence:[span]}]},dependencies:[{source_id:dependency,source_text_version:1}]});
+ const provider=scriptedProvider([{tool:'healththread_read_source',args:{source_id:accepted.source_id}},{tool:'healththread_retrieve_context',args:{source_ids:[previous.source_id]}},{tool:'healththread_stage_result',args:args(originalSpan,previous.source_id)},{tool:'healththread_stage_result',args:args(primarySpan,previous.source_id)},{tool:'healththread_stage_result',args:args(primarySpan,accepted.source_id)},{text:'已暂存'},{text:'已暂存，待核对'}]);
+ runtime=await createRuntime({home,fixture:fixtureRuntime(provider)});const agent=new AgnesAgent({runtime,store});const tools=Object.fromEntries(Object.keys(store.toolsFor(run.id)).map(n=>[n,(a,i)=>store.toolsFor(run.id,i)[n](a)]));
+ const result=await agent.run({run,tools,signal:new AbortController().signal});
+ assert.match(JSON.stringify(provider.requests[3]),/required_source_id/);assert.match(JSON.stringify(provider.requests[4]),/missing_dependencies/);
+ assert.equal(result.agh.tool_receipt_ids.length,3);assert.equal(store.internalRun(run.id).repair_attempts,2);assert.equal(store.all('result',uid).length,1);
+ assert.equal(store.all('runtime_binding')[0].evidence.turns.at(-1).reason,'completed');
+});

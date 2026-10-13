@@ -112,7 +112,7 @@ hr { border: 0; border-top: 1px solid var(--border); width: 100%; margin: 4px 0;
 .input-controls [data-action="send"] { background: var(--mint); }
 .sticky-actions { flex: none; background: var(--surface); display: flex; gap: 12px; align-items: flex-start; padding: 20px; min-height: 88px; }
 .with-nav .sticky-actions { min-height: 96px; }
-.sticky-actions .button.secondary { flex: 0 0 36.6%; }
+.sticky-actions .button.secondary { flex: 1 1 0; padding-inline: 8px; }
 .sticky-actions .button { flex: 1; min-width: 0; }
 .chat-content { gap: 16px; }
 .message { display: flex; flex-direction: column; gap: 12px; border-radius: 20px; padding: 16px; align-self: flex-start; width: 94%; background: var(--surface); }

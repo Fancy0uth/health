@@ -29,8 +29,10 @@ export class AgnesAgent {
     signal?.throwIfAborted();
     turns.push({reason:turn.reason,stop_reason:turn.stopReason,last_seq:turn.lastSeq});
     const staged=runtime.bindings.lookup(key);
-    if(turn.reason==='blocked'&&staged.repairs>0&&staged.repairs<2&&staged.invocations.some(i=>i.name.includes('_stage_'))){
-     runtime.bindings.reject(key,'finalization');runtime.bindings.finalize(key);phase='finalization';
+    if(turn.reason==='blocked'&&staged.repairs>0&&staged.repairs<=2&&staged.invocations.some(i=>i.name.includes('_stage_'))){
+     // A saved, validated checkpoint may exhaust both repairs. Finishing its
+     // SDK turn adds no business repair: all tools are disabled before prompting.
+     if(staged.repairs<2)runtime.bindings.reject(key,'finalization');runtime.bindings.finalize(key);phase='finalization';
      turn=await session.prompt(`$${skill}\n本次有效业务产物已通过工具暂存。仅用一句文字确认已暂存、待用户核对；禁止调用任何工具、修改产物或重复提取。`,{signal});
      turns.push({reason:turn.reason,stop_reason:turn.stopReason,last_seq:turn.lastSeq});
     }

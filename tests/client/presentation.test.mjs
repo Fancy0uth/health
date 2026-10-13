@@ -22,3 +22,12 @@ test('primary candidate review uses patient-facing semantics; internal IDs and e
   assert.ok(primary.includes('症状'));assert.ok(primary.includes('自述否认'));assert.ok(primary.includes('既往'));assert.ok(primary.includes('相对时间'));assert.ok(primary.includes('第 2 页'));
   for(const internal of ['candidate-secret','episode-secret','source-secret','symptom','negated','UTF-16']) assert.ok(!primary.includes(internal),internal);
 });
+test('copying an edited card keeps its edited questions and the original source evidence',()=>{
+  const result={status:'stale',payload:{speech:'原稿',questions:['原来的问题'],unknowns:[],claims:[{text:'原文内容。',fact_refs:[],evidence:[{source_id:'source-evidence',source_text_version:1,quote:'原文内容。',locator:{page:null,start:0,end:5}}]}]}};
+  const copied=cardText(result,{localDraft:'用户修改后的表达稿',localQuestions:['用户修改后的问题']});
+  assert.match(copied,/用户修改后的表达稿/);assert.match(copied,/用户修改后的问题/);assert.match(copied,/source-evidence/);assert.match(copied,/原文内容/);assert.match(copied,/已过期/);assert.ok(!copied.includes('原来的问题'));
+});
+test('copied server-saved card edit is current patient wording with original evidence retained',()=>{
+ const result={user_edit:{speech:'已保存的修改',questions:['已保存的问题？'],revision:1},payload:{speech:'原稿',questions:['旧问题？'],claims:[{text:'来源原句。',evidence:[{source_id:'original-source',quote:'来源原句。',locator:{page:null,start:0,end:5}}],fact_refs:[]}],unknowns:[]}};
+ const copied=cardText(result);assert.match(copied,/已保存的修改/);assert.match(copied,/已保存的问题/);assert.match(copied,/来源原句/);assert.ok(!copied.includes('旧问题'));assert.ok(!copied.includes('本机打印草稿'));
+});

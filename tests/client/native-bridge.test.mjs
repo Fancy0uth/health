@@ -129,3 +129,88 @@ test('editing a pending correction withdraws its old candidate atomically and co
   const second=await bridge.editRecord(first.source_id,'更正：目前偶有头痛。');assert.equal((await client.factChange(first.fact_change_id)).status,'expired');
   review=await bridge.review(second.source_id);await bridge.confirm(second.source_id,review.proposals.map(p=>p.id));assert.equal(client.state.profile.facts[0].value,'更正：目前偶有头痛。');
 });
+test('native projection drops cached fact history immediately when the account changes',async t=>{
+  const {bridge,client}=await setup(t);const entry=await bridge.createEntry('账号甲的合成记录。');await bridge.wait(entry.run_id);let review=await bridge.review(entry.source_id);await bridge.confirm(entry.source_id,review.proposals.map(p=>p.id));
+  const fact=client.state.profile.facts[0];const edit=await bridge.editRecord(entry.source_id,'账号甲的更正内容。',fact.fact_id,fact.revision);review=await bridge.review(edit.source_id);await bridge.confirm(edit.source_id,review.proposals.map(p=>p.id));assert.equal(bridge.snapshot().factHistory.length,1);
+  client.invalidate('external-session');assert.equal(bridge.snapshot().factHistory.length,0);assert.equal(bridge.sources.size,0);
+});
+test('an old refresh cannot repopulate bridge caches after logout',async t=>{
+  const {bridge,client}=await setup(t);const original=client.exportData.bind(client);let entered,release;const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
+  client.exportData=async()=>{const result=await original();entered();await gate;return result;};bridge.historyRevision=null;
+  const pending=bridge.refresh();await started;client.invalidate('external-session');release();await assert.rejects(pending,e=>e.code==='SESSION_CHANGED');assert.equal(bridge.history.length,0);assert.equal(bridge.sources.size,0);
+});
+test('old-account page data cannot be saved into a different account with the same scope number',async t=>{
+  const {bridge,client}=await setup(t);const old=bridge.snapshot();old.sessions=[{id:'old-private-session',messages:[{text:'旧账号合成内容'}]}];
+  client.invalidate('external-session');client.state.user={id:'different-owner'};client.sessionEpoch='different-session';client.scopeEpoch=old._domainEpoch;
+  assert.throws(()=>bridge.saveOverlay(old),e=>e.code==='LOCAL_DRAFT_EXPIRED');assert.equal(client.getDraft('nativeUi',{}).sessions,undefined);
+});
+
+test('confirmed correction provenance does not duplicate current records or hide independent entries',async t=>{
+  const recordAgent={...agent,async run(input){
+    if(!input.run.record_thread_id)return agent.run(input);
+    const {tools,run}=input,{source}=await tools.healththread_read_source({source_id:run.source_ids[0]});
+    const context=await tools.healththread_retrieve_context({});
+    return tools.healththread_stage_candidates({base_profile_revision:context.snapshot_revision,operation_key:'native-record-dedup-fixture',candidates:sentenceSpans(source).map(e=>({field:'reported_text',value:e.quote,assertion:classifySourceMarkers(e.quote).assertion,temporal_scope:classifySourceMarkers(e.quote).temporal_scope,effective_time:literalSourceTime(e.quote,source.id),evidence:[e],proposal_kind:'new'})),record_dialogue:{questions:[],missing_fields:[]}});
+  }};
+  const {bridge}=await setup(t,recordAgent);
+  const original=await bridge.recordTurn('目前头痛。');await bridge.wait(original.run_id);
+  let review=await bridge.review(original.source_id);await bridge.confirm(original.source_id,review.proposals.map(p=>p.id));
+  const independent=await bridge.createEntry('更正：目前没有头痛。');await bridge.wait(independent.run_id);
+  const document=await bridge.createDocument({text:'医嘱：每日记录症状。',name:'保留病历'});await bridge.wait(document.run_id);
+  const correctionIds=[];
+  for(const text of ['更正：目前没有头痛。','再次更正：目前偶有头痛。']){
+    const fact=bridge.snapshot().records.find(r=>r.id===original.source_id).facts[0];
+    const edit=await bridge.editRecord(original.source_id,text,fact.fact_id,fact.revision);correctionIds.push(edit.source_id);
+    assert.ok(bridge.snapshot().records.some(r=>r.id===edit.source_id),'pending corrections remain accessible');
+    review=await bridge.review(edit.source_id);await bridge.confirm(edit.source_id,review.proposals.map(p=>p.id));
+    const state=bridge.snapshot();
+    assert.deepEqual(new Set(state.records.map(r=>r.id)),new Set([original.source_id,independent.source_id]));
+    assert.equal(state.records.find(r=>r.id===original.source_id).summary,text);
+    assert.equal(state.records.find(r=>r.id===original.source_id).text,'目前头痛。');
+    assert.ok(state.documents.some(d=>d.source_id===document.source_id));
+    assert.equal(state.factHistory.at(-1).newValue,text);
+    for(const id of correctionIds)assert.ok(bridge.sources.has(id),'correction source provenance is retained');
+  }
+});
+
+const conversationVisitAgent={...agent,async run(input){
+  if(input.run.workflow!=='visit')return agent.run(input);
+  const {source}=await input.tools.healththread_read_source({source_id:input.run.source_ids[0]});await input.tools.healththread_retrieve_context({});
+  const claims=sentenceSpans(source).map(e=>({text:e.quote,evidence:[e],fact_refs:[]}));
+  return input.tools.healththread_stage_result({kind:'visit_preparation',operation_key:input.run.id,dependencies:[{source_id:source.id,source_text_version:1}],payload:{speech:claims.map(c=>c.text).join('\n'),claims,questions:['需要带哪些资料？'],unknowns:['用药情况待补充']}});
+}};
+test('home conversation generates a card with every turn and regenerates without a local form',async t=>{
+  const {bridge,client}=await setup(t,conversationVisitAgent);let last;
+  for(const question of ['我准备去看医生。','目前没有头痛。','已经三天了。','饭后更明显。','睡眠不受影响。','没有用药。','没有过敏史。','想问需要带什么资料。'])last=await bridge.requestAgent('/api/health-assistant',{question,messages:last?[{role:'user',source_id:last.source_id}]:[]});
+  const session=bridge.snapshot().sessions.find(s=>s.messages.some(m=>m.source_id===last.source_id));
+  await bridge.generateVisit(session.id);let state=bridge.snapshot();assert.match(state.cardDraft,/目前没有头痛/);assert.match(state.cardDraft,/没有过敏史/);assert.match(state.cardDraft,/饭后更明显/);assert.equal(state.cardUnknowns[0],'用药情况待补充');assert.equal(state.sessions.length,1,'generated context must not create a duplicate conversation');
+  const peer=new NativeBridge(client);await peer.refresh();assert.equal(peer.snapshot().currentConcern,'');await peer.regenerateVisit();state=peer.snapshot();assert.match(state.cardDraft,/目前没有头痛/);assert.match(state.cardDraft,/想问需要带什么资料/);
+});
+test('saved patient card edits survive a new bridge and conflict instead of silently overwriting',async t=>{
+  const {bridge,client}=await setup(t,conversationVisitAgent);await bridge.requestAgent('/api/visit-preparations',{current_concern:'目前没有头痛。'});const before=bridge.snapshot();
+  await bridge.saveCardEdit(before.cardResultId,'我想说明：目前没有头痛。',['哪些资料需要带？'],before.cardEditRevision);
+  const peer=new NativeBridge(client);await peer.refresh();const state=peer.snapshot();assert.equal(state.cardDraft,'我想说明：目前没有头痛。');assert.deepEqual(state.questions,['哪些资料需要带？']);assert.equal(state.cardEditRevision,1);assert.match(peer.copyText(),/哪些资料需要带/);assert.match(peer.copyText(),/目前没有头痛/);
+  await assert.rejects(bridge.saveCardEdit(before.cardResultId,'旧页面覆盖。',[],0),e=>e.code==='REVISION_CONFLICT');assert.equal(peer.snapshot().cardDraft,'我想说明：目前没有头痛。');assert.equal(client.state.profile.facts.length,0);
+});
+test('no conversation or card produces a useful error without submitting an empty visit',async t=>{
+  const {bridge,requests}=await setup(t);await assert.rejects(bridge.generateVisit('missing'),e=>e.code==='NO_VISIT_CONVERSATION');await assert.rejects(bridge.regenerateVisit(),e=>e.code==='NO_CARD');assert.equal(requests.filter(r=>r.path==='/api/visit-preparations'&&r.method==='POST').length,0);
+});
+test('canonical chat projection keeps the active local session while source cache is catching up',async t=>{
+ const {bridge}=await setup(t);let state=bridge.snapshot();state.sessions=[{id:'local-active',title:'就诊对话',messages:[{role:'user',text:'准备就诊。'}],updatedAt:new Date().toISOString()}];state.activeSessionId='local-active';bridge.saveOverlay(state);
+ await bridge.requestAgent('/api/health-assistant',{question:'准备就诊。'});bridge.sources.clear();
+ state=bridge.snapshot();assert.equal(state.activeSessionId,'local-active');assert.ok(state.sessions.some(s=>s.id==='local-active'&&s.messages.some(m=>m.role==='assistant')));
+});
+test('direct concern cards do not attach an unrelated local conversation',async t=>{
+ const {bridge}=await setup(t,conversationVisitAgent);const state=bridge.snapshot();state.sessions=[{id:'unrelated',messages:[{role:'user',text:'其他记录。'}]}];bridge.saveOverlay(state);
+ await bridge.requestAgent('/api/visit-preparations',{current_concern:'准备就诊。'});const card=bridge.snapshot();assert.equal(card.cardConversationId,card.cardSourceId);assert.notEqual(card.cardConversationId,'unrelated');
+});
+test('a failed unsaved followup cannot be silently omitted from an existing conversation card',async t=>{
+ const {bridge,requests}=await setup(t,conversationVisitAgent);await bridge.requestAgent('/api/health-assistant',{question:'准备就诊。'});const state=bridge.snapshot(),session=state.sessions[0];session.messages.push({role:'user',text:'这条信息尚未提交成功。'});state.activeSessionId=session.id;bridge.saveOverlay(state);
+ await assert.rejects(bridge.generateVisit(session.id),e=>e.code==='CONVERSATION_NOT_READY');assert.equal(requests.filter(r=>r.path==='/api/visit-preparations'&&r.method==='POST').length,0);
+});
+test('an existing stale card can be edited and reopened without clearing provenance warnings',async t=>{
+ const {bridge,client,app}=await setup(t,conversationVisitAgent);await bridge.requestAgent('/api/visit-preparations',{current_concern:'原来向医生说明的内容。'});
+ const before=bridge.snapshot();app.store.invalidate(client.state.user.id,r=>r.id===before.cardResultId,'stale');await bridge.refresh();assert.equal(bridge.snapshot().cardSourceDeleted,true);
+ await bridge.saveCardEdit(before.cardResultId,'患者重新修改的表达。',['补充询问的问题？'],0);
+ const peer=new NativeBridge(client);await peer.refresh();assert.equal(peer.snapshot().cardDraft,'患者重新修改的表达。');assert.deepEqual(peer.snapshot().questions,['补充询问的问题？']);assert.equal(peer.snapshot().cardSourceDeleted,true);assert.equal(peer.snapshot().cardEditRevision,1);assert.equal(client.state.profile.facts.length,0);assert.match(peer.copyText(),/已过期/);
+});

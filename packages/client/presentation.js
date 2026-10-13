@@ -26,12 +26,16 @@ export function claimLabel(claim,sources=[]) {
 export function claimHtml(claim,sources=[]) {
   return `<article class="domain-claim"><p>${lines(claim.text)}</p><strong class="small">${esc(claimLabel(claim,sources))}</strong>${(claim.fact_refs||[]).map(f=>`<p class="small muted">已核对事实 · 版本 ${esc(f.revision)}</p>${diagnostics('事实 '+f.fact_id+' · v'+f.revision)}`).join('')}${(claim.evidence||[]).map(evidenceHtml).join('')}</article>`;
 }
-export function cardText(result,{sources=[],run=null,localDraft=null}={}) {
+export function cardText(result,{sources=[],run=null,localDraft=null,localQuestions=null}={}) {
   const payload=result.payload||{};
+  const saved=result.user_edit;
+  const editedText=saved?.speech??localDraft;
+  const editedQuestions=saved?.questions??localQuestions;
+  const editLabel=saved?'用户修改的沟通稿（不改变已核对事实）：\n':'本机打印草稿（未修改服务端结果）：\n';
   const state=result.validity==='stale'||result.status==='stale'?'已过期：依赖资料已变化，请重新生成':'当前版本：资料整理稿，需核对来源';
   const runtime=run?.execution_error?'执行在保存检查点后异常；不能据此证明真实运行完成。':run?.runtime?.mode==='fixture'?'合成 fixture 测试产物，非真实模型验证。':run?.runtime?.mode==='real'?'真实运行元数据由服务端提供。':'运行来源尚未取得或未验证。';
   const claims=(payload.claims||[]).map(claim=>`${claim.text}\n[${claimLabel(claim,sources)}]\n${(claim.fact_refs||[]).map(ref=>`事实 ${ref.fact_id} v${ref.revision}`).join('\n')}\n${(claim.evidence||[]).map(e=>`${locatorText(e)}\n引用：${e.quote}`).join('\n')}`).join('\n\n');
-  return `医生沟通卡\n${state}\n结果 ${result.id||'未知'} · ${result.created_at||'时间未记录'}\n${runtime}\n${localDraft!=null?'本机打印草稿（未修改服务端结果）：\n'+localDraft:claims||payload.speech||''}\n\n想问医生：\n${(payload.questions||[]).join('\n')}\n\n未知 / 尚需补充：\n${(payload.unknowns||[]).join('\n')}\n\n${capabilityText('department')}\n${capabilityText('triage')}`;
+  return `医生沟通卡\n${state}\n结果 ${result.id||'未知'} · ${result.created_at||'时间未记录'}\n${runtime}\n${editedText!=null?editLabel+editedText+'\n\n原生成稿的来源依据（不代表已核对用户修改）：\n'+(claims||payload.speech||''):claims||payload.speech||''}\n\n想问医生：\n${(editedQuestions??payload.questions??[]).join('\n')}\n\n未知 / 尚需补充：\n${(payload.unknowns||[]).join('\n')}\n\n${capabilityText('department')}\n${capabilityText('triage')}`;
 }
 export const runLabel = run => run.phase==='result_withdrawn'?'依赖来源已删除 · 产物已撤回':run.phase==='confirmed'?'用户核对事务已完成':run.phase==='rejected'?'候选已明确拒绝':({queued:'原文已保存 · 等待处理',running:'原文已保存 · 正在整理',needs_review:'候选已暂存 · 等待用户核对（尚未成为正式事实）',completed:'产物检查点已保存',failed:'原文已保存 · 处理失败',blocked:'原文已保存 · 运行未配置 / 被阻止',cancelled:'运行已取消',interrupted:'原文已保存 · 运行中断'})[run.status] || run.status;
 

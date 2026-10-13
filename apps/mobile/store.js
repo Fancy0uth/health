@@ -32,7 +32,7 @@ export function setPreference(key, value) {
 export const record = value => data.records.find(r => r.id === value);
 export const session = value => data.sessions.find(s => s.id === value);
 export const sessions = () => [...data.sessions].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-export const stale = () => !!data.cardSourceDeleted || data.cardVersion < data.factVersion;
+export const stale = () => !!data.cardSourceDeleted || (!data.cardResultId && data.cardVersion < data.factVersion);
 export const cardExists = () => data.cardVersion > 0;
 export const pending = () => data.records.reduce((n,r)=>n+(r.proposals?.length||0),0);
 export function ensureSession(text, currentId) {

@@ -298,3 +298,10 @@ body { line-height: 1.5; }
   .content, .subview-content { max-width: none; padding: 0; }
   .page-tabs, .head-actions, .page-head { display: none; }
 }
+
+/* Keep card actions reachable when the desktop panel is narrow. */
+.card-content .page-head { flex-wrap: wrap; gap: 16px; padding-right: 0; }
+.card-content .page-head h1 { flex: 1 1 220px; }
+.card-content .head-actions { flex: 1 1 420px; min-width: 0; max-width: 100%; gap: 10px; }
+.card-content .head-actions .btn { width: auto; min-width: 0; }
+.card-content .speech, .card-content .card-history, .card-content .question-list { overflow-wrap: anywhere; }

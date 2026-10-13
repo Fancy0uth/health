@@ -7,9 +7,9 @@
     "plugin/index.mjs": "881da4732193186e6c4de535ebab702febee542a13ae4e1d0c529f5d792629eb",
     "plugin/package.json": "9158773845dd4027fa2a92080f00a4da03c77307c68f0869af90ef7359242ebe",
     "plugin/schemas.json": "ea43f0352e869c70fd85c72a30e11c94b165e894e88505340d78753ac32514d1",
-    "skills/health-assistant/SKILL.md": "dce81d15e3db9ef6fb32bb0051aded28ace75acabdce68a9b146a5895c5e2538",
+    "skills/health-assistant/SKILL.md": "fa1153b178c6591b5943583b88d77ae392305cd16ef5130af64fa054b7e539fa",
     "skills/health-record/SKILL.md": "73d3792db0e8c416505760a0c1511d4ebd13badc9d8283993ff8643ee90c1be5",
     "skills/post-visit/SKILL.md": "6089487bf2bbe2e7ebcf84d406a871f7067d6dfbdae34138e8c5252685bea150",
-    "skills/visit-preparation/SKILL.md": "ecaf61c31f435f262cc3d18e30f3a747c76b73068870722a9c937a0a7f294e5e"
+    "skills/visit-preparation/SKILL.md": "38bc75f312575fc9330171f5121bb20fb0d005af3095cab46fa22f05f573e58b"
   }
 }

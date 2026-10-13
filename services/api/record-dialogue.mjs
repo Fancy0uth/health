@@ -79,7 +79,7 @@ export function checkRecordConfirmation(store,uid,change,body){
 export function finishRecordConfirmation(store,uid,change,body,outcome){
   const run=change.run_id&&store.internalRun(change.run_id);if(!run?.record_thread_id)return;
   const thread=store.get(uid,'record_thread',run.record_thread_id);check(thread.latest_change_id===change.id,'REVISION_CONFLICT',409);
-  const selected=body.accepted_change_ids.length;thread.status=selected===change.proposals.length?'confirmed':selected?'partially_confirmed':'rejected';thread.version++;thread.updated_at=store.now();store.save('record_thread',thread);
+  const selected=body.accepted_change_ids.length;thread.status=selected?(selected===change.proposals.length?'confirmed':'partially_confirmed'):'rejected';thread.version++;thread.updated_at=store.now();store.save('record_thread',thread);
   store.insert(uid,'record_confirmation',{record_thread_id:thread.id,record_summary_id:thread.latest_summary_id,source_ids:[...thread.source_ids],message:body.confirmation_message?.trim()||null,accepted_change_ids:[...body.accepted_change_ids],outcome:structuredClone(outcome),created_at:store.now()});
 }
 
