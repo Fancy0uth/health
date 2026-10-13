@@ -115,3 +115,17 @@ test('native request recovery replays the original key rather than duplicating a
 test('a peer all-clear cannot resurrect original-page conversation drafts from a bridge fallback',async t=>{
   const {bridge,client}=await setup(t);bridge.saveOverlay({...bridge.snapshot(),sessions:[{id:'old-ui-draft',messages:[{role:'user',text:'删除前的对话草稿'}]}]});const peer=new NativeBridge(client);await peer.deleteAll();assert.deepEqual(bridge.snapshot().sessions,[]);
 });
+test('text correction replaces the chosen fact and keeps original source and other facts',async t=>{
+  const {bridge,client}=await setup(t);const receipt=await bridge.createEntry('目前头痛。\n目前恶心。');await bridge.wait(receipt.run_id);let review=await bridge.review(receipt.source_id);await bridge.confirm(receipt.source_id,review.proposals.map(p=>p.id));
+  const fact=client.state.profile.facts.find(f=>f.value==='目前恶心。');
+  assert.equal(typeof bridge.editRecord,'function');
+  const edit=await bridge.editRecord(receipt.source_id,'更正：目前没有恶心。',fact.fact_id,fact.revision);review=await bridge.review(edit.source_id);
+  await bridge.confirm(edit.source_id,review.proposals.map(p=>p.id),review.review_revision,review.id);
+  assert.equal(client.state.profile.facts.find(f=>f.fact_id===fact.fact_id).value,'更正：目前没有恶心。');assert.ok(client.state.profile.facts.some(f=>f.value==='目前头痛。'));assert.equal((await client.source(receipt.source_id)).text,'目前头痛。\n目前恶心。');
+});
+test('editing a pending correction withdraws its old candidate atomically and confirms only the new text',async t=>{
+  const {bridge,client}=await setup(t);const entry=await bridge.createEntry('目前头痛。');await bridge.wait(entry.run_id);let review=await bridge.review(entry.source_id);await bridge.confirm(entry.source_id,review.proposals.map(p=>p.id));
+  const fact=client.state.profile.facts[0];const first=await bridge.editRecord(entry.source_id,'更正：目前没有头痛。',fact.fact_id,fact.revision);
+  const second=await bridge.editRecord(first.source_id,'更正：目前偶有头痛。');assert.equal((await client.factChange(first.fact_change_id)).status,'expired');
+  review=await bridge.review(second.source_id);await bridge.confirm(second.source_id,review.proposals.map(p=>p.id));assert.equal(client.state.profile.facts[0].value,'更正：目前偶有头痛。');
+});

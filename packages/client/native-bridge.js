@@ -34,8 +34,9 @@ export class NativeBridge {
     const facts=s.profile.facts,changes=s.profile.pending_changes;
     const recordFor=(id,text,created,source='用户自述')=>{
       const run=runs.find(r=>['entry','document'].includes(r.workflow)&&r.source_ids?.[0]===id);
-      const change=changes.find(c=>c.source_ids?.includes(id));
-      const confirmed=facts.filter(f=>hasSource(f,id));
+      const change=this.pendingChange(id);
+      const lineage=new Set(this.history.filter(f=>hasSource(f,id)).map(f=>f.fact_id));
+      const confirmed=facts.filter(f=>hasSource(f,id)||lineage.has(f.fact_id));
       const prior=this.history.filter(f=>hasSource(f,id)&&f.review_status==='confirmed');
       const proposals=change?.proposals||[];
       const contextOnly=!run&&!change&&!confirmed.length&&!prior.length&&runs.some(r=>r.workflow==='visit'&&r.source_ids?.[0]===id);
@@ -48,9 +49,9 @@ export class NativeBridge {
     for(const thread of threads){
       const source=this.sources.get(thread.source_ids[0]);if(!source)continue;
       const item=recordFor(source.id,thread.source_ids.map(id=>this.sources.get(id)?.text).filter(Boolean).join('\n'),source.recorded_at||source.created_at);
-      const change=changes.find(c=>c.id===thread.latest_change_id),run=runs.find(r=>r.id===thread.latest_run_id);
+      const change=this.pendingChange(source.id),run=runs.find(r=>r.id===thread.latest_run_id);
       item.proposals=change?.proposals||[];item.change_id=change?.id;item.run_id=run?.id;item.record_thread_id=thread.id;item.record_version=thread.version;
-      item.base_profile_revision=change?.base_profile_revision;item.facts=facts.filter(f=>thread.source_ids.some(id=>hasSource(f,id)));
+      item.base_profile_revision=change?.base_profile_revision;const lineage=new Set(this.history.filter(f=>thread.source_ids.some(id=>hasSource(f,id))).map(f=>f.fact_id));item.facts=facts.filter(f=>lineage.has(f.fact_id)||thread.source_ids.some(id=>hasSource(f,id)));
       item.date=iso(item.facts.find(f=>f.effective_time?.start)?.effective_time.start)||iso(item.proposals.find(p=>p.effective_time?.start)?.effective_time.start);
       item.status=item.proposals.length?'pending':['confirmed','partially_confirmed'].includes(thread.status)?'confirmed':'pending';
       item.analysis=run&&['failed','blocked','interrupted','cancelled'].includes(run.status)?'failed':item.proposals.length||item.status==='confirmed'?'complete':'saved';
@@ -117,7 +118,7 @@ export class NativeBridge {
     const granted=s.consents.consents.find(c=>c.purpose==='analysis')?.granted===true;
     return {...clone(INITIAL),currentConcern:'',impact:'',exportAt:'',...clone(ui),_domainEpoch:this.client.scopeEpoch,records,sessions,selectedHistory,factVersion:s.profile.profile_revision||0,factHistory:this.history.filter(f=>f.supersedes_revision).map(f=>({recordId:f.evidence?.[0]?.source_id,version:f.revision,oldValue:this.history.find(old=>old.fact_id===f.fact_id&&old.revision===f.supersedes_revision)?.value,newValue:f.value,reason:'用户提交并核对的更正原文',changedAt:f.confirmed_at})),symptomStart:dates[0]||'',recentChange:'',medical:docs.find(doc=>doc.source_id===ui.selectedDocumentId)||docs[0]||null,documents:docs,uploadedName:docs[0]?.name||'',uploadState:docs[0]?(docs[0].status==='confirmed'?'reviewed':docs[0].analysis==='failed'?'failed':'parsed'):'empty',recordReviewed:docs[0]?.status==='confirmed',tasks,taskStatus:tasks[0]?.status||'pending',cardVersion:card?Math.max(1,cardRun?.base_profile_revision||s.profile.profile_revision):0,cardDraft:edited?.speech??card?.payload.speech??'',questions:edited?.questions??card?.payload.questions??[],cardConcern:card?.payload.speech||'',cardStartDate:null,cardGeneratedAt:card?.created_at?.slice(0,10)||'',cardSourceDeleted:card?.status==='stale'||card?.validity==='stale',cardRecords:(card?.dependencies||[]).map(dep=>records.find(r=>r.id===dep.source_id)||this.history.find(f=>f.fact_id===dep.fact_id&&f.revision===dep.revision)).filter(Boolean).map(r=>({id:r.fact_id?r.evidence?.[0]?.source_id:r.id,text:r.text||r.value,date:r.date||null,status:r.review_status==='confirmed'?'confirmed':r.status||'pending',source:r.source||'用户自述'})),cardResultId:card?.id||null,cardConversationId:concernSource?.id||null,cardRun,cardArchive:visits.slice(1).map(r=>({version:r.profile_revision,text:r.payload.speech,stale:true})),consent:{organize:granted,parse:granted,voice:ui.voiceConsent===true},deleteResult:(this.lastDeletion||this.client.getDraft("nativeDeletion"))?.recorded_at||null,deletionReceipt:this.lastDeletion};
   }
-  async recordTurn(text,threadId,version,sourceId) {const receipt=await this.client.createRecordTurn(text,threadId,version,sourceId);await this.refresh();return receipt;}
+  async recordTurn(text,threadId,version,sourceId) {const receipt=await this.client.createRecordTurn(sourceId?undefined:text,threadId,version,sourceId);await this.refresh();return receipt;}
   async confirmRecord(threadId,message,review) {
     if(!isRecordConfirmation(message))throw fail('CONFIRMATION_REQUIRED','请明确回复“确认”或“确认记录”，其他回复不会提交事实。');
     if(!review?.summary_id)throw fail('NO_PENDING_CANDIDATES','请先查看模型生成的待确认汇总。');
@@ -136,8 +137,15 @@ export class NativeBridge {
       return run;
     }finally{options.signal?.removeEventListener('abort',cancel);}
   }
+  pendingChange(sourceId) {
+    const thread=this.client.state.recordThreads?.find(t=>t.source_ids.includes(sourceId));
+    const ids=thread?.source_ids||[sourceId];
+    const lineage=new Set(this.history.filter(f=>ids.some(id=>hasSource(f,id))).map(f=>f.fact_id));
+    const changes=this.client.state.profile.pending_changes;
+    return changes.find(c=>c.kind==='correction'&&(c.source_ids?.some(id=>ids.includes(id))||c.proposals.some(p=>lineage.has(p.fact_id))))||changes.find(c=>thread?c.id===thread.latest_change_id:c.source_ids?.includes(sourceId));
+  }
   async review(sourceId) {
-    await this.refresh();const thread=this.client.state.recordThreads?.find(t=>t.source_ids.includes(sourceId));const change=this.client.state.profile.pending_changes.find(c=>thread?c.id===thread.latest_change_id:c.source_ids?.includes(sourceId));
+    await this.refresh();const change=this.pendingChange(sourceId);
     if(!change)throw fail('NO_PENDING_CANDIDATES','当前没有可确认的候选；原文保留，请先查看分析状态。');
     return this.client.factChange(change.id);
   }
@@ -154,6 +162,25 @@ export class NativeBridge {
   }
   async updateTask(id,status,version) {const task=this.client.state.tasks.tasks.find(t=>t.id===id);if(!task)throw fail('NOT_FOUND','事项不存在。');await this.client.updateTask(id,status==='pending'?'open':status,version??task.version);await this.refresh();}
   async setConsent(granted) {await this.client.setConsent(granted);await this.refresh();}
+  async editRecord(sourceId,text,factId='',expectedVersion=null) {
+    if(!text?.trim())throw fail('INVALID_INPUT','请填写正确的记录内容。');
+    await this.refresh();const item=this.snapshot().records.find(r=>r.id===sourceId);
+    if(!item)throw fail('NOT_FOUND','没有找到要修改的记录。');
+    const pending=this.client.state.profile.pending_changes.find(c=>c.kind==='correction'&&c.source_ids[0]===sourceId);
+    if(pending){
+      const proposal=pending.proposals[0],fact=this.client.state.profile.facts.find(f=>f.fact_id===proposal.fact_id);
+      if(!fact||fact.revision!==proposal.expected_version)throw fail('REVISION_CONFLICT','事实已变化，请重新查看后修改。');
+      const receipt=await this.client.changeFact(fact,'correction',text.trim(),pending.id);await this.refresh();return receipt;
+    }
+    if(factId){
+      const fact=item.facts.find(f=>f.fact_id===factId);
+      if(!fact||fact.revision!==expectedVersion)throw fail('REVISION_CONFLICT','事实已变化，请重新查看后修改。');
+      const receipt=await this.client.changeFact(fact,'correction',text.trim());await this.refresh();return receipt;
+    }
+    if(item.facts.length||item.status==='confirmed')throw fail('REVISION_CONFLICT','这条记录已确认，请选择要更正的事实。');
+    const receipt=await this.client.createRecordTurn(text.trim(),item.record_thread_id,item.record_version,item.record_thread_id?undefined:sourceId);
+    await this.refresh();return receipt;
+  }
   async correct(sourceId,date,reason) {
     await this.refresh();const item=this.snapshot().records.find(r=>r.id===sourceId);const prior=this.history.find(f=>hasSource(f,sourceId));const fact=item?.facts[0]||this.client.state.profile.facts.find(f=>f.fact_id===prior?.fact_id);if(!fact)throw fail('NO_CONFIRMED_FACT','请先核对事实，再更正。');
     const text=`${fact.value}\n更正日期为 ${date}。\n修改原因：${reason}`;

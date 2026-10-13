@@ -71,3 +71,25 @@ test('analysis consent withdrawal rejects confirmation of the previously display
   const {bridge,client}=await setup(t);const a=await bridge.recordTurn('目前夜间咳嗽。');await bridge.wait(a.run_id);const session=bridge.snapshot().sessions.find(s=>s.id===a.record_thread_id),review=session.messages.at(-1).record_review;
   await bridge.setConsent(false);await assert.rejects(bridge.confirmRecord(session.id,'确认',review));assert.equal(client.state.profile.facts.length,0);
 });
+test('an incorrect pending record can be amended and only its new summary can be confirmed',async t=>{
+  const {bridge,client}=await setup(t);const first=await bridge.recordTurn('最初写错：目前头痛。');await bridge.wait(first.run_id);const old=await bridge.review(first.source_id);
+  assert.equal(typeof bridge.editRecord,'function');
+  const revised=await bridge.editRecord(first.source_id,'更正：目前没有头痛。');await bridge.wait(revised.run_id);
+  await assert.rejects(bridge.confirm(first.source_id,old.proposals.map(p=>p.id),old.review_revision,old.id));
+  const next=await bridge.review(first.source_id);assert.notEqual(next.id,old.id);await bridge.confirm(first.source_id,[next.proposals.find(p=>p.value.includes('目前没有头痛')).id],next.review_revision,next.id);
+  assert.equal(client.state.profile.facts.length,1);assert.match(client.state.profile.facts[0].value,/目前没有头痛/);assert.equal((await client.source(first.source_id)).text,'最初写错：目前头痛。');
+});
+test('a legacy unconfirmed entry can be amended without leaving its old candidates confirmable',async t=>{
+  const {bridge,client}=await setup(t);const first=await bridge.createEntry('最初记录错了。');await bridge.wait(first.run_id);const old=await bridge.review(first.source_id);
+  assert.equal(typeof bridge.editRecord,'function');const edit=await bridge.editRecord(first.source_id,'更正：目前没有头痛。');await bridge.wait(edit.run_id);
+  const item=bridge.snapshot().records.find(r=>r.id===first.source_id);assert.ok(item.record_thread_id);assert.match(item.text,/更正/);assert.equal((await client.factChange(old.id)).status,'expired');
+});
+test('a corrected confirmed conversation shows the current fact and can be corrected again',async t=>{
+  const {bridge,client}=await setup(t);const a=await bridge.recordTurn('目前头痛。');await bridge.wait(a.run_id);let review=await bridge.review(a.source_id);await bridge.confirm(a.source_id,review.proposals.map(p=>p.id));
+  const original=bridge.snapshot().records.find(r=>r.id===a.source_id).facts[0];const edit=await bridge.editRecord(a.source_id,'更正：目前没有头痛。',original.fact_id,original.revision);
+  assert.equal((await bridge.review(a.source_id)).id,edit.fact_change_id);
+  review=await bridge.review(edit.source_id);await bridge.confirm(edit.source_id,review.proposals.map(p=>p.id));
+  const item=bridge.snapshot().records.find(r=>r.id===a.source_id);assert.equal(item.facts[0]?.value,'更正：目前没有头痛。');assert.equal(item.summary,'更正：目前没有头痛。');
+  await assert.rejects(bridge.editRecord(a.source_id,'旧窗口再次修改。',original.fact_id,original.revision),e=>e.code==='REVISION_CONFLICT');
+  const again=await bridge.editRecord(a.source_id,'再次更正：目前偶有头痛。',item.facts[0].fact_id,item.facts[0].revision);assert.ok(again.fact_change_id);assert.equal((await bridge.review(a.source_id)).id,again.fact_change_id);assert.equal(bridge.snapshot().records.find(r=>r.id===a.source_id).change_id,again.fact_change_id);
+});

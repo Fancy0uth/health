@@ -1432,6 +1432,11 @@ export class DomainStore {
         check(fact, "NOT_FOUND", 404);
         check(fact.revision === body.expected_version, "REVISION_CONFLICT", 409);
         check(["correction", "retraction"].includes(body.kind));
+        const replacement = body.replaces_change_id ? this.get(uid, "fact_change", body.replaces_change_id) : null;
+        if (replacement) {
+          check(replacement.status === "pending" && replacement.kind === "correction" && body.kind === "correction" && replacement.proposals.length === 1 && replacement.proposals[0].fact_id === factId && replacement.proposals[0].expected_version === fact.revision, "REVISION_CONFLICT", 409);
+          check(replacement.epoch === u.epoch && replacement.consent_version === consent.version, "SCOPE_REVOKED", 403);
+        }
         const text = this.text(body.text);
         const s = this.insert(uid, "source", {
           kind: "self_report",
@@ -1482,6 +1487,12 @@ export class DomainStore {
           before: fact,
           created_at: this.now(),
         });
+        if (replacement) {
+          replacement.status = "expired";
+          replacement.terminal_reason = "correction_updated";
+          replacement.expired_at = this.now();
+          this.save("fact_change", replacement);
+        }
         const operation = this.insert(uid, "operation", {
           kind: "change_request",
           status: "committed",

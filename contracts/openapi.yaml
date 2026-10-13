@@ -1732,6 +1732,10 @@
                   "expected_version": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "replaces_change_id": {
+                    "type": "string",
+                    "description": "Optional owned pending correction to supersede atomically; must target this same fact and version."
                   }
                 },
                 "required": [

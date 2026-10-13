@@ -263,7 +263,7 @@ export class DomainClient {
     return this.execute(op,ticket);
   }
   async fileMetadata(file) {return {name:file.name,type:file.type,size:file.size,sha256:await fingerprint(await file.arrayBuffer())};}
-  createRecordTurn(text,recordThreadId,version,sourceId) {return this.submit('record-turn:'+(recordThreadId||sourceId||'new'),'/api/record-turns',{...(sourceId?{existing_source_id:sourceId}:{text}),...(recordThreadId?{record_thread_id:recordThreadId,expected_version:version}:{})});}
+  createRecordTurn(text,recordThreadId,version,sourceId) {return this.submit('record-turn:'+(recordThreadId||sourceId||'new'),'/api/record-turns',{...(sourceId?{existing_source_id:sourceId,...(text?{text}:{})}:{text}),...(recordThreadId?{record_thread_id:recordThreadId,expected_version:version}:{})});}
   createEntry(text) {return this.submit('entry','/api/entries',{text,input_kind:'self_report'});}
   async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
   async createDocument({text,name,file}={}) { const ticket=this.ticket();if(file) {const metadata=await this.fileMetadata(file);this.check(ticket);return this.submit('document','/api/documents',{file:metadata},'POST',file,ticket);}return this.submit('document','/api/documents',{text,name}); }
@@ -275,7 +275,7 @@ export class DomainClient {
   reject(id,revision) {return this.submit('reject:'+id,'/api/fact-changes/'+encodeURIComponent(id)+'/reject',{expected_profile_revision:revision});}
   reanalyse(id,revision) {return this.submit('reanalyse:'+id,'/api/runs/'+encodeURIComponent(id)+'/reanalyse',{expected_profile_revision:revision});}
   retryRun(id) {return this.submit('retry:'+id,'/api/runs/'+encodeURIComponent(id)+'/retry',{});}
-  changeFact(fact,kind,text) {return this.submit('change:'+fact.fact_id,'/api/facts/'+encodeURIComponent(fact.fact_id)+'/change-requests',{kind,text,expected_version:fact.revision});}
+  changeFact(fact,kind,text,replacesChangeId) {return this.submit('change:'+fact.fact_id,'/api/facts/'+encodeURIComponent(fact.fact_id)+'/change-requests',{kind,text,expected_version:fact.revision,...(replacesChangeId?{replaces_change_id:replacesChangeId}:{})});}
   async mutate(path,method,body,{allowScopeChange=false}={}) {
     const ticket=this.ticket();await this.verifySession(ticket);const value=await this.raw(path,{method,body,headers:{'X-CSRF-Token':ticket.csrf,...this.epochHeaders(ticket.scopeEpoch)}});this.check(ticket);const me=await this.verifySession(ticket,{scope:!allowScopeChange});if(allowScopeChange)this.observeServerScope(me);this.broadcast('refresh');return value;
   }

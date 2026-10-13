@@ -22,18 +22,27 @@ export function acceptRecordTurn(store,uid,input,key,epoch){
       check(source.kind==='self_report','INVALID_INPUT');
       check(!store.all('record_thread',uid).some(t=>t.source_ids.includes(source.id)),'REVISION_CONFLICT',409);
       const primary=store.all('run',uid).filter(r=>r.source_ids[0]===source.id);
-      check(primary.some(r=>r.workflow==='visit')&&!primary.some(r=>r.workflow==='entry'),'INVALID_INPUT');
+      check(primary.some(r=>['visit','entry'].includes(r.workflow)),'INVALID_INPUT');
+      check(!store.all('fact_revision',uid).some(f=>f.evidence?.some(e=>e.source_id===source.id)),'RECORD_ALREADY_CONFIRMED',409);
+      check(!primary.some(r=>r.workflow==='entry'&&['queued','running'].includes(r.status)),'RUN_BUSY',409);
+      // Adopting an old entry into a conversation withdraws its previous candidates atomically.
+      for(const previous of primary.filter(r=>r.workflow==='entry')) {
+        if(previous.fact_change_id){const old=store.get(uid,'fact_change',previous.fact_change_id);if(old.status==='pending'){old.status='expired';old.terminal_reason='record_updated';store.save('fact_change',old);}}
+        previous.status='cancelled';previous.phase='record_updated';previous.scope_epoch++;store.save('run',previous);store.finishDispatch(previous);
+      }
     }
-    const text=store.text(source?source.text:input.text);
+    const text=store.text(input.text??source?.text);
     check(!isRecordConfirmation(text),'NO_PENDING_CANDIDATES',409);
-    const priorIds=thread?.source_ids||[];
+    const priorIds=thread?.source_ids||(source&&input.text?[source.id]:[]);
     check(priorIds.length<store.limits.retrievalCount,'PAYLOAD_TOO_LARGE',413);
     check(Buffer.byteLength(text)+priorIds.reduce((n,sid)=>n+Buffer.byteLength(store.get(uid,'source',sid).text),0)<=store.limits.textBytes,'PAYLOAD_TOO_LARGE',413);
     store.checkQueueAdmission(uid);
     if(!source)source=store.insert(uid,'source',{kind:'self_report',text,text_version:1,content_hash:createHash('sha256').update(text).digest('hex'),recorded_at:store.now(),pages:[],input_kind:'self_report'});
     let entry=store.all('entry',uid).find(e=>e.source_id===source.id);
+    const originalEntry=entry;
+    if(input.existing_source_id&&input.text){source=store.insert(uid,'source',{kind:'self_report',text,text_version:1,content_hash:createHash('sha256').update(text).digest('hex'),recorded_at:store.now(),pages:[],input_kind:'self_report'});entry=null;}
     if(!thread){
-      const episodeId=entry?.episode_id||store.insert(uid,'episode',{source_id:source.id,label:null,status:'pending',created_at:store.now()}).id;
+      const episodeId=originalEntry?.episode_id||store.insert(uid,'episode',{source_id:source.id,label:null,status:'pending',created_at:store.now()}).id;
       thread=store.insert(uid,'record_thread',{id:id('record_thread'),episode_id:episodeId,source_ids:[],version:0,status:'draft',created_at:store.now(),updated_at:store.now(),latest_run_id:null,latest_change_id:null,latest_summary_id:null});
     }
     if(!entry)entry=store.insert(uid,'entry',{source_id:source.id,input_kind:source.input_kind,received_at:store.now(),raw_time_text:null,episode_id:thread.episode_id});
