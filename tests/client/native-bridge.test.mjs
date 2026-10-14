@@ -31,6 +31,17 @@ async function setup(t,selectedAgent=agent) {
   const transport=async(path,options={})=>{requests.push({path,method:options.method||'GET'});const r=await fetch(base+path,{...options,headers:{...options.headers,Origin:base,Cookie:cookie}});if(r.headers.get('set-cookie'))cookie=r.headers.get('set-cookie').split(';')[0];return r;};
   const client=new DomainClient({fetchImpl:transport,storage:new MemoryStorage(),channel:null,pollMs:1});await client.initialize();await client.login('alice','alice-password');await client.setConsent(true);const bridge=new NativeBridge(client);await bridge.refresh();t.after(async()=>{client.dispose();await app.close();});return {app,client,bridge,requests,transport};
 }
+test('report-only original citations are loaded without requiring a visible document or extracted fact',async t=>{
+ const {app,client,bridge}=await setup(t);
+ const owner=client.state.user.id;
+ const original=app.store.insert(owner,'source',{kind:'medical_document',input_kind:'image_transcript',text:'2025年门诊记录：体温38.1℃。',text_version:1,pages:[]});
+ app.store.insert(owner,'health_overview',{format_version:2,status:'current',summary:'已有一份历史门诊资料，近期情况尚未记录。',problems:[],background:[{summary:'2025年门诊记录：体温38.1℃。',source_ids:[original.id]}],uncertainties:[],source_ids:[original.id],source_versions:[{source_id:original.id,source_text_version:1}],profile_revision:client.state.profile.profile_revision,updated_at:app.store.now()});
+ await bridge.refresh();
+ assert.equal(client.state.timeline.entries.length,0);assert.equal(client.state.documents.documents.length,0);assert.equal(client.state.profile.facts.length,0);
+ assert.equal(bridge.sources.get(original.id)?.text,'2025年门诊记录：体温38.1℃。');
+ await bridge.refresh();assert.equal(bridge.sources.get(original.id)?.text,'2025年门诊记录：体温38.1℃。');
+ await client.deleteData(original.id);await bridge.refresh();assert.equal(bridge.sources.has(original.id),false);
+});
 test('original-page projection cannot promote locally edited candidates into official facts',async t=>{
   const {bridge,client,requests}=await setup(t);const accepted=await bridge.createEntry('目前没有头痛。');await bridge.wait(accepted.run_id);const before=bridge.snapshot();assert.equal(before.records.length,1);assert.equal(before.records[0].status,'pending');assert.equal(client.state.profile.facts.length,0);
   before.records[0].status='confirmed';before.records[0].summary='伪造事实';before.factVersion=999;bridge.saveOverlay(before);

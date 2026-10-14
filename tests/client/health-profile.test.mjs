@@ -30,6 +30,20 @@ test('care explanation remains separate from exact instruction and stale tasks a
   for(const word of ['医嘱原句：明日复诊。','模型解释','需要带哪些资料？','v2','未保存的反馈','已过期','care-feedback'])assert.ok(html.includes(word),word);
   assert.doesNotMatch(html,/data-action="care-feedback"[^>]*disabled/);
 });
+test('care list previews remove only duplicated source labels and retain exact clinical content in details',()=>{
+ const task={id:'care-1',version:2,text:'医嘱：每日记录体温（℃），三天后复诊。',schedule:'三天后',status:'pending',validity:'current',source_kind:'clinician_instruction'};
+ const before=structuredClone(task);
+ for(const mode of ['web','mobile']){
+  const preview=ui.careTaskMarkup(task,mode);
+  assert.match(preview,/每日记录体温（℃），三天后复诊。/);assert.match(preview,/三天后/);assert.match(preview,/待完成/);
+  assert.doesNotMatch(preview,/医嘱 · 医嘱：|undefined|明日/);
+  assert.match(preview,new RegExp(`${mode==='mobile'?'data-action':'data-act'}="task" data-id="care-1"`));
+  assert.match(ui.careDetailsMarkup(task,'',mode),/医嘱：每日记录体温（℃），三天后复诊。/);
+ }
+ assert.deepEqual(task,before);
+ const guidance=ui.careTaskMarkup({...task,source_kind:'model_guidance',text:'记录新的不适 <变化>',schedule:null,status:'paused',validity:'stale'});
+ assert.match(guidance,/模型建议/);assert.doesNotMatch(guidance,/医嘱|<变化>/);assert.match(guidance,/&lt;变化&gt;/);assert.match(guidance,/已暂停/);assert.match(guidance,/来源已更新/);
+});
 test('document status distinguishes running, failed, and actual reviewable candidates',()=>{
  assert.equal(typeof ui.documentStatusLabel,'function');
  assert.equal(ui.documentStatusLabel({analysis:'running',run_status:'running',proposals:[]}), '正在分析');

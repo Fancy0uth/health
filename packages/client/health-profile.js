@@ -1,11 +1,45 @@
 // Presentation only: all health interpretation and relationships come from saved model/server objects.
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 export const dimensionLabels={body_site:'身体部位',symptom:'症状与感受',onset:'开始时间',course:'变化过程',self_rating:'自评程度',impact:'生活影响',context:'出现情境',associated:'伴随表现',measurement:'体征与测量',background:'长期背景'};
-const views=[['overview','身体近况'],['events','记录经过'],['current_problems','来源详情'],['unknowns','待处理差异']];
 const reviewLabels={patient_report:'患者自述 · 自动整理',document_report:'病历记载 · 自动整理',confirmed:'已核对',pending:'待核对',deferred:'暂缓核对',kept_existing:'保留旧记录'};
 const actionAttr=mode=>mode==='mobile'?'data-action':'data-act';
 const button=(label,action,mode,extra='')=>`<button type="button" class="${mode==='mobile'?'button secondary':'btn btn-secondary'}" ${actionAttr(mode)}="${action}" ${extra}>${esc(label)}</button>`;
 const note=text=>`<p class="muted small">${esc(text)}</p>`;
+export const healthStateDimensionLabels={body_site_symptom:'部位与表现',time_course:'时间与变化',self_rating:'主观程度',impact_context:'影响与情境',associated:'伴随与否定',measurements:'测量与资料',background_care:'背景与处理',evidence_status:'证据与状态'};
+const bodyRegionLabels={head_neck:'头颈部',chest:'胸部',abdomen:'腹部',back:'背部',limbs:'四肢',systemic:'全身',other:'其他部位'};
+const problemStatusLabels={active:'仍关注',improving:'正在改善',resolved:'已结束',uncertain:'未澄清'};
+function assessmentProse(value,citedSourceIds){
+  let text=String(value??'');
+  for(const id of citedSourceIds)text=text.replaceAll(id,'已关联原文');
+  return esc(text);
+}
+function healthProblemMarkup(problem,mode,prose){
+  return `<article class="health-report-history-item"><h3>${prose(problem.title)} <span class="region-status">${esc(problemStatusLabels[problem.status]||'未澄清')}</span></h3>${note(bodyRegionLabels[problem.body_region]||'部位未记录')}<p>${prose(problem.assessment)}</p></article>`;
+}
+function maintainedOverviewMarkup(overview,mode){
+  const problems=overview.problems||[],current=problems.filter(p=>p.status!=='resolved'),ended=problems.filter(p=>p.status==='resolved');
+  const background=overview.background||[],uncertainties=overview.uncertainties||[];
+  const citedSourceIds=[...new Set([...problems,...background,...uncertainties].flatMap(item=>item.source_ids||[]))].filter(id=>typeof id==='string'&&id.length).sort((a,b)=>b.length-a.length);
+  const prose=value=>assessmentProse(value,citedSourceIds);
+  const sections=Object.entries(healthStateDimensionLabels).map(([key,label])=>{
+    const entries=new Map();
+    for(const problem of current){
+      const value=problem.dimensions?.[key];
+      if(typeof value!=='string'||!value.trim())continue;
+      if(!entries.has(value))entries.set(value,[]);
+      entries.get(value).push(problem);
+    }
+    if(key==='background_care')for(const item of background)if(item.summary?.trim()&&!entries.has(item.summary))entries.set(item.summary,[]);
+    if(!entries.size)return '';
+    return `<section class="health-report-section"><h3>${label}</h3><div>${[...entries].map(([value,related])=>`<div class="health-report-entry">${related.length&&(current.length>1||key==='body_site_symptom')?`<div class="health-report-subject">${related.map(problem=>`${prose(problem.title)}${key==='body_site_symptom'?` <span class="region-status">${esc(problemStatusLabels[problem.status]||'未澄清')}</span>`:''}`).join(' / ')}</div>`:''}<p>${prose(value)}</p></div>`).join('')}</div></section>`;
+  }).join('');
+  const unknown=[...new Set(uncertainties.map(item=>item.summary).filter(Boolean))];
+  const updated=overview.updated_at?new Date(overview.updated_at):null;
+  const metadata=updated&&!Number.isNaN(updated.getTime())?`<p class="health-report-meta">更新于 ${esc(updated.toLocaleString('zh-CN',{hour12:false}))}</p>`:'';
+  const sources=citedSourceIds.length?`<details class="health-report-sources" data-disclosure="health-report-sources"><summary>查看汇总依据 · ${citedSourceIds.length} 份资料</summary>${current.map(problem=>`<div class="health-report-source-note"><strong>${prose(problem.title)}</strong><p>${prose(problem.assessment)}</p></div>`).join('')}<div class="health-report-source-list">${citedSourceIds.map((id,i)=>button('查看原文 '+(i+1),'source',mode,`data-id="${esc(id)}"`)).join('')}</div></details>`:'';
+  return `<article class="overview-summary health-report-summary"><span class="health-report-kicker">近期汇总</span><h2>最近的整体情况</h2><p>${prose(overview.summary)}</p>${metadata}</article>${sections?`<div class="health-report-dimensions" aria-label="按文档维度整理的近期身体状况">${sections}</div>`:''}${unknown.length?`<aside class="health-report-unknown"><h3>还不清楚的情况</h3>${unknown.map(value=>`<p>${prose(value)}</p>`).join('')}</aside>`:''}${sources}${ended.length?`<details class="health-ended" data-disclosure="health-ended"><summary>已结束的问题（${ended.length}）</summary>${ended.map(p=>healthProblemMarkup(p,mode,prose)).join('')}</details>`:''}`;
+}
+function refreshControlMarkup(state,mode){return `<div class="health-refresh">${state.message?note(state.message):''}${state.allowed===false?note('开启资料分析授权后，可更新近期汇总。'):state.recovery?note('新记录保存后会自动更新汇总。'):button(state.busy?'正在整理…':state.unknown?'查询 / 重试原评估请求':'更新汇总','profile-refresh',mode,state.busy?'disabled aria-busy="true"':'')}${!state.recovery?note('新记录保存后会自动更新，也可以手动重新整理。'):''}</div>`;}
 const refsOf=row=>row.source_refs||row.evidence||[];
 function sourcesMarkup(row,mode){return refsOf(row).map(ref=>{const id=typeof ref==='string'?ref:ref.source_id;return id?`<div class="health-source">${typeof ref==='object'&&ref.quote?`<blockquote>${esc(ref.quote)}</blockquote>`:''}${button('查看来源','source',mode,`data-id="${esc(id)}"`)}</div>`:'';}).join('');}
 function observationsMarkup(rows=[]){return rows.length?`<dl class="health-observations">${rows.map(o=>`<div><dt>${esc(dimensionLabels[o.dimension]||o.dimension)}</dt><dd>${esc(o.value)}${o.unit&&!String(o.value??'').includes(o.unit)?` <span>${esc(o.unit)}</span>`:''}${o.observed_at?`<small>观察时间：${esc(o.observed_at)}</small>`:''}</dd></div>`).join('')}</dl>`:'';}
@@ -21,19 +55,25 @@ function factMarkup(f,profile,mode){
   const refs=refsOf(f).length?f:{source_refs:observations.flatMap(refsOf)};
   return `<article class="health-fact"><p>${esc(f.value||f.text||'')}</p>${note(`${reviewLabels[f.review_status]||'来源记录'} · v${f.revision??'未记录'} · 事件时间：${eventTimeText(f,observations)}`)}${observationsMarkup(observations)}${sourcesMarkup(refs,mode)}${f.fact_id?button('更正这条事实','profile-correct',mode,`data-id="${esc(f.fact_id)}" data-version="${esc(f.revision)}"`):''}</article>`;
 }
-export function healthProfileMarkup(profile,view='overview',mode='web',retrying=new Set()){
-  const tabs=`<div class="health-tabs" role="group" aria-label="健康画像视图">${views.map(([key,label])=>`<button type="button" ${actionAttr(mode)}="profile-view" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join('')}</div>`;
-  if(!profile)return tabs+note('尚无结构化画像。旧记录仍可在健康记录中查看和核对；不会补造未记录的信息。');
+export function healthProfileMarkup(profile,view='overview',mode='web',retrying=new Set(),refreshState={}){
+  const emptyOverview=`<div class="health-report-empty"><h2>还没有近期汇总</h2><p>在首页聊聊近期的身体感受，或上传病历资料，助手会按记录整理你的身体近况。</p>${button('记录身体感受',mode==='mobile'?'record-change':'record-new-change',mode)}</div>`;
+  if(!profile)return `<section class="health-profile health-report">${view==='overview'?emptyOverview+refreshControlMarkup(refreshState,mode):note('尚无结构化画像。旧记录仍可在健康记录中查看和核对；不会补造未记录的信息。')}</section>`;
   let body='';
   if(view==='overview'){
     const overview=profile.overview;
-    body=!overview||overview.status==='not_recorded'?note('还没有身体近况概览。聊聊近期的身体感受，保存后会自动整理。'):overview.status==='stale'?overviewRecoveryMarkup(overview,mode,retrying):`<article class="overview-summary"><h2>最近的整体情况</h2><p>${esc(overview.summary)}</p>${note('根据已保存资料整理'+(overview.updated_at?' · 更新于 '+new Date(overview.updated_at).toLocaleString('zh-CN',{hour12:false}):''))}</article><div class="body-region-grid">${(overview.regions||[]).map(region=>`<article class="body-region"><div class="region-heading"><h3>${esc(region.label)}</h3><span class="region-status">${esc(({reported:'患者自述',documented:'病历记载',improving:'有所好转',resolved:'已缓解',uncertain:'有待核实'})[region.status]||'已有记录')}</span></div><p>${esc(region.summary)}</p><details data-disclosure="${esc(region.id)}"><summary>查看来源与时间</summary>${note(region.updated_at?'更新于 '+new Date(region.updated_at).toLocaleString('zh-CN',{hour12:false}):'时间以原文为准')}${sourcesMarkup({source_refs:region.source_ids||[]},mode)}</details></article>`).join('')}</div>`;
+    body=!overview||overview.status==='not_recorded'?emptyOverview:`<article class="overview-summary"><h2>最近的整体情况</h2><p>${esc(overview.summary)}</p>${note('根据已保存资料整理'+(overview.updated_at?' · 更新于 '+new Date(overview.updated_at).toLocaleString('zh-CN',{hour12:false}):''))}</article><div class="body-region-grid">${(overview.regions||[]).map(region=>`<article class="body-region"><div class="region-heading"><h3>${esc(region.label)}</h3><span class="region-status">${esc(({reported:'患者自述',documented:'病历记载',improving:'有所好转',resolved:'已缓解',uncertain:'有待核实'})[region.status]||'已有记录')}</span></div><p>${esc(region.summary)}</p><details data-disclosure="${esc(region.id)}"><summary>查看来源与时间</summary>${note(region.updated_at?'更新于 '+new Date(region.updated_at).toLocaleString('zh-CN',{hour12:false}):'时间以原文为准')}${sourcesMarkup({source_refs:region.source_ids||[]},mode)}</details></article>`).join('')}</div>`;
+    if(overview?.format_version===2)body=(overview.status==='stale'?overviewRecoveryMarkup(overview,mode,refreshState.unknown?null:retrying)+note('以下为上一版评估，尚未根据最新资料更新。'):'')+maintainedOverviewMarkup(overview,mode);
+    else {
+      if(overview?.status==='stale')body=overviewRecoveryMarkup(overview,mode,refreshState.unknown?null:retrying)+(overview.summary?note('以下为上一版概览，尚未根据最新资料更新。')+body:'');
+      if(overview?.summary)body=note('这是旧版概览，尚未完成新的问题评估。')+body;
+    }
+    body+=refreshControlMarkup({...refreshState,busy:refreshState.busy||overview?.refresh_state==='pending',recovery:overview?.status==='stale'&&(overview.refresh_state==='pending'||overview.refresh_retryable===true)&&!refreshState.unknown},mode);
   }else if(view==='events')body=(profile.events||[]).map(e=>`<article class="health-event"><h3>${esc(e.title||e.summary||e.label||'健康事件')}</h3>${note('事件时间：'+eventTimeText(e)+' · 记录时间：'+(e.recorded_at||e.created_at||'未记录'))}<label class="field"><span>当前状态（不会改写当时的记录）</span><select name="episode-status" data-episode="${esc(e.id)}" data-version="${esc(e.version)}">${[['active','持续中'],['improved','已好转'],['resolved','已结束']].map(([key,label])=>`<option value="${key}" ${e.status===key?'selected':''}>${label}</option>`).join('')}</select></label>${(e.facts||[]).map(f=>factMarkup(f,profile,mode)).join('')||note('本事件尚无已核对事实。')}</article>`).join('');
   else if(view==='unknowns'){
     body=(profile.unknowns||[]).map(u=>`<div class="health-unknown"><strong>${esc(typeof u==='string'?u:dimensionLabels[u.dimension]||u.dimension||u.label||'含义待核实')}</strong>${note(typeof u==='string'?'待补充':u.message||u.value||'未记录，不能据此认为没有。')}${typeof u==='object'?sourcesMarkup(u,mode):''}</div>`).join('');
     body+=(profile.conflicts||[]).map(c=>`<article class="health-comparison"><h3>待处理的${c.relation==='conflict'?'冲突':'新旧差异'}</h3><p>${esc(c.reason)}</p><p>旧记录：${esc(c.old_snapshot?.value)}</p><p>新候选：${esc(c.new_snapshot?.value)}</p>${sourcesMarkup(c.old_snapshot||{},mode)}${(c.new_snapshot?.evidence?.[0]?.source_id)?button('前往核对','profile-review',mode,`data-id="${esc(c.new_snapshot.evidence[0].source_id)}"`):''}</article>`).join('');
   }else body=(profile[view]||[]).map(f=>factMarkup(f,profile,mode)).join('');
-  return `<section class="health-profile">${tabs}${body||note(view==='unknowns'?'当前没有待补充或冲突信息。':'此视图尚无已核对内容。')}<p class="muted small">近况由模型根据患者自述与病历记载整理，不代表医学确认。未提及的部位不推断为正常。</p></section>`;
+  return `<section class="health-profile ${view==='overview'?'health-report':''}">${body||note(view==='unknowns'?'当前没有待补充或冲突信息。':'此视图尚无已核对内容。')}<p class="muted small health-report-footnote">由模型根据你的记录与病历整理，供了解近况参考；未记录不代表正常。</p></section>`;
 }
 export const documentForSource=(documents=[],sourceId)=>sourceId?documents.find(item=>item.source_id===sourceId||item.analysis_source_id===sourceId):undefined;
 export const sourceProvenanceLabel=source=>source?.input_kind==='image_transcript'?'病历识别文字':source?.kind==='medical_document'?'病历原文':'患者原文';
@@ -56,7 +96,7 @@ export function recordRecoveryMarkup(item,mode='web',retrying=new Set()){
 }
 function overviewRecoveryMarkup(overview,mode,retrying){
   const pending=overview.refresh_state==='pending';
-  return `<div class="document-analysis" role="status"><strong>${pending?'近况概览正在更新':'近况概览更新未完成'}</strong>${note(pending?'记录已变化，正在根据最新内容重新整理。':'已保存的记录仍然保留，近况概览尚未更新。')}${recoveryButton(overview.refresh_run_id,overview.refresh_retryable===true,mode,retrying,'重试更新近况')}</div>`;
+  return `<div class="document-analysis" role="status"><strong>${pending?'近况概览正在更新':'近况概览更新未完成'}</strong>${note(pending?'记录已变化，正在根据最新内容重新整理。':'已保存的记录仍然保留，近况概览尚未更新。')}${retrying?recoveryButton(overview.refresh_run_id,overview.refresh_retryable===true,mode,retrying,'重试更新近况'):''}</div>`;
 }
 export function recordSaveMarkup(message){const label=({saved:'已自动保存 · 可修改',saved_with_exceptions:'已保存 · 有待处理差异',saving:'正在整理记录…',failed:'记录整理未完成'})[message?.record_status];return label?`<p class="record-save-status" role="status">${label}</p>`:'';}
 export const resolutionKey=(candidateId,factId,revision)=>[candidateId,factId,revision].join('|');
@@ -75,6 +115,12 @@ export function comparisonMarkup(proposal,choices={},mode='web'){
     const old=c.old_snapshot||{},next=c.new_snapshot||proposal,key=resolutionKey(proposal.id,c.fact_id,c.revision);
     return `<section class="health-comparison"><h3>${({conflict:'可能冲突',update:'更新内容',duplicate:'可能重复',related:'相关记录'})[c.relation]||'对照已有记录'}</h3>${note(c.reason||'请根据原文确认两条记录的关系。')}<div class="health-compare-columns"><div><strong>已有记录 · v${esc(c.revision)}</strong><p>${esc(old.value||'')}</p>${note('事件时间：'+eventTimeText(old)+' · 核对时间：'+(old.confirmed_at||'未记录'))}${sourcesMarkup(old,mode)}</div><div><strong>本次候选 · 待核对</strong><p>${esc(next.value||proposal.value)}</p>${note('事件时间：'+eventTimeText(next))}${sourcesMarkup(next,mode)}</div></div><label class="field"><span>这两条内容如何处理${c.requires_resolution||c.relation==='conflict'?'（所选冲突必填）':'（可选）'}</span><select name="comparison-resolution" data-resolution="${esc(key)}"><option value="">请选择处理方式</option>${[['keep_existing','保留旧记录，不写入本次候选'],['replace','用本次内容更新旧记录（旧版本保留）'],['keep_both','分别保留两次记录'],['defer','暂缓处理，继续留待核对']].map(([value,label])=>`<option value="${value}" ${choices[key]===value?'selected':''}>${label}</option>`).join('')}</select></label></section>`;
   }).join('');
+}
+export function careTaskMarkup(task,mode='web'){
+  const guidance=task.source_kind==='model_guidance',original=String(task.text??'');
+  const title=guidance?original:original.replace(/^\s*(?:医嘱\s*[:：]\s*)+/u,'')||original;
+  const status=({pending:'待完成',open:'待完成',done:'已完成',paused:'已暂停'})[task.status]||'状态未记录';
+  return `<article class="care-task-item"><div class="care-task-content"><p class="care-task-kind">${guidance?'模型建议':'医嘱'}</p><h3>${esc(title)}</h3></div><div class="care-task-side"><p class="care-task-meta">${esc(task.schedule||'时间未注明')} · ${status}${task.validity==='stale'?' · 来源已更新':''}</p><button type="button" class="${mode==='mobile'?'button secondary':'btn btn-secondary'} care-task-action" ${actionAttr(mode)}="task" data-id="${esc(task.id)}">查看事项</button></div></article>`;
 }
 export function careDetailsMarkup(task,draft='',mode='web',busy=false){
   const guidance=task.source_kind==='model_guidance';

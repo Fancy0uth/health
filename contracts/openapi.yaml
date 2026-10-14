@@ -77,6 +77,148 @@
         }
       }
     },
+    "/api/auth/register": {
+      "post": {
+        "summary": "Create a local account and authenticate without granting health analysis consent",
+        "description": "Same-origin only. Shares the per-address login rate limit. Username is trimmed and case-sensitive; an existing or configured model-owner username cannot be overwritten or claimed. A lost response may mean creation succeeded: log in with the same credentials to recover. Credentials are never journaled by the shared client.",
+        "operationId": "post_auth_register",
+        "security": [],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "description": "Must match this server origin.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "username",
+                  "password"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "minLength": 3,
+                    "pattern": "^\\s*[A-Za-z0-9_.-]{3,32}\\s*$",
+                    "description": "After trimming outer whitespace, the account name must be 3–32 ASCII letters, numbers, dots, underscores or hyphens; case-sensitive."
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 128,
+                    "pattern": "\\S",
+                    "description": "Whitespace-only passwords are rejected; accepted passwords are hashed using a unique salt and scrypt."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Independent account created with analysis consent disabled; authenticated session cookie issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionState"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              },
+              "Set-Cookie": {
+                "description": "ht_session; HttpOnly; SameSite=Strict; Secure when served over HTTPS",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid username/password bounds or unknown request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ACCOUNT_EXISTS: log in or choose a different username",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Registration JSON exceeds 4096 bytes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Shared authentication rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/logout": {
       "post": {
         "summary": "Revoke current server session",
@@ -2896,6 +3038,103 @@
                 "schema": {
                   "$ref": "#/components/schemas/OriginalDocumentBytes"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health-profile/refresh": {
+      "post": {
+        "summary": "Refresh maintained health document using existing owned source data only",
+        "operationId": "post_health_profile_refresh",
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthProfileRefreshResult"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          },
+          "409": {
+            "description": "Stale scope epoch or other optimistic concurrency/idempotency conflict; no new effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Missing or invalid epoch header; no mutation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Domain error; no sensitive internals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthProfileRefreshResult"
+                }
+              }
+            },
+            "headers": {
+              "X-HealthThread-Epoch": {
+                "$ref": "#/components/headers/HealthThreadEpoch"
+              },
+              "X-HealthThread-All-Clear-Epoch": {
+                "$ref": "#/components/headers/HealthThreadAllClearEpoch"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/HealthThreadEpoch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthProfileRefreshRequest"
               }
             }
           }
@@ -5969,6 +6208,12 @@
           },
           "overview_change_id": {
             "type": "string"
+          },
+          "base_health_document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -6886,6 +7131,12 @@
               "source_id",
               "text"
             ]
+          },
+          "superseded_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -7022,6 +7273,12 @@
               "source_id",
               "text"
             ]
+          },
+          "superseded_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -7266,99 +7523,7 @@
             }
           },
           "overview": {
-            "type": "object",
-            "additionalProperties": true,
-            "properties": {
-              "summary": {
-                "type": "string"
-              },
-              "updated_at": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "status": {
-                "enum": [
-                  "not_recorded",
-                  "current",
-                  "stale",
-                  "uncertain"
-                ]
-              },
-              "regions": {
-                "type": "array",
-                "maxItems": 7,
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "id": {
-                      "enum": [
-                        "head_neck",
-                        "chest",
-                        "abdomen",
-                        "back",
-                        "limbs",
-                        "systemic",
-                        "other"
-                      ]
-                    },
-                    "label": {
-                      "type": "string"
-                    },
-                    "summary": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "enum": [
-                        "reported",
-                        "documented",
-                        "improving",
-                        "resolved",
-                        "uncertain"
-                      ]
-                    },
-                    "updated_at": {
-                      "type": "string"
-                    },
-                    "source_ids": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label",
-                    "summary",
-                    "status",
-                    "updated_at",
-                    "source_ids"
-                  ]
-                }
-              },
-              "refresh_state": {
-                "enum": [
-                  "pending",
-                  "failed",
-                  "unavailable"
-                ]
-              },
-              "refresh_run_id": {
-                "type": "string"
-              },
-              "refresh_retryable": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "summary",
-              "updated_at",
-              "status",
-              "regions"
-            ]
+            "$ref": "#/components/schemas/HealthOverview"
           }
         },
         "required": [
@@ -8097,6 +8262,527 @@
           "source_id",
           "source_text_version"
         ]
+      },
+      "HealthStateDocument": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "format_version": {
+            "type": "integer",
+            "const": 2
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200,
+            "description": "1–3 brief sentences assessing recent overall circumstances. Preserve attribution, dates, uncertainty and reported changes. Never list the whole original text, processing metadata, diagnoses, health scores or treatment changes."
+          },
+          "problems": {
+            "type": "array",
+            "maxItems": 30,
+            "description": "Complete replacement document. Reuse prior stable keys. Retain all active/improving/uncertain previous problems with valid sources, including unrelated complaints not mentioned this turn.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "Stable problem-event key, reused from previous document."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "body_region": {
+                  "enum": [
+                    "head_neck",
+                    "chest",
+                    "abdomen",
+                    "back",
+                    "limbs",
+                    "systemic",
+                    "other"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "improving",
+                    "resolved",
+                    "uncertain"
+                  ],
+                  "description": "Follow-up state, never severity or evidence type. Use evidence_status dimension for source attribution."
+                },
+                "assessment": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 600,
+                  "description": "Brief sourced explanation of present state, supported change from prior assessment and remaining unknowns. No diagnosis or risk exclusion."
+                },
+                "dimensions": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "body_site_symptom": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "time_course": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "self_rating": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "impact_context": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "associated": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "measurements": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "background_care": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    },
+                    "evidence_status": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 800
+                    }
+                  },
+                  "required": [
+                    "body_site_symptom",
+                    "time_course",
+                    "self_rating",
+                    "impact_context",
+                    "associated",
+                    "measurements",
+                    "background_care",
+                    "evidence_status"
+                  ],
+                  "description": "Eight concise independent syntheses; unknown=null means unrecorded, never normal/absent. Preserve temporal range of denials, self-rating attribution, measurement units/original dates, document judgment attribution, and planned versus reported executed treatment. Do not copy the full history into each dimension."
+                },
+                "source_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Only original authorized source IDs actually returned by tools in this run; never assistant messages, previous overview IDs, or superseded record text."
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "body_region",
+                "status",
+                "assessment",
+                "dimensions",
+                "source_ids"
+              ]
+            }
+          },
+          "background": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 800
+                },
+                "source_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Only original authorized source IDs actually returned by tools in this run; never assistant messages, previous overview IDs, or superseded record text."
+                }
+              },
+              "required": [
+                "summary",
+                "source_ids"
+              ]
+            },
+            "description": "Relevant supported medication, allergy, history or document results; prescribed plans are distinct from reported execution."
+          },
+          "uncertainties": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 800
+                },
+                "source_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Only original authorized source IDs actually returned by tools in this run; never assistant messages, previous overview IDs, or superseded record text."
+                }
+              },
+              "required": [
+                "summary",
+                "source_ids"
+              ]
+            },
+            "description": "Important unknowns or contradictions. Retain evidence for both sides; do not choose a winner."
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "not_recorded",
+              "current",
+              "stale",
+              "uncertain"
+            ]
+          },
+          "refresh_state": {
+            "enum": [
+              "pending",
+              "failed",
+              "unavailable"
+            ]
+          },
+          "refresh_run_id": {
+            "type": "string"
+          },
+          "refresh_retryable": {
+            "type": "boolean"
+          },
+          "document_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "framework": {
+            "type": "string",
+            "minLength": 1
+          },
+          "previous_document_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_text_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "source_id",
+                "source_text_version"
+              ]
+            }
+          },
+          "base_profile_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "consent_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "scope_epoch": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "format_version",
+          "summary",
+          "problems",
+          "background",
+          "uncertainties",
+          "document_version",
+          "framework",
+          "previous_document_id",
+          "profile_revision",
+          "run_id",
+          "source_ids",
+          "updated_at",
+          "status"
+        ]
+      },
+      "LegacyHealthOverview": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "not_recorded",
+              "current",
+              "stale",
+              "uncertain"
+            ]
+          },
+          "regions": {
+            "type": "array",
+            "maxItems": 7,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "enum": [
+                    "head_neck",
+                    "chest",
+                    "abdomen",
+                    "back",
+                    "limbs",
+                    "systemic",
+                    "other"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "reported",
+                    "documented",
+                    "improving",
+                    "resolved",
+                    "uncertain"
+                  ]
+                },
+                "updated_at": {
+                  "type": "string"
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "summary",
+                "status",
+                "updated_at",
+                "source_ids"
+              ]
+            }
+          },
+          "refresh_state": {
+            "enum": [
+              "pending",
+              "failed",
+              "unavailable"
+            ]
+          },
+          "refresh_run_id": {
+            "type": "string"
+          },
+          "refresh_retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "summary",
+          "updated_at",
+          "status",
+          "regions"
+        ],
+        "not": {
+          "properties": {
+            "format_version": {
+              "const": 2
+            }
+          },
+          "required": [
+            "format_version"
+          ]
+        }
+      },
+      "HealthOverview": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/HealthStateDocument"
+          },
+          {
+            "$ref": "#/components/schemas/LegacyHealthOverview"
+          }
+        ]
+      },
+      "HealthProfileRefreshRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "operation_key": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "operation_key"
+        ]
+      },
+      "HealthProfileRefreshResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "run_id",
+          "status"
+        ]
+      },
+      "HealthThreadRetrieveContextRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://healththread.local/schemas/healththread_retrieve_context.json",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "episode_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "minItems": 0,
+            "maxItems": 100
+          },
+          "source_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Overview refresh only: selected-source page offset, default 0. Follow source_page.next_offset until null before staging. Cannot combine with source_ids."
+          }
+        },
+        "required": []
+      },
+      "HealthThreadRefreshSourcePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "offset",
+          "next_offset",
+          "total"
+        ],
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next_offset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
       }
     },
     "parameters": {

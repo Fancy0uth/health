@@ -1,3 +1,4 @@
+import {validateRunHealthState,supersededHealthSources,currentDocumentEvidence} from './health-state.mjs';
 import {validateAutomaticRecord,validateOverview,normalizeOptionalObservations,finalizeAutomaticRecords,currentOverview,queueOverviewRefresh} from './automatic-records.mjs';
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
@@ -228,6 +229,25 @@ export class DomainStore {
     if (!r) fail(404, "NOT_FOUND");
     return JSON.parse(r.data);
   }
+  register(input) {
+    check(input && typeof input === "object" && !Array.isArray(input) &&
+      Object.keys(input).every(key => ["username", "password"].includes(key)), "INVALID_REGISTRATION");
+    const username = typeof input.username === "string" ? input.username.trim() : "";
+    if (!/^[A-Za-z0-9_.-]{3,32}$/.test(username))
+      fail(400, "INVALID_USERNAME", "账号需为 3–32 位，可使用字母、数字、点、下划线或短横线。");
+    const passwordLength = typeof input.password === "string" ? Array.from(input.password).length : 0;
+    if (typeof input.password !== "string" || passwordLength < 10 || passwordLength > 128 || !input.password.trim())
+      fail(400, "INVALID_PASSWORD", "密码需为 10–128 位，不能全部使用空格。");
+    return this.transaction(() => {
+      if (this.db.prepare("SELECT id FROM users WHERE username=?").get(username))
+        fail(409, "ACCOUNT_EXISTS", "此账号已存在，请登录或使用其他账号。");
+      const salt = randomBytes(16).toString("hex"), uid = id("usr");
+      this.db.prepare("INSERT INTO users(id,username,salt,password) VALUES(?,?,?,?)")
+        .run(uid, username, salt, scryptSync(input.password, salt, 64).toString("hex"));
+      this.insert(uid, "consent", {purpose:"analysis",version:1,granted:false,recorded_at:this.now()});
+      return this.createSession(this.user(uid));
+    });
+  }
   login(username, password) {
     check(
       typeof username === "string" &&
@@ -241,6 +261,9 @@ export class DomainStore {
     const derived = scryptSync(password, row?.salt || "dummy-account-salt", 64);
     if (!row || !timingSafeEqual(derived, Buffer.from(row.password, "hex")))
       fail(401, "AUTH_FAILED", "账号或密码不正确。");
+    return this.createSession(row);
+  }
+  createSession(row) {
     const token = randomBytes(32).toString("base64url"),
       csrf = randomBytes(32).toString("base64url");
     this.db
@@ -348,6 +371,7 @@ export class DomainStore {
       phase: "queued",
       source_ids: sourceIds,
       base_profile_revision: u.revision,
+      base_health_document_id: this.all('health_overview',uid).at(-1)?.id||null,
       consent_version: c.version,
       epoch: u.epoch,
       scope_epoch: 1,
@@ -598,6 +622,25 @@ export class DomainStore {
         },
       ),
     );
+  }
+  refreshHealthProfile(uid,body,expectedEpoch){
+    keys(body,['operation_key']);
+    this.checkExpectedEpoch(uid,expectedEpoch);this.requireConsent(uid);
+    return this.transaction(()=>this.receipt(uid,'health-profile:refresh',body.operation_key,body,()=>{
+      const latest=this.all('run',uid).filter(r=>r.overview_refresh).at(-1);
+      if(latest&&!latest.automatic_finalized&&latest.base_profile_revision===this.user(uid).revision&&(latest.base_health_document_id||null)===(this.all('health_overview',uid).at(-1)?.id||null)&&latest.epoch===this.user(uid).epoch&&latest.consent_version===this.consent(uid).version&&!latest.deleted){
+        return {run_id:latest.id,status:latest.status,operation_id:latest.operation_id};
+      }
+      const excluded=supersededHealthSources(this,{owner:uid});
+      const sources=this.all('source',uid).filter(s=>!excluded.has(s.id)&&['self_report','medical_document'].includes(s.kind)&&typeof s.text==='string'&&s.text.trim()).map(s=>s.id);
+      if(!sources.length)return {run_id:null,status:'no_data'};
+      for(const old of this.all('run',uid).filter(r=>r.overview_refresh&&!r.automatic_finalized)){
+        old.status='cancelled';old.phase='overview_superseded';old.scope_epoch++;this.save('run',old);this.finishDispatch(old);this.expireCheckpoints(uid,'overview_superseded',old.id);
+      }
+      const run=this.newRun(uid,'entry',sources,{overview_refresh:true});
+      const operation=this.insert(uid,'operation',{kind:'overview_refresh',status:'committed',run_id:run.id,saved:true,recorded_at:this.now()});this.queueRun(run,operation.id);
+      return {run_id:run.id,status:run.status,operation_id:operation.id};
+    }));
   }
   profile(uid) {
     const u = this.user(uid),
@@ -923,13 +966,15 @@ export class DomainStore {
         }),
       healththread_retrieve_context: (args) =>
         call("healththread_retrieve_context", args, (r, a) => {
-          keys(a, ["query", "episode_id", "source_ids"], []);
+          keys(a, ["query", "episode_id", "source_ids", "source_offset"], []);
+          const offset=a.source_offset??0;
+          if(Object.hasOwn(a,"source_offset")&&!(r.overview_refresh&&Number.isSafeInteger(a.source_offset)&&offset>=0&&offset<r.source_ids.length&&!Object.hasOwn(a,"source_ids")))fail(422,"INVALID_AGENT_OUTPUT","资料分页位置无效。",{path:"source_offset",rule:"Use a nonnegative integer selected-source offset returned by source_page.next_offset for overview_refresh only; omit source_ids when paging."});
           check(!a.query || (typeof a.query === "string" && a.query.length <= 1000));
-          const ids = a.source_ids || (r.conversation_id ? r.source_ids : []);
+          const ids = a.source_ids || (r.overview_refresh ? r.source_ids.slice(offset,offset+this.limits.retrievalCount) : r.conversation_id ? r.source_ids : []);
           check(Array.isArray(ids) && ids.length <= this.limits.retrievalCount);
           if (a.episode_id) this.get(r.owner, "episode", a.episode_id);
-          const p = this.profile(r.owner),
-            sources = [...new Set([...(r.workflow==='chat'?[r.source_ids[0]]:[]),...ids])].map((s) => read(r, s));
+          const p = this.profile(r.owner),retained=!r.overview_refresh&&Object.hasOwn(a,'source_ids')?currentDocumentEvidence(this,r):new Set(),
+            sources = [...new Set([...ids,...(r.workflow==='chat'?[r.source_ids[0]]:[])])].map(s=>retained.has(s)?this.get(r.owner,'source',s):read(r,s));
           const query = (a.query || "").normalize("NFKC").toLowerCase().trim();
           const record=this.all('record_thread',r.owner).find(t=>t.id===r.record_thread_id||(r.conversation_id&&t.conversation_id===r.conversation_id));
           const facts = p.facts.filter(
@@ -940,12 +985,13 @@ export class DomainStore {
               (!a.episode_id || f.episode_id === a.episode_id),
           );
           const record_context=record?{record_thread_id:record.id,episode_id:record.episode_id,summary:r.record_edit?this.get(r.owner,'source',r.source_ids[0]).text:record.summary||this.all('record_summary',r.owner).find(x=>x.id===record.latest_summary_id)?.summary||'',version:record.version,source_ids:[...record.source_ids],...(r.record_edit?{edit_replaces_history:true,authoritative_source_id:r.source_ids[0]}:{})}:null;
-          const contextIds=[...new Set([...sources.map(s=>s.id),...(record?.source_ids||[]),...(p.health_profile.overview.source_ids||[]),...facts.slice(0,this.limits.retrievalCount).flatMap(f=>f.evidence.map(e=>e.source_id))])].slice(0,this.limits.retrievalCount);
-          const contextualSources=contextIds.map(sid=>({...this.get(r.owner,'source',sid),...(r.record_edit&&record?.source_ids.includes(sid)&&sid!==r.source_ids[0]?{context_only:true,superseded_by_record_edit:true}:{})}));
+          const contextIds=r.overview_refresh?sources.map(s=>s.id):[...new Set([...sources.map(s=>s.id),...(record?.source_ids||[]),...(p.health_profile.overview.source_ids||[]),...facts.slice(0,this.limits.retrievalCount).flatMap(f=>f.evidence.map(e=>e.source_id))])].slice(0,this.limits.retrievalCount);
+          const contextualSources=contextIds.map(sid=>({...this.get(r.owner,'source',sid),...(supersededHealthSources(this,r).has(sid)?{context_only:true,superseded_by_record_edit:true}:{})}));
           return {
+            ...(r.overview_refresh?{source_page:{offset,next_offset:offset+this.limits.retrievalCount<r.source_ids.length?offset+this.limits.retrievalCount:null,total:r.source_ids.length}}:{}),
             facts: facts.slice(0, this.limits.retrievalCount),
             record_context,body_overview_context:p.health_profile.overview,
-            ...(r.overview_refresh?{overview_resolution_context:(()=>{const c=this.get(r.owner,'fact_change',r.overview_change_id);return {change_id:c.id,status:c.status,resolutions:c.resolutions||[],proposals:c.proposals.map(p=>({value:p.value,evidence:p.evidence,proposal_status:p.proposal_status,resolutions:p.resolutions||[]}))};})()}:{}),
+            ...(r.overview_refresh&&r.overview_change_id?{overview_resolution_context:(()=>{const c=this.get(r.owner,'fact_change',r.overview_change_id);return {change_id:c.id,status:c.status,resolutions:c.resolutions||[],proposals:c.proposals.map(p=>({value:p.value,evidence:p.evidence,proposal_status:p.proposal_status,resolutions:p.resolutions||[]}))};})()}:{}),
             ...(feedbackContext(this,r)?{care_feedback_context:feedbackContext(this,r)}:{}),
             sources:contextualSources,
             ...(r.conversation_id?{conversation_messages:this.conversationMessages(r),pending_visit_offer:!!r.visit_offer_run_id,...(()=>{
@@ -979,7 +1025,7 @@ export class DomainStore {
   stageCandidates(run, args, read) {
     keys(args, ["candidates", "base_profile_revision", "operation_key", "record_dialogue", "record_source_refs", "document_source_refs", "comparisons", "overview"],["candidates", "base_profile_revision", "operation_key"]);
     check(["entry", "document"].includes(run.workflow), "INVALID_AGENT_OUTPUT", 422);
-    if((run.overview_refresh||run.record_edit||run.legacy_record_adoption||Object.hasOwn(args,'document_source_refs'))&&!args.overview)fail(422,'INVALID_AGENT_OUTPUT','本次自动整理必须包含身体概述。',{path:'overview',rule:'Provide a native overview object with summary and regions (use [] if no region is supported). Keep exact source references and the user edit unchanged. This automatic workflow cannot finish without its overview.'});
+    if((run.overview_refresh||run.record_edit||run.legacy_record_adoption||Object.hasOwn(args,'document_source_refs'))&&!args.overview)fail(422,'INVALID_AGENT_OUTPUT','本次自动整理必须包含身体概述。',{path:'overview',rule:'Provide a native overview object with format_version=2, summary, problems, background and uncertainties (unknown dimensions must be null). Keep exact source references and the user edit unchanged. This automatic workflow cannot finish without its overview.'});
     return this.receipt(run.owner, `stage:${run.id}`, args.operation_key, args, () => {
       check(
         args.base_profile_revision === run.base_profile_revision &&
@@ -1067,7 +1113,12 @@ export class DomainStore {
           c.temporal_scope=annotations[0].temporal_scope;
           c.effective_time=structuredClone(annotations[0].effective_time);
         }
-        return {...validateCandidate(c,readCandidateSource),id:id('candidate'),candidate_index:candidateIndexes[i]??i};
+        let validated;
+        try{validated=validateCandidate(c,readCandidateSource);}catch(error){
+          if(Array.isArray(args.document_source_refs)&&error.code==='INVALID_AGENT_OUTPUT'&&error.details?.path==='candidate.field')fail(error.status,error.code,error.message,{...error.details,path:`document_source_refs[${candidateIndexes[i]??i}].field`});
+          throw error;
+        }
+        return {...validated,id:id('candidate'),candidate_index:candidateIndexes[i]??i};
       });
       const spans = new Set();
       for (const proposal of proposals)
@@ -1095,7 +1146,7 @@ export class DomainStore {
         conflicts: comparisons.filter(c=>c.requires_resolution),
         created_at: this.now(),
         document_id: run.document_id,
-        ...(args.overview?{overview:validateOverview(args.overview,run.read_sources||[])}:{}),
+        ...(args.overview?{overview:validateRunHealthState(this,run,args.overview)||validateOverview(args.overview,run.read_sources||[])}:{}),
       });
       const summaryId=run.record_thread_id?stageRecordSummary(this,run,change,args.record_dialogue):null;
       run.fact_change_id = change.id;

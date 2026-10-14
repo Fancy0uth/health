@@ -8,7 +8,8 @@ test('fixture: real public Host installs approved plugin and exact-root Skills, 
  const home=await mkdtemp(join(tmpdir(),'ht-agh-fixture-'));
  let runtime;
  try{runtime=await createRuntime({home,fixture:fixtureRuntime(scriptedProvider([]))});
- assert.equal(runtime.readiness.tools.length,5); assert.equal(runtime.readiness.skills.length,6);
+ assert.equal(runtime.readiness.tools.length,5); assert.equal(runtime.readiness.skills.length,7);
+ assert.ok(runtime.readiness.skills.some(s=>s.name==='health-state'));
  assert.ok(runtime.readiness.skills.every(s=>s.actual==='ready'&&s.trust==='trusted'));
  assert.equal(runtime.readiness.plugins.length,1); assert.equal(runtime.readiness.plugins[0].trusted,true);
  }finally{await runtime?.close();await rm(home,{recursive:true,force:true});}

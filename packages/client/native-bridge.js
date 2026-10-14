@@ -16,7 +16,7 @@ const taskStatus=value=>value==='open'?'pending':value;
 // Saving page drafts never writes facts, proposals, model results or task status.
 export class NativeBridge {
   constructor(client=new DomainClient()) {this.client=client;this.sources=new Map();this.ui={};this.lastDeletion=null;this.history=[];this.historyRevision=null;this.refreshSequence=0;
-    client.subscribe(event=>{if(['identity','scope'].includes(event.type)){this.refreshSequence++;this.sources.clear();this.history=[];this.historyRevision=null;this.ui={};this.lastDeletion=null;}});
+    client.subscribe(event=>{if(['identity','scope'].includes(event.type)){this.refreshSequence++;this.sources.clear();this.history=[];this.historyRevision=null;this.ui={};this.lastDeletion=null;this.profileRefreshFlight=null;this.profileRefreshUi={};}});
   }
   saveOverlay(value) {if((value._domainEpoch!==undefined&&value._domainEpoch!==this.client.scopeEpoch)||(value._domainOwner!==undefined&&value._domainOwner!==(this.client.state.user?.id??null))||(value._domainSession!==undefined&&value._domainSession!==this.client.sessionEpoch))throw fail('LOCAL_DRAFT_EXPIRED','登录或资料范围已变化，请重新打开页面后编辑。');this.ui=Object.fromEntries(uiFields.filter(k=>Object.hasOwn(value,k)).map(k=>[k,clone(value[k])]));this.client.setDraft('nativeUi',this.ui);return true;}
   async refresh() {
@@ -51,11 +51,17 @@ export class NativeBridge {
     const history=this.historyRevision!==s.profile.profile_revision?(await this.client.exportData()).fact_revisions||[]:this.history;
     this.client.check(ticket);
     const ids=new Set([...s.documents.documents.flatMap(d=>[d.source_id,d.analysis_source_id].filter(Boolean)),...s.profile.pending_changes.flatMap(c=>c.source_ids),...s.profile.facts.flatMap(f=>(f.evidence||[]).map(e=>e.source_id))]);
+    const overview=s.profile.health_profile?.overview;
+    const overviewIds=new Set([...(overview?.problems||[]),...(overview?.background||[]),...(overview?.uncertainties||[]),...(overview?.regions||[])].flatMap(item=>item.source_ids||[]));
+    for(const id of overviewIds)ids.add(id);
     for(const run of Object.values(s.runs))if(run.workflow==='chat')for(const id of run.source_ids||[])ids.add(id);
     for(const result of s.results)for(const id of result.source_ids||[])ids.add(id);
     for(const result of s.results)for(const claim of result.payload?.claims||[])for(const e of claim.evidence||[])ids.add(e.source_id);
     for(const thread of s.recordThreads||[])for(const id of thread.source_ids)ids.add(id);
-    for(const id of ids)if(!sources.has(id)){const source=await this.client.source(id);this.client.check(ticket);sources.set(id,source);}
+    for(const id of ids)if(!sources.has(id)){
+      try{const source=await this.client.source(id);this.client.check(ticket);sources.set(id,source);}
+      catch(error){this.client.check(ticket);if(!overviewIds.has(id)||overview?.status!=='stale'||error.status!==404)throw error;ids.delete(id);}
+    }
     const allowed=new Set([...ids,...s.timeline.entries.map(e=>e.source_id),...s.results.flatMap(r=>(r.dependencies||[]).map(d=>d.source_id).filter(Boolean))]);
     for(const id of sources.keys())if(!allowed.has(id))sources.delete(id);
     this.client.check(ticket);
@@ -224,6 +230,34 @@ export class NativeBridge {
     const edit=(state.recordThreads||[]).some(thread=>thread.edit_recovery?.run_id===runId&&thread.edit_recovery.retryable===true);
     if(!edit&&!(overview?.status==='stale'&&overview.refresh_run_id===runId&&overview.refresh_retryable===true))throw fail('RUN_NOT_RETRYABLE','任务状态已变化，请查看最新进度。');
     const receipt=await this.client.retryRun(runId);await this.refresh();return receipt;
+  }
+  healthProfileRefreshState() {
+    const overview=this.client.state.profile.health_profile?.overview;
+    return {...this.profileRefreshUi,allowed:this.client.state.consents.consents.some(c=>c.purpose==='analysis'&&c.granted===true),busy:!!this.profileRefreshFlight||overview?.refresh_state==='pending',unknown:this.client.pendingOperations().some(op=>op.slot==='health-profile-refresh')};
+  }
+  openHealthProfile({automatic=true}={}) {
+    if(this.profileRefreshFlight)return this.profileRefreshFlight;
+    const s=this.client.state,overview=s.profile.health_profile?.overview;
+    const allowed=s.consents.consents.some(c=>c.purpose==='analysis'&&c.granted===true);
+    const pending=this.client.pendingOperations().find(op=>op.slot==='health-profile-refresh');
+    const hasData=s.timeline.entries.length>0||s.documents.documents.length>0||s.profile.facts.length>0||s.recordThreads.length>0;
+    if(automatic&&(!allowed||!hasData||overview?.format_version===2||overview?.refresh_run_id||pending||this.client.getDraft('healthStateUpgradeAttempted',false)))return Promise.resolve(null);
+    if(!allowed)return Promise.reject(fail('CONSENT_REQUIRED','请先开启资料分析授权。'));
+    if(overview?.refresh_state==='pending')return Promise.resolve({run_id:overview.refresh_run_id,status:'running'});
+    this.client.setDraft('healthStateUpgradeAttempted',true);
+    const ticket=this.client.ticket();
+    const flight=Promise.resolve().then(async()=>{
+      this.client.check(ticket);this.profileRefreshUi={message:'正在根据已保存资料评估身体近况。'};this.client.emit({type:'health-profile-refresh'});
+      try {
+        const receipt=pending?await this.client.retryOperation(pending.id):await this.client.refreshHealthProfile();this.client.check(ticket);
+        this.profileRefreshUi={message:receipt.status==='no_data'?'没有可用于评估的已保存资料。保存身体感受或病历后再评估。':''};
+        await this.refresh();this.client.check(ticket);
+        return receipt;
+      }catch(error){
+        this.client.check(ticket);this.profileRefreshUi={message:error.code==='OUTCOME_UNKNOWN'?'评估请求结果未知，可查询 / 重试原评估请求。':'评估未完成，已保存资料与上一版评估仍保留。可手动重新评估。'};throw error;
+      }finally{if(this.profileRefreshFlight===flight){this.profileRefreshFlight=null;this.client.emit({type:'health-profile-refresh'});}}
+    });
+    this.profileRefreshFlight=flight;return flight;
   }
   async retryChatRun(runId) {
     await this.refresh();

@@ -9,7 +9,7 @@ function page(options={}) {
   const root={addEventListener:(type,fn)=>appListeners[type]=fn,querySelector:s=>nodes[s]||null,querySelectorAll:()=>[],contains:()=>false,
     get innerHTML(){return html;},set innerHTML(value){this.renderCount=(this.renderCount||0)+1;html=value;nodes={'#chat-thread':{scrollTop:0,scrollHeight:1200,clientHeight:400},'.history-transcript':{scrollTop:0},'.detail-drawer':{scrollTop:0}};}};
   const data={sessions:[],records:[],tasks:[],documents:[],consent:{},symptomStart:'',selectedHistory:[]};
-  const native={client:{state:{user:{},runs:{}},getDraft:()=>'',pendingOperations:()=>[]},review:async id=>({id:'change-'+id,source_ids:[id],review_revision:0,proposals:[{id:'p-'+id,value:'合成记录'}]})};
+  const native={healthProfileRefreshState:()=>({}),openHealthProfile:async()=>null,client:{state:{user:{},runs:{}},getDraft:()=>'',pendingOperations:()=>[]},review:async id=>({id:'change-'+id,source_ids:[id],review_revision:0,proposals:[{id:'p-'+id,value:'合成记录'}]})};
   const window={scrollX:0,scrollY:0,scrollTo(x,y){this.scrollY=y;},addEventListener:(type,fn)=>listeners[type]=fn};
   Object.assign(data,options.data||{});native.sources=new Map(options.sources||[]);
   const testLocation={hash:options.hash||'#home'},testHistory={replaceState(_state,_unused,hash){testLocation.hash=hash;},pushState(_state,_unused,hash){testLocation.hash=hash;}};
@@ -18,6 +18,20 @@ function page(options={}) {
   vm.runInContext(source,context);
   return {location:testLocation,root,nodes:()=>nodes,context,window,data,input:target=>appListeners.input({target}),change:target=>appListeners.change({target}),sync:()=>listeners['healththread:state'](),run:code=>vm.runInContext(code,context)};
 }
+test('profile entry requests one legacy upgrade and manual refresh waits only for a real run',async()=>{
+ const p=page();p.run("let profileCalls=[];native.healthProfileRefreshState=()=>({});native.openHealthProfile=async options=>{profileCalls.push(options.automatic);return options.automatic?null:{run_id:null,status:'no_data'};};native.wait=async()=>{throw new Error('no-data must not poll')}");
+ await p.run("doAction('health-profile',{dataset:{}})");await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(p.run('profileCalls.length'),1);p.sync();await new Promise(resolve=>setImmediate(resolve));assert.equal(p.run('profileCalls.length'),1);
+ await p.run("doAction('profile-refresh',{dataset:{}})");assert.deepEqual(Array.from(p.run('profileCalls')),[true,false]);assert.match(p.root.innerHTML,/更新汇总/);
+});
+test('source drawer uses source or record version and never a changing global fact revision',async()=>{
+ for(const [metadata,label,value] of [[{source_text_version:2,record_version:4},'原文版本','v2'],[{record_version:4},'记录版本','v4'],[{},'原文版本','未记录']]){
+  const p=page({data:{factVersion:913,records:[{id:'source',text:'可核验的原文',source:'用户自述',...metadata}]}});
+  await p.run("doAction('source',{dataset:{id:'source'}})");
+  assert.match(p.root.innerHTML,new RegExp(`${label}[\\s\\S]*?${value}`));assert.doesNotMatch(p.root.innerHTML,/对应字段|开始时间、症状|v913/);
+  const before=p.root.innerHTML;p.data.factVersion=914;p.sync();assert.equal(p.root.innerHTML,before);
+ }
+});
 test('background sync preserves scroll positions in chat, history and record drawer',()=>{
   const p=page();p.nodes()['#chat-thread'].scrollTop=350;p.nodes()['.history-transcript'].scrollTop=180;p.nodes()['.detail-drawer'].scrollTop=90;p.window.scrollY=220;
   p.sync();assert.equal(p.nodes()['#chat-thread'].scrollTop,350);assert.equal(p.nodes()['.history-transcript'].scrollTop,180);assert.equal(p.nodes()['.detail-drawer'].scrollTop,90);assert.equal(p.window.scrollY,220);
@@ -240,9 +254,9 @@ test('desktop medical review blocks unresolved conflicts and forwards deliberate
  await p.run("openReview('doc',true)");p.run("selectedForReview.add('new');render()");assert.match(p.root.innerHTML,/旧原文/);await p.run('confirmReview(true)');assert.equal(p.run('submitted'),undefined);
  const key=healthUI.resolutionKey('new','old',3);p.change({dataset:{resolution:key},value:'defer'});await p.run('confirmReview(true)');assert.equal(p.run('submitted[4][0].action'),'defer');
 });
-test('desktop profile opens four views and keeps unsaved correction through refresh',async()=>{
+test('desktop report hides inventory navigation and keeps unsaved correction through refresh',async()=>{
  const p=page();p.data.healthProfile={current_problems:[],events:[],background:[],unknowns:[{dimension:'impact'}]};p.run("native.client.state.profile={facts:[{fact_id:'f',revision:2,value:'旧描述'}]}");
- await p.run("doAction('health-profile',{dataset:{}})");assert.match(p.root.innerHTML,/身体近况/);assert.match(p.root.innerHTML,/记录经过/);await p.run("doAction('profile-view',{dataset:{view:'unknowns'}})");assert.match(p.root.innerHTML,/生活影响/);
+ await p.run("doAction('health-profile',{dataset:{}})");assert.match(p.root.innerHTML,/身体近况/);assert.doesNotMatch(p.root.innerHTML,/data-act="profile-view"/);await p.run("doAction('profile-view',{dataset:{view:'unknowns'}})");assert.match(p.root.innerHTML,/生活影响/);
  await p.run("doAction('profile-correct',{dataset:{id:'f',version:'2'}})");p.input({id:'profile-correction-text',value:'编辑中的正确原话',dataset:{}});await p.sync();assert.match(p.root.innerHTML,/编辑中的正确原话/);
 });
 test('desktop feedback saves once, opens linked chat, and preserves newly typed followup',async()=>{

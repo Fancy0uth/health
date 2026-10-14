@@ -11,7 +11,7 @@ function mobile(options={}) {
   const overlay={innerHTML:'',querySelector:()=>({showModal(){},addEventListener(){},close(){}})};const toast={textContent:'',classList:{add(){},remove(){}}};
   const data={sessions:[],records:[],tasks:[],documents:[],consent:{organize:true},factHistory:[],selectedHistory:[],factVersion:1};
   const store={data,preferences:{reduceMotion:true},reload(){},persist:()=>true,record:id=>data.records.find(r=>r.id===id),session:id=>data.sessions.find(s=>s.id===id),sessions:()=>data.sessions,pending:()=>0,cardExists:()=>false,stale:()=>false,ensureSession:()=>data.sessions[0]};
-  const native={copyText:()=> '合成沟通卡',client:{getDraft:()=>'',pendingOperations:()=>[],setDraft(){},clearDraftIf(){},state:{user:{username:'test'},runs:{}}},review:async id=>({id:'change-'+id,source_ids:[id],review_revision:1,proposals:[{id:'p',value:'合成记录'}]})};
+  const native={healthProfileRefreshState:()=>({}),openHealthProfile:async()=>null,copyText:()=> '合成沟通卡',client:{getDraft:()=>'',pendingOperations:()=>[],setDraft(){},clearDraftIf(){},state:{user:{username:'test'},runs:{}}},review:async id=>({id:'change-'+id,source_ids:[id],review_revision:1,proposals:[{id:'p',value:'合成记录'}]})};
   Object.assign(data,options.data||{});native.sources=new Map(options.sources||[]);
   const testLocation={hash:options.hash||'#home'},testHistory={replaceState(_state,_unused,hash){testLocation.hash=hash;},pushState(_state,_unused,hash){testLocation.hash=hash;}};
   const context=vm.createContext({...healthUI,AbortController,isRecordConfirmation,nativeBridge:()=>native,store,window:{addEventListener:(name,fn)=>listeners[name]=fn},document:{activeElement:null,getElementById:id=>({app:root,overlays:overlay,toast})[id],querySelector:s=>s==='.screen-body'?body:null,documentElement:{classList:{toggle(){}}},addEventListener:(name,fn)=>events[name]=fn},navigator:{onLine:true},location:testLocation,history:testHistory,setTimeout:()=>0,clearTimeout(){},requestAnimationFrame:fn=>fn(),matchMedia:()=>({matches:true,addEventListener(){}}),assertionLabel:()=>'',scopeLabel:()=>'',executionLabel:()=>'',CSS:{escape:v=>v},console,appendAssistantReply(sessions,id,message){sessions.find(s=>s.id===id).messages.push({role:'assistant',...message});}});
@@ -19,6 +19,12 @@ function mobile(options={}) {
   vm.runInContext(source,context);
   return {location:testLocation,root,overlay,data,native,events,body:()=>body,sync:()=>listeners['healththread:state'](),run:code=>vm.runInContext(code,context)};
 }
+test('mobile profile entry upgrades once and no-data manual refresh never polls a null run',async()=>{
+ const p=mobile();p.run("let profileCalls=[];native.healthProfileRefreshState=()=>({});native.openHealthProfile=async options=>{profileCalls.push(options.automatic);return options.automatic?null:{run_id:null,status:'no_data'};};native.wait=async()=>{throw new Error('no-data must not poll')}");
+ await p.run("action('health-profile',{dataset:{}})");await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(p.run('profileCalls.length'),1);p.sync();await new Promise(resolve=>setImmediate(resolve));assert.equal(p.run('profileCalls.length'),1);
+ await p.run("action('profile-refresh',{dataset:{}})");assert.deepEqual(Array.from(p.run('profileCalls')),[true,false]);assert.match(p.root.innerHTML,/更新汇总/);
+});
 test('mobile background refresh already preserves the main reading position',()=>{
   const p=mobile();p.body().scrollTop=380;p.sync();assert.equal(p.body().scrollTop,380);
 });
@@ -190,7 +196,7 @@ test('mobile late card completion clears its error only after receipt verificati
 test('mobile card editor allows clearing all remaining items explicitly',async()=>{
  const p=mobile();Object.assign(p.data,{cardResultId:'card',cardEditRevision:2,questions:[],cardUnknowns:['矛盾的待补充项']});p.run("store.speech=()=> '正文'");await p.run("action('edit-card',{dataset:{}})");assert.match(p.root.innerHTML,/还需补充（每行一项）/);assert.match(p.root.innerHTML,/矛盾的待补充项/);p.events.input({target:{name:'unknowns',value:''}});let saved;p.native.saveCardEdit=async(...args)=>{saved=args;};await p.run("action('save-card',{dataset:{}})");assert.deepEqual(Array.from(saved[4]),[]);
 });
-test('mobile profile has four views and correction input survives refresh',async()=>{
+test('mobile report hides inventory navigation and correction input survives refresh',async()=>{
  const p=mobile();p.data.healthProfile={current_problems:[],events:[],background:[],unknowns:[{dimension:'impact'}]};p.native.client.state.profile={facts:[{fact_id:'f',revision:2,value:'旧描述'}]};
  await p.run("action('health-profile',{dataset:{}})");assert.match(p.root.innerHTML,/身体近况/);await p.run("action('profile-view',{dataset:{view:'unknowns'}})");assert.match(p.root.innerHTML,/生活影响/);
  await p.run("action('profile-correct',{dataset:{id:'f',version:'2'}})");p.events.input({target:{name:'profileCorrection',value:'编辑中的正确原话'}});await p.sync();assert.match(p.root.innerHTML,/编辑中的正确原话/);

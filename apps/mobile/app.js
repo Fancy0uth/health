@@ -1,4 +1,4 @@
-import {recordRecoveryMarkup,documentForSource,sourceProvenanceLabel,documentSourceMarkup,captureDisclosureState,restoreDisclosureState,recordTimeLabel,recordStatusLabel,recordSaveMarkup,pendingReviewItems,careProgressMarkup,eventTimeText,documentStatusLabel,documentAnalysisMarkup,healthProfileMarkup,comparisonMarkup,selectedResolutions,reviewProposals,careDetailsMarkup,profileCorrectionMarkup} from '../../packages/client/health-profile.js';
+import {recordRecoveryMarkup,documentForSource,sourceProvenanceLabel,documentSourceMarkup,captureDisclosureState,restoreDisclosureState,recordTimeLabel,recordStatusLabel,recordSaveMarkup,pendingReviewItems,careProgressMarkup,eventTimeText,documentStatusLabel,documentAnalysisMarkup,healthProfileMarkup,comparisonMarkup,selectedResolutions,reviewProposals,careTaskMarkup,careDetailsMarkup,profileCorrectionMarkup} from '../../packages/client/health-profile.js';
 import {isRecordConfirmation} from '../../packages/client/record-dialogue.js';
 import {assertionLabel,scopeLabel} from '../../packages/client/presentation.js';
 import {nativeBridge} from '../../packages/client/native-bridge.js';
@@ -6,6 +6,11 @@ const native=nativeBridge();
 const actionRetries=new Set();
 const recoveryRetries=new Set();
 let profileView='overview';
+async function refreshHealthProfile(automatic){
+  try{const receipt=await native.openHealthProfile({automatic});if(!receipt)return;store.reload();render();if(receipt.run_id)await native.wait(receipt.run_id);}
+  catch(error){if(error.code!=='SESSION_CHANGED')notify(error.message||'近况评估未完成，可查看最新状态后重试。');}
+  finally{store.reload();if(route.view==='healthProfile')render();}
+}
 let profileEditor=null;
 let profileSaveBusy=false;
 let reviewChoices={};
@@ -137,6 +142,7 @@ function save() {
   return success;
 }
 function render(animate = false) {
+  if(renderedRoute!==routeKey(route)&&route.view==='healthProfile')Promise.resolve().then(()=>refreshHealthProfile(true));
   if(filePickerOpen&&route.view==='upload')return;
   if(route.view!=='upload')filePickerOpen=false;
   const disclosures=renderedRoute===routeKey(route)?captureDisclosureState(app):new Set();
@@ -185,7 +191,7 @@ function composer() {
 function content() {
   if (!route.view) return ({ home: home, timeline: timeline, card: communicationCard, settings })[route.page]();
   switch (route.view) {
-    case 'healthProfile': return healthProfileMarkup(d().healthProfile,profileView,'mobile',recoveryRetries);
+    case 'healthProfile': return healthProfileMarkup(d().healthProfile,profileView,'mobile',recoveryRetries,native.healthProfileRefreshState());
     case 'profileCorrection': return profileEditor?profileCorrectionMarkup(profileEditor.fact,profileEditor.text,'mobile',profileSaveBusy):notice('请重新选择事实','返回画像查看最新内容。');
     case 'chat': return chat();
     case 'conversations': return conversations();
@@ -220,7 +226,7 @@ function content() {
 }
 function home() {
   const recent = store.sessions()[0];
-  return `<h2 class="greeting">你好，${escape(native.client.state.user?.username||'')}</h2><p class="muted">今天想聊些什么？</p><section class="assistant-hero"><div class="assistant-heading">${mark(52)}<div><h2>AI 健康助手</h2><small>聊聊近况，也能整理就诊资料</small></div></div>${button('饭后腹胀，想准备就诊', 'suggest', 'secondary')}</section>${actionRow('身体近况','按身体部位查看最近的情况和变化','document','health-profile')}${heading('最近对话', '<button class="text-button" type="button" data-action="conversations">查看全部</button>')}${recent ? actionRow(recent.title, sessionTime(recent), 'chat', 'conversation', `data-id="${escape(recent.id)}"`) : actionRow('还没有对话记录', '开始新对话', 'chat', 'new-chat')}${actionRow(pendingCount() ? `${pendingCount()} 项待核对` : '当前没有待核对事项', pendingCount() ? '仅需核实的冲突或识别不确定内容' : '健康信息会自动整理成可修改的记录', 'document', pendingCount() ? 'review' : 'record-change')}`;
+  return `<h2 class="greeting">你好，${escape(native.client.state.user?.username||'')}</h2><p class="muted">今天想聊些什么？</p><section class="assistant-hero"><div class="assistant-heading">${mark(52)}<div><h2>AI 健康助手</h2><small>聊聊近况，也能整理就诊资料</small></div></div>${button('饭后腹胀，想准备就诊', 'suggest', 'secondary')}</section>${actionRow('身体近况','结合记录与病历，查看近期整体身体情况','document','health-profile')}${heading('最近对话', '<button class="text-button" type="button" data-action="conversations">查看全部</button>')}${recent ? actionRow(recent.title, sessionTime(recent), 'chat', 'conversation', `data-id="${escape(recent.id)}"`) : actionRow('还没有对话记录', '开始新对话', 'chat', 'new-chat')}${actionRow(pendingCount() ? `${pendingCount()} 项待核对` : '当前没有待核对事项', pendingCount() ? '仅需核实的冲突或识别不确定内容' : '健康信息会自动整理成可修改的记录', 'document', pendingCount() ? 'review' : 'record-change')}`;
 }
 function actionRetryMarkup(message){return [['chat_retry_run_id','重试回复'],['record_retry_run_id','重试整理记录'],['visit_retry_run_id','重试生成沟通卡']].filter(([field])=>message[field]).map(([field,label])=>`<button type="button" class="text-button" data-action="${field==='chat_retry_run_id'?'retry-chat-run':'retry-chat-action'}" data-id="${escape(message[field])}" ${actionRetries.has(message[field])?'disabled':''}>${actionRetries.has(message[field])?'重试中…':label}</button>`).join('');}
 function messageMarkup(messages) {
@@ -247,7 +253,7 @@ function timelineTabs() {
 function timeline() {
   const records = d().records.filter(r => (filters.issue === 'all' || r.issue === filters.issue) && (filters.status === 'all' || r.status === filters.status) && (filters.time === 'all' || r.date && new Date(r.date) >= new Date(Date.now() - 7 * 86400000)));
   const isFiltered = Object.values(filters).slice(0, 3).some(v => v !== 'all');
-  return `${timelineTabs()}${button('查看身体近况','health-profile','secondary')}<div class="filter-row">${[['issue', filters.issue === 'all' ? '全部问题' : filters.issue], ['time', filters.time === 'all' ? '全部时间' : '最近 7 天'], ['status', ({ all: '全部状态', pending: '待核对', confirmed:'已核对',patient_report:'患者自述',document_report:'病历记载' })[filters.status]]].map(([name, label]) => `<button type="button" data-action="filters" data-filter="${name}">${escape(label)} ⌄</button>`).join('')}</div>${records.length ? `<div class="issue-group"><h2>${filters.issue === 'all' && records.every(r => r.issue === '胃部不适') ? '胃部不适' : filters.issue === 'all' ? '健康记录' : escape(filters.issue)}</h2><small>${records.length} 条记录 · 用户自述</small></div><div class="timeline-events">${records.map(r => `<article class="timeline-event ${r.status}"><section class="fact-card"><button class="record-open" type="button" data-action="record-detail" data-id="${escape(r.id)}"><div class="fact-card-heading"><strong>${escape(recordTimeLabel(r))}</strong>${badge(r.status,recordStatusLabel(r))}</div><p>${escape(r.summary || r.text)}</p></button>${source(r.id, r.source)}</section></article>`).join('')}</div>${d().records.some(r => r.id === 'r1') ? button('更正开始时间', 'correct', 'secondary', 'data-id="r1"') : ''}${actionRow('版本与冲突', `当前 v${d().factVersion} · 查看来源与更改`, 'document', 'versions')}${store.stale() && store.cardExists() ? notice('相关沟通卡已过期', '重新生成后会使用更正后的信息。', 'warning') + button('查看沟通卡', 'nav-card', 'secondary') : ''}` : empty(isFiltered ? '当前筛选下没有记录' : '还没有健康记录', isFiltered ? '调整筛选条件后再查看。' : '记录身体感受，原文会先保存。', button(isFiltered ? '清除筛选' : '记录新变化', isFiltered ? 'clear-filters' : 'record-change', 'secondary'))}`;
+  return `${timelineTabs()}<div class="filter-row">${[['issue', filters.issue === 'all' ? '全部问题' : filters.issue], ['time', filters.time === 'all' ? '全部时间' : '最近 7 天'], ['status', ({ all: '全部状态', pending: '待核对', confirmed:'已核对',patient_report:'患者自述',document_report:'病历记载' })[filters.status]]].map(([name, label]) => `<button type="button" data-action="filters" data-filter="${name}">${escape(label)} ⌄</button>`).join('')}</div>${records.length ? `<div class="issue-group"><h2>${filters.issue === 'all' && records.every(r => r.issue === '胃部不适') ? '胃部不适' : filters.issue === 'all' ? '健康记录' : escape(filters.issue)}</h2><small>${records.length} 条记录 · 用户自述</small></div><div class="timeline-events">${records.map(r => `<article class="timeline-event ${r.status}"><section class="fact-card"><button class="record-open" type="button" data-action="record-detail" data-id="${escape(r.id)}"><div class="fact-card-heading"><strong>${escape(recordTimeLabel(r))}</strong>${badge(r.status,recordStatusLabel(r))}</div><p>${escape(r.summary || r.text)}</p></button>${source(r.id, r.source)}</section></article>`).join('')}</div>${d().records.some(r => r.id === 'r1') ? button('更正开始时间', 'correct', 'secondary', 'data-id="r1"') : ''}${actionRow('版本与冲突', `当前 v${d().factVersion} · 查看来源与更改`, 'document', 'versions')}${store.stale() && store.cardExists() ? notice('相关沟通卡已过期', '重新生成后会使用更正后的信息。', 'warning') + button('查看沟通卡', 'nav-card', 'secondary') : ''}` : empty(isFiltered ? '当前筛选下没有记录' : '还没有健康记录', isFiltered ? '调整筛选条件后再查看。' : '记录身体感受，原文会先保存。', button(isFiltered ? '清除筛选' : '记录新变化', isFiltered ? 'clear-filters' : 'record-change', 'secondary'))}`;
 }
 function analysis() {
   const item = activeRecord();
@@ -303,7 +309,7 @@ function versions() {
 }
 function medical() {
   const tasks=(d().tasks||[]).filter(t=>filters.task==='all'||t.status===filters.task),careProgress=careProgressMarkup(native.client.state.runs,'mobile',careRetries,d().documents);
-  return `${timelineTabs()}${heading('病历资料')}${(d().documents||[]).map(doc=>actionRow(doc.name,documentStatusLabel(doc),'document','medical-review',`data-id="${escape(doc.source_id)}"`)).join('')||empty('还没有病历资料','上传后自动整理，原件与识别文字可查看。')}${button('上传资料','upload','secondary')}${heading('诊后事项')}${careProgress}<div class="task-filters">${[['all','全部'],['pending','待完成'],['done','已完成'],['paused','已暂停']].map(([value,label])=>`<button type="button" data-action="task-filter" data-value="${value}" class="${filters.task===value?'selected':''}">${label}</button>`).join('')}</div>${tasks.map(t=>actionRow((t.source_kind==='model_guidance'?'模型建议 · ':'医嘱 · ')+t.text,`${t.schedule||'未指定截止时间'} · ${{pending:'待完成',done:'已完成',paused:'已暂停'}[t.status]}${t.validity!=='current'?' · 已过期':''}`,'document','task',`data-id="${escape(t.id)}"`)).join('')||(careProgress?'':'<p class="muted">暂无诊后事项。</p>')}${button('记录新变化','record-change','secondary')}`;
+  return `${timelineTabs()}${heading('病历资料')}${(d().documents||[]).map(doc=>actionRow(doc.name,documentStatusLabel(doc),'document','medical-review',`data-id="${escape(doc.source_id)}"`)).join('')||empty('还没有病历资料','上传后自动整理，原件与识别文字可查看。')}${button('上传资料','upload','secondary')}${heading('诊后事项')}${careProgress}<div class="task-filters">${[['all','全部'],['pending','待完成'],['done','已完成'],['paused','已暂停']].map(([value,label])=>`<button type="button" data-action="task-filter" data-value="${value}" class="${filters.task===value?'selected':''}">${label}</button>`).join('')}</div>${tasks.map(t=>careTaskMarkup(t,'mobile')).join('')||(careProgress?'':'<p class="muted">暂无诊后事项。</p>')}${button('记录新变化','record-change','secondary')}`;
 }
 function upload() {
   return `<h2>上传病历资料</h2><button class="upload-zone" type="button" data-action="choose-file">${icon('upload',40)}<strong>选择图片或文件</strong><small>PNG / JPEG / 文字 / 带文本的 PDF</small></button><input type="file" id="medical-file" accept=".png,.jpg,.jpeg,.txt,.pdf,image/png,image/jpeg,text/plain,application/pdf" hidden/>${file&&file!==acceptedFile?notice('文件尚未提交',file.name+'；刷新后需重新选择。'):''}${d().medical?documentAnalysisMarkup(d().medical,'mobile',medicalRetries.has(d().medical.source_id)):''}${textarea('也可以粘贴病历文字','medicalText',drafts.medicalText||'',6,'placeholder="粘贴完整病历或医嘱原文"')}${button('保存并分析文字','parse-text')}${notice('原件保留，资料自动整理','图片先识别成完整文字，再结合相关记录分析，最后更新身体近况与诊后建议。只有冲突或不确定内容需要核实。')}${actionRow('试用合成示例','使用示例文字体验分析','document','sample-file')}`;
@@ -584,6 +590,7 @@ async function action(name, el) {
     case 'reanalyse-record': {const item=store.record(value);if(!item)return;const sameNavigation=captureNavigation();const receipt=await native.retryEntry(item.id);closeSheet(false);notify('正在重新整理记录。');await native.wait(receipt.run_id);store.reload();if(sameNavigation())openSheet('record',item.id);return render();}
     case 'health-profile': return go('timeline','healthProfile');
     case 'profile-view': profileView=el.dataset.view;return render();
+    case 'profile-refresh': return refreshHealthProfile(false);
     case 'profile-review': {const doc=documentForSource(d().documents,value);if(doc){d().selectedDocumentId=doc.source_id;d().medical=doc;save();store.reload();}return openReview(doc?.source_id||value,false,!!doc);}
     case 'profile-correct': {const fact=native.client.state.profile?.facts.find(f=>f.fact_id===value);if(!fact||fact.revision!==Number(el.dataset.version))return notify('事实已变化，请刷新后重试。');profileEditor={fact:{...fact},text:fact.value};return go('timeline','profileCorrection');}
     case 'save-profile-correction': {

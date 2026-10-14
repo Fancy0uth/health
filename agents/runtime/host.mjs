@@ -50,7 +50,7 @@ export async function createRuntime({home,fixture,runConnection=false,workflow,a
  const snapshots=await manager.runtimePluginSnapshots(profileDir);
  if(snapshots.length!==1||!snapshots[0].trusted||snapshots[0].snapshot.packageId!==packageId)throw runtimeError('AGH_PLUGIN_PIN_REQUIRED');
  const skillsPath=join(workspace,'.agh/skills'); await mkdir(skillsPath,{recursive:true,mode:0o700});
- const skillNames=['health-record','visit-preparation','post-visit','care-followup','health-assistant','document-transcription'];
+ const skillNames=['health-record','visit-preparation','post-visit','care-followup','health-assistant','document-transcription','health-state'];
  for(const name of skillNames){const expected=await readFile(join(source,'skills',name,'SKILL.md'));await mkdir(join(skillsPath,name),{recursive:true,mode:0o700});const target=join(skillsPath,name,'SKILL.md');try{if(!expected.equals(await readFile(target)))throw runtimeError('AGH_SKILL_REVISION');}catch(e){if(e.code!=='ENOENT')throw e;await writeFile(target,expected,{mode:0o600,flag:'wx'});}}
  const canonicalRoot=await realpath(skillsPath);
  const checked=async path=>inside(canonicalRoot,await realpath(path));

@@ -66,3 +66,19 @@ test('document references preserve comparison index against input order and reje
  const fact=f.s.insert(f.uid,'fact_revision',{fact_id:'retrieved-old',revision:1,field:'symptom',value:'头痛。',assertion:'affirmed',temporal_scope:'unknown',review_status:'confirmed',evidence:[x.read.sentence_spans[0]]});x.tools.healththread_retrieve_context({});
  const out=x.tools.healththread_stage_candidates({...args(x,[{source_id:x.a.source_id,sentence_index:2,field:'instruction'},{source_id:x.a.source_id,sentence_index:0,field:'symptom'}]),comparisons:[{candidate_index:1,fact_id:fact.fact_id,revision:1,relation:'duplicate',reason:'相同原文。'}]});const p=f.s.get(f.uid,'fact_change',out.fact_change_id).proposals;assert.equal(p[1].comparisons[0].origin,'model');assert.equal(p[1].comparisons[0].fact_id,fact.fact_id);assert.equal(p[1].value,'头痛。');
 });
+import {medicalText,medicalArgs} from '../fixtures/maintained-medical.mjs';
+import {validateCandidate} from '../../services/api/source-validation.mjs';
+test('compact clinical category repair names the selected ref and preserves dated tentative originals',t=>{
+ const f=fixture(t),x=begin(f,medicalText),input=medicalArgs(x.a.source_id,x.run),original=structuredClone(x.read.source);
+ assert.throws(()=>x.tools.healththread_stage_candidates(input),e=>e.code==='INVALID_AGENT_OUTPUT'&&e.details?.path==='document_source_refs[4].field');assert.equal(f.s.all('fact_change').length,0);
+ input.document_source_refs[4].field='reported_text';const result=x.tools.healththread_stage_candidates(input),proposals=f.s.get(f.uid,'fact_change',result.fact_change_id).proposals;
+ assert.equal(proposals[4].field,'reported_text');assert.equal(proposals[4].value,'测量日期2026年10月14日。');assert.deepEqual(proposals[4].evidence,[x.read.sentence_spans[5]]);assert.equal(proposals[4].effective_time.raw,'2026年10月14日');
+ assert.equal(proposals[5].assertion,'uncertain');assert.equal(proposals[5].value,x.read.sentence_spans[6].quote);assert.ok(!proposals[5].health_observations.some(o=>o.value==='消化不良'));assert.ok(proposals[5].health_observations.some(o=>o.value.includes('尚未明确原因')));assert.equal(proposals[7].field,'instruction');
+ f.s.setRuntime(x.run.id,{mode:'fixture'});const saved=f.s.profile(f.uid).health_profile.overview;assert.equal(saved.format_version,2);assert.match(saved.problems[0].dimensions.evidence_status,/考虑.*尚未明确/);assert.deepEqual(f.s.get(f.uid,'source',x.a.source_id),original);
+});
+test('raw clinical candidate and compact instruction validators remain strict',t=>{
+ const f=fixture(t),x=begin(f,medicalText),source=x.read.source,annotation=x.read.sentence_annotations[5],raw={field:'test',value:x.read.sentence_spans[5].quote,evidence:[x.read.sentence_spans[5]],assertion:annotation.assertion,temporal_scope:annotation.temporal_scope,effective_time:annotation.effective_time,proposal_kind:'new'};
+ assert.throws(()=>validateCandidate(raw,()=>source),e=>e.details?.path==='candidate.field');assert.throws(()=>x.tools.healththread_stage_candidates({candidates:[raw],base_profile_revision:x.run.base_profile_revision,operation_key:key()}),e=>e.details?.path==='candidate.field');
+ const wrongInstruction=medicalArgs(source.id,x.run);wrongInstruction.document_source_refs=[{source_id:source.id,sentence_index:5,field:'instruction'}];assert.throws(()=>x.tools.healththread_stage_candidates(wrongInstruction),{code:'INVALID_AGENT_OUTPUT'});
+ const rewritten={...raw,field:'reported_text',value:'已确诊疾病。'};assert.throws(()=>validateCandidate(rewritten,()=>source),{code:'INVALID_AGENT_OUTPUT'});
+});

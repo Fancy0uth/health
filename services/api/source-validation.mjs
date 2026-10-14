@@ -359,12 +359,22 @@ export function validateCareExplanation(task,instructions) {
   const sourceQuantities=quantities(original);
   for(const [field,text]of texts){
     valid(quantities(text,field.startsWith('questions')).every(q=>sourceQuantities.includes(q)),{path:`task.${field}`,rule:'Do not add or change quantities, doses, frequencies or dates absent from the original instruction.'});
-    // A neutral question or explicit prohibition may mention adjustment; advice may not.
+    // Check each mention: a nearby prohibition/absence statement cannot license
+    // a later affirmative change in the same clause.
     for(const sentence of text.split(/[，,。！!；;\n]|但是|不过|然而|但/).filter(Boolean)){
-      const change=/(停药|停用|停服|加量|减量|加药|减药|换药|增减|翻倍|倍增|减半|不再(?:服|用|吃)药|停止(?:服|用|吃)药|调整.{0,8}(剂量|药量|用药)|double.{0,15}dose|stop.{0,15}(medication|medicine)|increase.{0,15}dose|reduce.{0,15}dose)/i.test(sentence);
-      const guarded=/(不要|不可|不能|勿|不应|不得|不建议|do not|don't|never).{0,20}(停药|停用|停服|加量|减量|加药|减药|换药|增减|翻倍|倍增|减半|不再(?:服|用|吃)药|停止(?:服|用|吃)药|调整|double|stop|increase|reduce)/i.test(sentence);
-      const neutral=field.startsWith('questions')&&/(医生|药师|医护|doctor|pharmacist)/i.test(sentence)&&!/(可以|建议|应该|请)(?:自行)?(?:停|加|减|换)/.test(sentence);
-      valid(!change||guarded||neutral,{path:`task.${field}`,rule:'A model explanation never grants medication changes. Retain the original instruction and ask a clinician about ambiguities.'});
+      const changes=/(停药|停用|停服|加量|减量|加药|减药|换药|增减|翻倍|倍增|减半|不再(?:服|用|吃)药|停止(?:服|用|吃)药|调整.{0,8}?(剂量|药量|用药)|double.{0,15}?dose|stop.{0,15}?(medication|medicine)|increase.{0,15}?dose|reduce.{0,15}?dose)/gi;
+      let previousEnd=0,previousSafe=false;
+      for(const mention of sentence.matchAll(changes)){
+        const prefix=sentence.slice(previousEnd,mention.index),suffix=sentence.slice(mention.index+mention[0].length);
+        const prohibition=prefix.match(/(不要|不可|不能|勿|不应|不得|不建议|do not|don't|never)(.{0,20})$/i);
+        const guarded=!!prohibition&&!/(可以|建议|应该|请|必须|\bcan\b|\bshould\b|recommend)/i.test(prohibition[2]);
+        const absent=/(没有|未|并未|没|不存在|不曾)(要求|授权|允许|建议)(?:你|患者)?(?:自行|擅自|去|再|先)?$/.test(prefix)||(/(没有|不存在|无)(?:任何)?$/.test(prefix)&&/^(?:的)?(?:要求|授权|指示|许可)/.test(suffix));
+        const neutral=field.startsWith('questions')&&/(医生|药师|医护|doctor|pharmacist)/i.test(sentence)&&!/(可以|建议|应该|请)(?:自行)?(?:停|加|减|换)/.test(sentence);
+        const coordinated=previousSafe&&/^\s*(?:或|和|及|与|、|or|and)\s*(?:自行|擅自)?\s*$/i.test(prefix);
+        const safe=guarded||absent||neutral||coordinated;
+        valid(safe,{path:`task.${field}`,rule:'A model explanation never grants medication changes. Negative statements that the original instruction did not require or authorize a change are allowed; keep every change mention negative, prohibited or a neutral clinician question. Retain the original instruction and ask a clinician about ambiguities.'});
+        previousSafe=safe;previousEnd=mention.index+mention[0].length;
+      }
     }
   }
 }

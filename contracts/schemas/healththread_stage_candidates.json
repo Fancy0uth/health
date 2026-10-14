@@ -108,76 +108,308 @@
       "maxItems": 100
     },
     "overview": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 20000,
-          "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
-        },
-        "regions": {
-          "type": "array",
-          "maxItems": 7,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "enum": [
-                  "head_neck",
-                  "chest",
-                  "abdomen",
-                  "back",
-                  "limbs",
-                  "systemic",
-                  "other"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format_version": {
+              "type": "integer",
+              "const": 2
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200,
+              "description": "1–3 brief sentences assessing recent overall circumstances. Preserve attribution, dates, uncertainty and reported changes. Never list the whole original text, processing metadata, diagnoses, health scores or treatment changes."
+            },
+            "problems": {
+              "type": "array",
+              "maxItems": 30,
+              "description": "Complete replacement document. Reuse prior stable keys. Retain all active/improving/uncertain previous problems with valid sources, including unrelated complaints not mentioned this turn.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "Stable problem-event key, reused from previous document."
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "body_region": {
+                    "enum": [
+                      "head_neck",
+                      "chest",
+                      "abdomen",
+                      "back",
+                      "limbs",
+                      "systemic",
+                      "other"
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "active",
+                      "improving",
+                      "resolved",
+                      "uncertain"
+                    ],
+                    "description": "Follow-up state, never severity or evidence type. Use evidence_status dimension for source attribution."
+                  },
+                  "assessment": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 600,
+                    "description": "Brief sourced explanation of present state, supported change from prior assessment and remaining unknowns. No diagnosis or risk exclusion."
+                  },
+                  "dimensions": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "body_site_symptom": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "time_course": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "self_rating": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "impact_context": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "associated": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "measurements": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "background_care": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      },
+                      "evidence_status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 800
+                      }
+                    },
+                    "required": [
+                      "body_site_symptom",
+                      "time_course",
+                      "self_rating",
+                      "impact_context",
+                      "associated",
+                      "measurements",
+                      "background_care",
+                      "evidence_status"
+                    ],
+                    "description": "Eight concise independent syntheses; unknown=null means unrecorded, never normal/absent. Preserve temporal range of denials, self-rating attribution, measurement units/original dates, document judgment attribution, and planned versus reported executed treatment. Do not copy the full history into each dimension."
+                  },
+                  "source_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "Only original authorized source IDs actually returned by tools in this run; never assistant messages, previous overview IDs, or superseded record text."
+                  }
+                },
+                "required": [
+                  "key",
+                  "title",
+                  "body_region",
+                  "status",
+                  "assessment",
+                  "dimensions",
+                  "source_ids"
                 ]
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1
-              },
-              "summary": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 20000,
-                "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
-              },
-              "status": {
-                "enum": [
-                  "reported",
-                  "documented",
-                  "improving",
-                  "resolved",
-                  "uncertain"
-                ]
-              },
-              "source_ids": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "type": "string"
-                }
               }
             },
-            "required": [
-              "id",
-              "label",
-              "summary",
-              "status",
-              "source_ids"
-            ]
+            "background": {
+              "type": "array",
+              "maxItems": 30,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 800
+                  },
+                  "source_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "Only original authorized source IDs actually returned by tools in this run; never assistant messages, previous overview IDs, or superseded record text."
+                  }
+                },
+                "required": [
+                  "summary",
+                  "source_ids"
+                ]
+              },
+              "description": "Relevant supported medication, allergy, history or document results; prescribed plans are distinct from reported execution."
+            },
+            "uncertainties": {
+              "type": "array",
+              "maxItems": 30,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 800
+                  },
+                  "source_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "Only original authorized source IDs actually returned by tools in this run; never assistant messages, previous overview IDs, or superseded record text."
+                  }
+                },
+                "required": [
+                  "summary",
+                  "source_ids"
+                ]
+              },
+              "description": "Important unknowns or contradictions. Retain evidence for both sides; do not choose a winner."
+            }
           },
-          "description": "按资料支持的部位组织，每个部位 ID 只出现一次；同一部位的不同表现合为一张卡，保留各自时间和范围，未提及部位省略。"
+          "required": [
+            "format_version",
+            "summary",
+            "problems",
+            "background",
+            "uncertainties"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000,
+              "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
+            },
+            "regions": {
+              "type": "array",
+              "maxItems": 7,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "head_neck",
+                      "chest",
+                      "abdomen",
+                      "back",
+                      "limbs",
+                      "systemic",
+                      "other"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000,
+                    "description": "用 1–3 句通俗中文描述有来源的健康近况，保留重要时间、否认与变化范围。不得写 image_transcript/readable/uncertainties 等处理元数据或保存、核对等产品流程；patient_report 只称患者自述，不称已确认。区分医嘱计划与患者实际报告的执行时间，不把计划时长当成已执行时长。"
+                  },
+                  "status": {
+                    "enum": [
+                      "reported",
+                      "documented",
+                      "improving",
+                      "resolved",
+                      "uncertain"
+                    ]
+                  },
+                  "source_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "summary",
+                  "status",
+                  "source_ids"
+                ]
+              },
+              "description": "按资料支持的部位组织，每个部位 ID 只出现一次；同一部位的不同表现合为一张卡，保留各自时间和范围，未提及部位省略。"
+            }
+          },
+          "required": [
+            "summary",
+            "regions"
+          ],
+          "description": "供患者阅读的身体近况综合；证据原文与结构化状态由其他字段保留。"
         }
-      },
-      "required": [
-        "summary",
-        "regions"
       ],
-      "description": "供患者阅读的身体近况综合；证据原文与结构化状态由其他字段保留。"
+      "description": "Active runtime uses the native maintained format_version=2 document. Legacy summary/regions remains publicly accepted."
     },
     "document_source_refs": {
       "type": "array",

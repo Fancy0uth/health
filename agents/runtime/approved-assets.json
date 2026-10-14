@@ -7,13 +7,14 @@
     "plugin/argument-diagnostics.mjs": "0adee23dbe4c83c486764950d7a30f339cf66d75b7200376f5e9c5f982a0b3d7",
     "plugin/index.mjs": "ab80e772912266bf215468d00769ef840e7bdd6205c1491ad1009111af53de94",
     "plugin/package.json": "9158773845dd4027fa2a92080f00a4da03c77307c68f0869af90ef7359242ebe",
-    "plugin/schemas.json": "803d8cf4b26ceea9dbfb4f540dac407e687eac5af01cfcb98bbfe923d1cbb7a3",
-    "plugin/workflow-schemas.mjs": "38cab90c0cbf7a96e5144bf31692c780f725b420c8d4e42508fc7630c2d9d91b",
+    "plugin/schemas.json": "a90fbbd8e1ba111e640c7033a1bb207f855791ff3ed3ea10a6de69bd8eca6ac8",
+    "plugin/workflow-schemas.mjs": "056025e4df739b14e094061f4c01c964f1aa46c16054178c3335a930ca1ea02d",
     "skills/care-followup/SKILL.md": "87dfe1d0285a22ec8da667775db29a4b07c4463c38ce8b0bf1723a334b03ef8e",
     "skills/document-transcription/SKILL.md": "45fe43d56c15ac84ce53bdc9514786059e044ac8a4cc6fa546034fbd5b59d052",
-    "skills/health-assistant/SKILL.md": "8aa2dcfbc478c8485e0635613eb78884a9846bdda0e1bf199a34137649eac791",
-    "skills/health-record/SKILL.md": "c8d60871b0412905dbce13ab547bfc97b31ef150e7a9e1c02786e058ba5827da",
-    "skills/post-visit/SKILL.md": "f2d167a40b3fc52e105cab2fee634ba4715993895381d72f9c569603682ff81d",
+    "skills/health-assistant/SKILL.md": "59f9a8b5056e89330a29e50fea561fd1e8e9d83f8efce28faf87b983ebb2c723",
+    "skills/health-record/SKILL.md": "8ec8a4c7349a789fc9fded5db2c2c0147b371d8cc7c39b660abafa1f4e8754db",
+    "skills/health-state/SKILL.md": "4ab40c622169f60552fb860474c3788dca26bf9c53b32294c9d2fe88adb98d94",
+    "skills/post-visit/SKILL.md": "bccfe5a6a82f0eb3178a96c47f72fe9a7e8f277af911a4df717c0c069e32915a",
     "skills/visit-preparation/SKILL.md": "d798cab0e0abfdaa076f8444e48e94623773f7504bbef51905ae9ee6b79119cb"
   }
 }

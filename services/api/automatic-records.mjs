@@ -1,8 +1,11 @@
 import {check,fail} from './domain-errors.mjs';
-import {keys,validateCandidate,validateEvidence,literalSourceTime,materializeSentenceCandidate} from './source-validation.mjs';
+import {keys,validateCandidate,validateEvidence,literalSourceTime,materializeSentenceCandidate,classifySourceMarkers} from './source-validation.mjs';
 import {attachComparisons,reviewable,candidateContent,validateObservations} from './health-profile.mjs';
-export const BODY_REGIONS=Object.freeze(['head_neck','chest','abdomen','back','limbs','systemic','other']);
+import {BODY_REGIONS,validateHealthState,validateRunHealthState,healthSnapshot} from './health-state.mjs';
+export {BODY_REGIONS};
 export function validateOverview(input,sourceIds){
+ if(input&&typeof input==='object'&&Object.hasOwn(input,'format_version'))return validateHealthState(input,sourceIds);
+ if(typeof input!=='object'||!input||Array.isArray(input))fail(422,'INVALID_AGENT_OUTPUT','请提供原生概述对象。',{path:'overview',rule:'Provide a native JSON object, never a JSON string.'});
  const valid=(ok,path,rule)=>{if(!ok)fail(422,'INVALID_AGENT_OUTPUT','请按身体部位整理概览。',{path,rule});};
  keys(input,['summary','regions']);
  const text=v=>typeof v==='string'&&v.trim().length>0&&v.length<=20000;
@@ -60,11 +63,12 @@ export function validateAutomaticRecord(store,run,input,read){
   // only against successfully verified immutable source text.
   const refs=validateEvidence(original.evidence,authorized);
   const candidate=structuredClone(original),quote=refs[0].evidence.quote;
-  const patientText=refs.every(r=>r.source.kind==='self_report')&&['reported_text','symptom','observation'].includes(candidate.field);
+  const patientText=refs.every(r=>r.source.kind==='self_report')&&['reported_text','symptom','observation','instruction'].includes(candidate.field);
   if(patientText){
    // A rewritten clinical claim is never persisted: use the actual source
    // sentence as reported_text. The narrative synthesis is separate.
    if(!refs.every(r=>r.evidence.quote===quote))return;
+   if(candidate.field==='instruction'){const markers=classifySourceMarkers(quote);candidate.assertion=markers.assertion;candidate.temporal_scope=markers.temporal_scope;}
    candidate.field='reported_text';candidate.value=quote;
    candidate.effective_time=literalSourceTime(quote,refs[0].source.id);
   }
@@ -79,7 +83,23 @@ export function validateAutomaticRecord(store,run,input,read){
  });
  const comparisons=(input.comparisons||[]).filter(c=>indexes.has(c.candidate_index)).map(c=>({...c,candidate_index:indexes.get(c.candidate_index)})).filter((c,i,a)=>a.findIndex(x=>x.candidate_index===c.candidate_index&&x.fact_id===c.fact_id)===i);
  attachComparisons(store,run,proposals,comparisons,{legacyFallback:false});
- return {...structuredClone(input),comparisons,proposals,...(input.overview?{overview:validateOverview(input.overview,run.read_sources||[])}:{})};
+ return {...structuredClone(input),comparisons,proposals,...(input.overview?{overview:validateRunHealthState(store,run,input.overview,'payload.automatic_record.overview')||validateOverview(input.overview,run.read_sources||[])}:{})};
+}
+// A clinician instruction and a different evidence category are separate facts,
+// even when the model calls them duplicate or update. Only automatic application
+// uses this guard; explicit human resolution keeps its existing semantics.
+function preserveInstructionConceptRelation(store,run,proposal,comparison){
+ if(comparison.origin!=='model'||!['update','duplicate'].includes(comparison.relation)||comparison.possible_conflict)return;
+ const old=comparison.old_snapshot;
+ if(!old||proposal.field===old.field||(proposal.field!=='instruction'&&old.field!=='instruction'))return;
+ const originals=record=>validateEvidence(record.evidence,sid=>store.get(run.owner,'source',sid));
+ const current=store.profile(run.owner).facts.find(f=>f.fact_id===comparison.fact_id&&f.revision===comparison.revision);
+ check(current,'REVISION_CONFLICT',409);
+ if(proposal.field===current.field||(proposal.field!=='instruction'&&current.field!=='instruction'))return;
+ const incoming=originals(proposal),existing=originals(current);
+ const clinical=(record,refs)=>record.field==='instruction'&&refs.every(r=>r.source.kind==='medical_document');
+ const distinct=(record,refs)=>record.field!=='instruction'&&refs.every(r=>['self_report','medical_document'].includes(r.source.kind));
+ if((clinical(proposal,incoming)&&distinct(current,existing))||(distinct(proposal,incoming)&&clinical(current,existing))){comparison.relation='related';comparison.requires_resolution=false;}
 }
 export function finalizeAutomaticRecords(store,run){
  if(run.automatic_finalized)return;
@@ -90,15 +110,18 @@ export function finalizeAutomaticRecords(store,run){
   check(staged?.overview&&staged.proposals.length===0,'INVALID_AGENT_OUTPUT',422);
   check(store.all('run',run.owner).filter(r=>r.overview_refresh).at(-1)?.id===run.id,'REVISION_CONFLICT',409);
   check(run.base_profile_revision===store.user(run.owner).revision,'REVISION_CONFLICT',409);
-  const now=store.now(),sources=[...new Set([...run.source_ids,...run.read_sources||[]])];for(const sid of sources)store.get(run.owner,'source',sid);
-  store.insert(run.owner,'health_overview',{...staged.overview,regions:staged.overview.regions.map(r=>({...r,updated_at:now})),updated_at:now,profile_revision:store.user(run.owner).revision,run_id:run.id,source_ids:sources,status:store.all('fact_change',run.owner).some(c=>c.id!==staged.id&&c.status==='pending'&&c.proposals.some(reviewable))?'uncertain':'current'});
+  check((run.base_health_document_id||null)===(store.all('health_overview',run.owner).at(-1)?.id||null),'REVISION_CONFLICT',409);
+  validateRunHealthState(store,run,staged.overview);
+  store.insert(run.owner,'health_overview',healthSnapshot(store,run,staged.overview,store.all('fact_change',run.owner).some(c=>c.id!==staged.id&&c.status==='pending'&&c.proposals.some(reviewable))?'uncertain':'current'));
   staged.status='confirmed';staged.review_state='complete';store.save('fact_change',staged);run.status='completed';run.phase='overview_updated';run.automatic_finalized=true;return;
  }
- if((run.record_edit||run.legacy_record_adoption)&&!staged?.overview&&!automatic?.overview)fail(422,'INVALID_AGENT_OUTPUT','自动记录尚缺身体概述，不能完成保存。',{path:'overview',rule:'Provide overview with summary and regions before completing this automatic record. Retry or explicitly reanalyse the saved source; keep the original and existing facts unchanged.'});
+ if((run.record_edit||run.legacy_record_adoption)&&!staged?.overview&&!automatic?.overview)fail(422,'INVALID_AGENT_OUTPUT','自动记录尚缺身体概述，不能完成保存。',{path:'overview',rule:'Provide the complete native overview v2 document before completing this automatic record. Retry or explicitly reanalyse the saved source; keep the original and existing facts unchanged.'});
  if(!automatic&&!staged?.overview)return;
  // A verified checkpoint must still match the profile it synthesized.
  check(run.base_profile_revision===store.user(run.owner).revision,'REVISION_CONFLICT',409);
  if(automatic?.action==='skip'){run.automatic_finalized=true;run.record_save_status='skipped';return;}
+ if((automatic?.overview||staged?.overview)?.format_version===2)check((run.base_health_document_id||null)===(store.all('health_overview',run.owner).at(-1)?.id||null),'REVISION_CONFLICT',409);
+ validateRunHealthState(store,run,automatic?.overview||staged?.overview);
  const uid=run.owner,now=store.now(),storedOverview=store.all('health_overview',run.owner).at(-1);
  // Public masking while an edit is pending does not invalidate independently
  // sourced regions. Internally retain only a still-current stored synthesis.
@@ -112,12 +135,14 @@ export function finalizeAutomaticRecords(store,run){
  if(run.record_edit&&thread){
   for(const fact of store.profile(uid).facts.filter(f=>f.episode_id===thread.episode_id))store.insert(uid,'fact_revision',{...fact,id:undefined,revision:fact.revision+1,supersedes_revision:fact.revision,review_status:'retracted',retraction_reason:'whole_record_edit',recorded_at:now});
   for(const p of change.proposals)p.comparisons=(p.comparisons||[]).filter(c=>c.old_snapshot?.episode_id!==thread.episode_id);
+  thread.superseded_source_ids=[...new Set([...(thread.superseded_source_ids||[]),...thread.source_ids.filter(sid=>sid!==run.source_ids[0])])];
   thread.edit_pending=false;
  }
  // Refresh comparisons inside this transaction: no stale automatic writes.
  if(!staged)attachComparisons(store,run,change.proposals,automatic.comparisons||[],{legacyFallback:false});
  let writes=run.record_edit?1:0;
  for(const p of change.proposals.filter(reviewable)){
+  for(const comparison of p.comparisons||[])preserveInstructionConceptRelation(store,run,p,comparison);
   if(p.comparisons?.some(c=>c.requires_resolution&&!(c.origin==='model'&&c.relation==='update'&&!c.possible_conflict)))continue;
   const update=p.comparisons?.find(c=>c.origin==='model'&&c.relation==='update');
   const duplicate=p.comparisons?.find(c=>c.relation==='duplicate');
@@ -133,11 +158,9 @@ export function finalizeAutomaticRecords(store,run){
  if(thread&&automatic){const summary=store.insert(uid,'record_summary',{record_thread_id:thread.id,run_id:run.id,fact_change_id:change.id,version:thread.version,source_ids:[...thread.source_ids],turn_source_id:run.source_ids[0],summary:automatic.summary,proposals:structuredClone(change.proposals),questions:[],missing_fields:[],profile_revision:store.user(uid).revision,created_at:now,provenance:'patient_report',automatic:true});thread.latest_summary_id=summary.id;}
  if(thread){thread.status=run.record_save_status;thread.latest_run_id=run.id;thread.latest_change_id=change.id;store.save('record_thread',thread);}
  const proposedOverview=automatic?.overview||change.overview;
- const overview=proposedOverview&&{...proposedOverview,regions:[...proposedOverview.regions,...(['current','uncertain'].includes(previousOverview.status)?previousOverview.regions.filter(old=>!proposedOverview.regions.some(next=>next.id===old.id)&&!(run.record_edit&&old.source_ids.every(sid=>thread?.source_ids.includes(sid)))):[])]};
+ const overview=proposedOverview?.format_version===2?proposedOverview:proposedOverview&&{...proposedOverview,regions:[...proposedOverview.regions,...(['current','uncertain'].includes(previousOverview.status)?(previousOverview.regions||[]).filter(old=>!proposedOverview.regions.some(next=>next.id===old.id)&&!(run.record_edit&&old.source_ids.every(sid=>thread?.source_ids.includes(sid)))):[])]};
  if(change.document_id&&!run.continuation_run_id){const doc=store.get(uid,'document',change.document_id);const careSource=store.documentSource(uid,doc.id);const care=store.newRun(uid,'care_plan',[careSource,...run.source_ids.filter(s=>s!==careSource)],{document_id:doc.id,parent_run_id:run.id});store.queueRun(care,run.operation_id);run.continuation_run_id=care.id;}
- const overviewSources=overview&&[...new Set([...run.source_ids,...(run.read_sources||[]),...overview.regions.flatMap(r=>r.source_ids),...store.all('fact_revision',uid).filter(f=>run.read_facts?.some(ref=>ref.fact_id===f.fact_id&&ref.revision===f.revision)).flatMap(f=>f.evidence.map(e=>e.source_id))])];
- if(overviewSources)for(const sid of overviewSources)store.get(uid,'source',sid);
- if(overview)store.insert(uid,'health_overview',{...overview,regions:overview.regions.map(r=>({...r,updated_at:r.updated_at||now})),updated_at:now,profile_revision:store.user(uid).revision,run_id:run.id,source_ids:overviewSources,status:pending.length?'uncertain':'current'});
+ if(overview)store.insert(uid,'health_overview',healthSnapshot(store,run,overview,pending.length?'uncertain':'current'));
 }
 export function currentOverview(store,uid){
  const latest=store.all('health_overview',uid).at(-1),base=latest||{summary:'',updated_at:null,regions:[],status:'not_recorded'};

@@ -23,6 +23,11 @@
       },
       "minItems": 0,
       "maxItems": 100
+    },
+    "source_offset": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Overview refresh only: selected-source page offset, default 0. Follow source_page.next_offset until null before staging. Cannot combine with source_ids."
     }
   },
   "required": []

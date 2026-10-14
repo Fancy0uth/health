@@ -147,12 +147,21 @@ export class DomainClient {
     this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.restoreDeletionHandles();this.observeServerScope(me);this.restore();this.emit();return me;
   }
   async initialize() { await this.bootstrapIdentity();const capabilities=await this.raw('/api/capabilities');this.state.capabilities=capabilities;if(this.state.user) await this.refresh();else this.emit();return this.state; }
-  async login(username,password) {
+  async login(username,password) {return this.authenticate('/api/auth/login',username,password);}
+  async register(username,password) {return this.authenticate('/api/auth/register',username,password);}
+  async authenticate(path,username,password) {
     this.invalidate();const generation=this.generation;
-    const me=await this.raw('/api/auth/login',{method:'POST',body:{username,password}});
-    if(generation!==this.generation) throw identityChanged();
-    const epoch=await fingerprint(me.csrf_token);if(generation!==this.generation) throw identityChanged();
-    this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.restoreDeletionHandles();this.observeServerScope(me);this.restore();this.broadcast('identity');this.emit();return this.refresh();
+    try {
+      // Credentials go directly to the auth endpoint, outside the persistent health-operation journal.
+      const me=await this.raw(path,{method:'POST',body:{username,password}});
+      if(generation!==this.generation) throw identityChanged();
+      const epoch=await fingerprint(me.csrf_token);if(generation!==this.generation) throw identityChanged();
+      this.state.user=me.user;this.csrf=me.csrf_token;this.sessionEpoch=epoch;this.restoreDeletionHandles();this.observeServerScope(me);this.restore();this.broadcast('identity');this.emit();return await this.refresh();
+    } catch(error) {
+      if(generation!==this.generation||error.code==='SESSION_CHANGED') throw identityChanged();
+      if(path==='/api/auth/register'&&(!error.status||error.status>=500)) throw problem('REGISTRATION_UNCERTAIN','注册结果尚未确认。请切换到登录，用刚才的账号和密码尝试登录；如果账号已创建，就可以继续使用。');
+      throw error;
+    }
   }
   async verifySession(ticket,{scope=true}={}) {
     this.check(ticket);const me=await this.raw('/api/me');this.check(ticket);
@@ -266,6 +275,7 @@ export class DomainClient {
   editRecordThread(id,text,version) {return this.submit('record-edit:'+id,'/api/record-threads/'+encodeURIComponent(id),{text,expected_version:version},'PATCH');}
   createRecordTurn(text,recordThreadId,version,sourceId) {return this.submit('record-turn:'+(recordThreadId||sourceId||'new'),'/api/record-turns',{...(sourceId?{existing_source_id:sourceId,...(text?{text}:{})}:{text}),...(recordThreadId?{record_thread_id:recordThreadId,expected_version:version}:{})});}
   createEntry(text) {return this.submit('entry','/api/entries',{text,input_kind:'self_report'});}
+  refreshHealthProfile() {return this.submit('health-profile-refresh','/api/health-profile/refresh',{operation_key:crypto.randomUUID()});}
   async createChat(question,sourceIds=[]) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set([...this.state.timeline.entries.map(entry=>entry.source_id),...this.state.results.filter(result=>result.kind==='assistant_reply').flatMap(result=>result.source_ids||[]),...Object.values(this.state.runs).filter(run=>run.workflow==='chat').flatMap(run=>run.source_ids||[])]);return this.submit('chat','/api/health-assistant',{question,selected_source_ids:[...new Set(sourceIds)].filter(id=>allowed.has(id)).slice(-6)},'POST',null,ticket);}
   async createDocument({text,name,file}={}) { const ticket=this.ticket();if(file) {const metadata=await this.fileMetadata(file);this.check(ticket);return this.submit('document','/api/documents',{file:metadata},'POST',file,ticket);}return this.submit('document','/api/documents',{text,name}); }
   async createVisit(currentConcern='',sourceIds=[],options={}) {const ticket=this.ticket();await this.refresh();this.check(ticket);const allowed=new Set(this.state.timeline.entries.map(entry=>entry.source_id));return this.submit('visit','/api/visit-preparations',{current_concern:currentConcern,selected_source_ids:sourceIds.filter(id=>allowed.has(id)),...(options.conversation_id?{conversation_id:options.conversation_id}:{}),...(options.previous_result_id?{previous_result_id:options.previous_result_id}:{})},'POST',null,ticket);}
